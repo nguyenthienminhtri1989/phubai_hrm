@@ -1,0 +1,48 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Bảng Nhà Máy
+model Factory {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique
+  name        String
+  departments Department[] // Quan hệ ngược: 1 nhà máy có nhiều phòng
+}
+
+// 2. Bảng Phòng Ban
+model Department {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique
+  name      String
+  
+  // Khóa ngoại liên kết nhà máy
+  factoryId Int?       
+  factory   Factory?   @relation(fields: [factoryId], references: [id])
+
+  employees Employee[] // Quan hệ ngược: 1 phòng có nhiều nhân viên
+}
+
+// 3. Bảng Nhân Viên
+model Employee {
+  id         Int        @id @default(autoincrement())
+  code       String     @unique // Mã NV nhập tay/import
+  fullName   String
+  birthday   DateTime?
+  gender     String?
+  address    String?
+  phone      String?
+  email      String?    @unique
+  position   String?    // Nhập tay thoải mái
+  
+  // Khóa ngoại liên kết phòng ban
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+}
