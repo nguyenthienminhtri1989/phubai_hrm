@@ -4,7 +4,7 @@
 import React, { useState } from "react";
 import { DesktopOutlined, TeamOutlined, BankOutlined } from "@ant-design/icons";
 import { Layout, Menu, theme } from "antd";
-import { useRouter } from "next/navigation"; // Dùng để chuyển trang trong Next.js
+import { useRouter, usePathname } from "next/navigation"; // Dùng để chuyển trang trong Next.js
 
 const { Header, Content, Footer, Sider } = Layout;
 
@@ -26,6 +26,7 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   } = theme.useToken();
 
   const router = useRouter(); // Khởi tạo router
+  const pathname = usePathname(); // <--- Lấy đường dẫn hiện tại (VD: /departments)
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -50,8 +51,8 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
         </div>
         <Menu
           theme="dark"
-          defaultSelectedKeys={["/factories"]}
           mode="inline"
+          selectedKeys={[pathname]}
           items={items}
           // Sự kiện khi click vào menu
           onClick={(info) => {
