@@ -1,0 +1,52 @@
+### TEST 1: Tạo Nhà Máy số 1
+# Chúng ta cần tạo nhà máy trước để có ID mà gắn vào phòng ban
+POST http://localhost:3000/api/factories
+Content-Type: application/json
+
+{
+  "code": "NM1",
+  "name": "Nhà máy Sợi 1"
+}
+
+### TEST 2: Tạo Nhà Máy số 2
+POST http://localhost:3000/api/factories
+Content-Type: application/json
+
+{
+  "code": "NM2",
+  "name": "Nhà máy Sợi 2"
+}
+
+### TEST 2: Tạo Nhà Máy số 3
+POST http://localhost:3000/api/factories
+Content-Type: application/json
+
+{
+  "code": "NM3",
+  "name": "Nhà máy Sợi 3"
+}
+
+### TEST 3: Tạo Phòng Ban (Có thuộc nhà máy)
+# Lưu ý: factoryId: 1 nghĩa là thuộc về nhà máy chúng ta vừa tạo ở trên
+POST http://localhost:3000/api/departments
+Content-Type: application/json
+
+{
+  "code": "BC-NM1",
+  "name": "Công đoạn Bông Chải NM1",
+  "factoryId": 1
+}
+
+### TEST 4: Tạo Phòng Ban Chung (Không thuộc nhà máy nào)
+# Ta không gửi factoryId, hệ thống sẽ hiểu là null
+POST http://localhost:3000/api/departments
+Content-Type: application/json
+
+{
+  "code": "HCNS",
+  "name": "Phòng Hành Chính Nhân Sự"
+}
+
+### TEST 5: Lấy danh sách Phòng ban
+# Kiểm tra xem nó có hiện thông tin nhà máy kèm theo không
+GET http://localhost:3000/api/departments

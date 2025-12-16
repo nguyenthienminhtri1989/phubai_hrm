@@ -1,7 +1,7 @@
 // src/app/api/factories/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { error } from "node:console";
+// import { error } from "node:console";
 
 // 1. Hàm GET: Dùng để lấy danh sách nhà máy
 export async function GET() {
@@ -27,6 +27,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     // Đọc dữ liệu gửi lên từ giao diện
+    // Chuyển chuỗi JSON từ trình duyệt gửi lên thành Object rồi gán cho body
     const body = await request.json();
     const { code, name } = body;
 
