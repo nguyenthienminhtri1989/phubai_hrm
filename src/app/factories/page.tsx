@@ -3,7 +3,16 @@
 
 import React, { useEffect, useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { Table, Button, Modal, Form, Input, message, Space } from "antd";
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  message,
+  Space,
+  Popconfirm,
+} from "antd";
 import { PlusOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
 
 // 1. Định nghĩa kiểu dữ liệu cho Nhà máy (giúp code gợi ý thông minh)
@@ -19,9 +28,11 @@ export default function FactoryPage() {
   const [loading, setLoading] = useState(false); // Trạng thái đang tải xoay vòng vòng
   const [isModalOpen, setIsModalOpen] = useState(false); // Trạng thái mở/đóng Modal
   const [form] = Form.useForm(); // Hook để quản lý Form của AntD
+  // State mới, lưu ID của dòng đang sửa (nếu null nghĩa là đang thêm mới)
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   // --- PHẦN 2: TƯƠNG TÁC VỚI API (BACKEND) ---
-  // Hàm lấy danh sách nhà máy từ API GET
+  // --- HÀM LẤY DANH SÁCH TỪ API GET ---
   const fetchFactories = async () => {
     setLoading(true);
     try {
@@ -40,26 +51,67 @@ export default function FactoryPage() {
     fetchFactories();
   }, []);
 
-  // Hàm xử lý khi nhấn nút "Lưu" trên Form (API POST)
+  // --- HÀM XỬ LÝ XÓA ---
+  const handleDelete = async (id: number) => {
+    try {
+      const res = await fetch(`/api/factories/${id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        message.success("Đã xóa thành công!");
+        fetchFactories(); // Load lại bảng
+      } else {
+        const errorData = await res.json();
+        message.error(errorData.error || "Lỗi khi xóa");
+      }
+    } catch (error) {
+      message.error("Lỗi kết nối" + error);
+    }
+  };
+
+  // --- HÀM MỞ MODAL ĐỂ SỬA
+  const handleEdit = (record: Factory) => {
+    setEditingId(record.id); // Đánh dấu là đang sửa ID này
+    form.setFieldsValue(record); // Điền dữ liệu cũ vào form
+    setIsModalOpen(true); // Mở Modal lên
+  };
+
+  // --- HÀM MỞ MODAL ĐỂ THÊM MỚI ---
+  const openAddModal = () => {
+    setEditingId(null); // Đánh dấu là thêm mới
+    form.resetFields(); // Xóa trắng form
+    setIsModalOpen(true); // Mở Modal
+  };
+
+  // --- HÀM KHI NHẤN NÚT LƯU TRÊN FORM (API POST) ---
   const handleOk = async () => {
     try {
-      // 1. Validation form (bắt buộc nhập)
       const values = await form.validateFields();
 
-      // 2. Gọi API để thêm mới
-      const res = await fetch("api/factories", {
-        method: "POST",
+      // LOGIC PHÂN LUỒNG
+      // Nếu editingId có giá trị thì gọi API sửa (PATCH)
+      // Nếu editingID là null thì gọi API thêm mới (POST)
+
+      const url = editingId ? `/api/factories/${editingId}` : "/api/factories";
+      const method = editingId ? "PATCH" : "POST";
+
+      const res = await fetch(url, {
+        method: method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
 
       if (res.ok) {
-        message.success("Thêm nhà máy thành công!");
-        setIsModalOpen(false); // Đóng modal
-        form.resetFields(); // Xóa trắng ô nhập
-        fetchFactories(); // Tải lại danh sách mới
+        message.success(
+          editingId ? "Cập nhật thành công!" : "Thêm mới thành công!"
+        );
+        setIsModalOpen(false); // Đóng Modal
+        form.resetFields(); // Xóa trắng form
+        setEditingId(null); // Reset trạng thái
+        fetchFactories(); // Load lại dữ liệu
       } else {
-        message.error("Có lỗi xảy ra (có thể trùng mã)");
+        message.error("Có lỗi xảy ra...");
       }
     } catch (error) {
       console.log("Validation Failed: ", error);
@@ -78,7 +130,7 @@ export default function FactoryPage() {
       title: "Mã Nhà Máy",
       dataIndex: "code",
       key: "code",
-      fontWeight: "bold", // Tùy chỉnh CSS nếu muốn
+      render: (text: string) => <b>{text}</b>, // Tùy chỉnh CSS nếu muốn
     },
     {
       title: "Tên Nhà Máy",
@@ -88,15 +140,25 @@ export default function FactoryPage() {
     {
       title: "Hành động",
       key: "action",
-      render: (_, record) => (
+      render: (_, record: Factory) => (
         <Space size="middle">
-          {/* Nút sửa/xóa để hờ đó, sau này làm chức năng sau */}
+          {/* NÚT SỬA */}
           <Button
             type="text"
             icon={<EditOutlined />}
             style={{ color: "blue" }}
+            onClick={() => handleEdit(record)}
           />
-          <Button type="text" icon={<DeleteOutlined />} danger />
+          {/* NÚT XÓA CÓ XÁC NHẬN */}
+          <Popconfirm
+            title="Xóa nhà máy này?"
+            description="Hành động này không thể hoàn tác"
+            onConfirm={() => handleDelete(record.id)}
+            okText="Xóa"
+            cancelText="Hủy"
+          >
+            <Button type="text" icon={<DeleteOutlined />} danger />
+          </Popconfirm>
         </Space>
       ),
     },
@@ -113,11 +175,8 @@ export default function FactoryPage() {
         }}
       >
         <h2>Quản lý Nhà máy</h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setIsModalOpen(true)}
-        >
+        {/* Gọi hàm openAddModal thay vì set trực tiếp */}
+        <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
           Thêm Nhà máy
         </Button>
       </div>
@@ -133,7 +192,7 @@ export default function FactoryPage() {
 
       {/* Modal nhập liệu */}
       <Modal
-        title="Thêm Nhà máy mới"
+        title={editingId ? "Cập nhật nhà máy" : "Thêm nhà máy mới"}
         open={isModalOpen}
         onOk={handleOk}
         onCancel={() => setIsModalOpen(false)}

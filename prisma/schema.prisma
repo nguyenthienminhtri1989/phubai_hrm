@@ -24,8 +24,8 @@ model Department {
   name      String
   
   // Khóa ngoại liên kết nhà máy
-  factoryId Int?       
-  factory   Factory?   @relation(fields: [factoryId], references: [id])
+  factoryId Int      
+  factory   Factory   @relation(fields: [factoryId], references: [id])
 
   employees Employee[] // Quan hệ ngược: 1 phòng có nhiều nhân viên
 }

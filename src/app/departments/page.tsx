@@ -13,6 +13,7 @@ import {
   message,
   Select,
   Tag,
+  Popconfirm,
   type TableProps,
 } from "antd";
 import {
@@ -46,13 +47,14 @@ export default function DepartmentPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   // THÊM: State để chứa danh sách nhà máy (dùng cho Dropdown)
   const [factories, setFactories] = useState<Factory[]>([]);
-
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
+  // State mới, lưu ID của dòng đang sửa (nếu null nghĩa là đang thêm mới)
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   // --- TẢI DỮ LIỆU ---
-  const fetchData = async () => {
+  const fetchDepartment = async () => {
     setLoading(true);
     try {
       // Gọi song song cả 2 API cùng lúc cho nhanh
@@ -74,25 +76,70 @@ export default function DepartmentPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    fetchDepartment();
   }, []);
 
-  // Hàm thêm dữ liệu cho nút lưu
+  // --- HÀM XỬ LÝ XÓA ---
+  const handleDelete = async (id: number) => {
+    try {
+      const res = await fetch(`/api/departments/${id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        message.success("Đã xóa thành công!");
+        fetchDepartment(); // Load lại bảng
+      } else {
+        const errorData = await res.json();
+        message.error(errorData.error || "Lỗi khi xóa");
+      }
+    } catch (error) {
+      message.error("Lỗi kết nối, " + error);
+    }
+  };
+
+  // --- HÀM MỞ MODAL ĐỂ SỬA
+  const handleEdit = (record: Department) => {
+    setEditingId(record.id); // Đánh dấu là đang sửa ID này
+    form.setFieldsValue(record); // Điền dữ liệu cũ vào form
+    setIsModalOpen(true); // Mở modal lên
+  };
+
+  // --- HÀM MỞ MODAL ĐỂ THÊM MỚI
+  const openAddModal = () => {
+    setEditingId(null); // Thêm mới chứ không phải sửa
+    form.resetFields(); // Xóa trắng form
+    setIsModalOpen(true);
+  };
+
+  // --- HÀM LƯU, XỬ LÝ CẢ THÊM VÀ SỬA ---
   const handleOK = async () => {
     try {
       const values = await form.validateFields();
 
-      const res = await fetch("/api/departments", {
-        method: "POST",
+      // LOGIC Phân luồng
+      // Nếu editingId có giá trị -> Gọi API sửa (PATCH)
+      // Nếu editingId = null -> Gọi API thêm mới (POST)
+
+      const url = editingId
+        ? `/api/departments/${editingId}`
+        : "/api/departments";
+      const method = editingId ? "PATCH" : "POST";
+
+      const res = await fetch(url, {
+        method: method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
 
       if (res.ok) {
-        message.success("Thêm phòng ban thành công!");
+        message.success(
+          editingId ? "Cập nhật thành công!" : "Thêm mới thành công!"
+        );
         setIsModalOpen(false); // Đóng modal
         form.resetFields(); // Xóa trắng form sau khi nhập
-        fetchData(); // Tải lại dữ liệu để thấy bản ghi mới cập nhật
+        setEditingId(null); // Reset giá trị
+        fetchDepartment(); // Tải lại dữ liệu để thấy bản ghi mới
       } else {
         message.error("Có lỗi xảy ra");
       }
@@ -101,7 +148,6 @@ export default function DepartmentPage() {
     }
   };
 
-  // --- CẤU HÌNH CỘT CHO BẢNG ---
   // --- CẤU HÌNH CỘT CHO BẢNG (Đã sửa lỗi TypeScript) ---
   const columns: TableProps<Department>["columns"] = [
     {
@@ -124,13 +170,19 @@ export default function DepartmentPage() {
     },
     {
       title: "Thuộc Nhà Máy",
+      dataIndex: "factory", // Dữ liệu trả về từ API phải include factory
       key: "factory",
-      render: (_, record) => {
-        // TypeScript bây giờ đã hiểu 'record' chính là 'Department'
-        if (record.factory) {
-          return <Tag color="blue">{record.factory.name}</Tag>;
-        }
-        return <Tag color="green">Phòng ban chung</Tag>;
+      render: (factory: Factory) => {
+        if (!factory) return null;
+
+        // Mapping màu cho Tag (blue, red, green, gold, cyan...)
+        let color = "default";
+        if (factory.code === "HC") color = "red";
+        else if (factory.code === "NM1") color = "blue";
+        else if (factory.code === "NM2") color = "green";
+        else if (factory.code === "NM3") color = "#faad14";
+
+        return <Tag color={color}>{factory.name}</Tag>;
       },
     },
     {
@@ -143,13 +195,24 @@ export default function DepartmentPage() {
             type="text"
             icon={<EditOutlined />}
             style={{ color: "blue" }}
+            onClick={() => handleEdit(record)}
           />
-          <Button type="text" icon={<DeleteOutlined />} danger />
+          {/* Nút xóa có xác nhận */}
+          <Popconfirm
+            title="Xóa bộ phận này?"
+            description="Hành động này không thể hoàn tác."
+            onConfirm={() => handleDelete(record.id)}
+            okText="Xóa"
+            cancelText="Hủy"
+          >
+            <Button type="text" icon={<DeleteOutlined />} danger />
+          </Popconfirm>
         </>
       ),
     },
   ];
 
+  // --- GIAO DIỆN NGƯỜI DÙNG ---
   return (
     <AdminLayout>
       <div
@@ -160,11 +223,8 @@ export default function DepartmentPage() {
         }}
       >
         <h2>Quản lý Phòng Ban - Bộ phận</h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setIsModalOpen(true)}
-        >
+        {/* Gọi hàm openAddModal thay vì set trực tiếp */}
+        <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
           Thêm Bộ Phận
         </Button>
       </div>
@@ -177,7 +237,7 @@ export default function DepartmentPage() {
       />
 
       <Modal
-        title="Thêm Phòng Ban"
+        title={editingId ? "Cập nhật bộ phận" : "Thêm mới bộ phận"}
         open={isModalOpen}
         onOk={handleOK}
         onCancel={() => setIsModalOpen(false)}

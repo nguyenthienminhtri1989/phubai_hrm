@@ -48,7 +48,7 @@ export async function PATCH(
       },
     });
 
-    return NextResponse.json(updatedFactory); // Trả về dữ liệu mới thêm để trình duyệt hiênr thị
+    return NextResponse.json(updatedFactory); // Trả về dữ liệu mới thêm để trình duyệt hiển thị
   } catch (error) {
     return NextResponse.json(
       { error: "Lỗi khi cập nhật: " + error },
