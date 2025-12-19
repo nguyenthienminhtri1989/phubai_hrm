@@ -45,7 +45,7 @@ export async function PATCH(
     const { id } = await params;
     const departmentId = parseInt(id);
 
-    const body = await request.json();
+    const body = await request.json(); // Chuyển gói hàng JSON từ client gửi lên thành Object
     const { code, name, factoryId } = body;
 
     // Cập nhật dữ liệu
