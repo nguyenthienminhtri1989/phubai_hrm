@@ -39,10 +39,52 @@ model Employee {
   gender     String?
   address    String?
   phone      String?
-  email      String?    @unique
   position   String?    // Nhập tay thoải mái
   
   // Khóa ngoại liên kết phòng ban
   departmentId Int
   department   Department @relation(fields: [departmentId], references: [id])
+  // Thêm dòng này vào model Employee cũ của bạn
+  timesheets Timesheet[]
+}
+
+// 1. Bảng định nghĩa các loại công (X, F, Ô...)
+model AttendanceCode {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique // Ví dụ: X, F, XD
+  name        String   // Ví dụ: Đi làm, Nghỉ phép
+  
+  // Nhóm chế độ (Lương thời gian, Ốm, Thai sản...)
+  category    String   
+  
+  // Hệ số: Thêm dấu ? để không bắt buộc nhập lúc này
+  factor      Float?   
+  
+  color       String?  // Màu sắc (để ? luôn cho thoải mái, nhập sau cũng được)
+  description String?  
+  
+  // Mối quan hệ ngược: Một loại công link tới NHIỀU dòng chấm công
+  timesheets  Timesheet[]
+}
+
+// 2. Bảng chấm công hàng ngày
+model Timesheet {
+  id               Int      @id @default(autoincrement())
+  date             DateTime // Ngày chấm công
+  
+  // Liên kết với Nhân viên
+  employeeId       Int
+  employee         Employee @relation(fields: [employeeId], references: [id])
+  
+  // Liên kết với Loại công
+  attendanceCodeId Int
+  attendanceCode   AttendanceCode @relation(fields: [attendanceCodeId], references: [id])
+  
+  note             String? // Ghi chú (VD: Đi muộn 30p)
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Đảm bảo 1 nhân viên trong 1 ngày chỉ có 1 dòng chấm công
+  @@unique([employeeId, date]) 
 }

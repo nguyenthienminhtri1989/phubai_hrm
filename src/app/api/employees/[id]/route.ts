@@ -50,7 +50,6 @@ export async function PATCH(
       gender,
       address,
       phone,
-      email,
       position,
       departmentId,
     } = body; // Lấy những thứ cần thiết từ cục hàng body ra để dùng (cập nhật)
@@ -69,7 +68,6 @@ export async function PATCH(
         gender: gender,
         address: address,
         phone: phone,
-        email: email,
         position: position,
         // FIX: Thêm kiểm tra departmentId trước khi parse để tránh NaN nếu lỡ null
         departmentId: departmentId ? parseInt(departmentId) : undefined,

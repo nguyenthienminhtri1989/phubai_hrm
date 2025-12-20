@@ -2,7 +2,12 @@
 "use client"; // Vì layout có tương tác (click menu) nên phải là Client Component
 
 import React, { useState } from "react";
-import { DesktopOutlined, TeamOutlined, BankOutlined } from "@ant-design/icons";
+import {
+  ApartmentOutlined,
+  TeamOutlined,
+  BankOutlined,
+  UnorderedListOutlined,
+} from "@ant-design/icons";
 import { Layout, Menu, theme } from "antd";
 import { useRouter, usePathname } from "next/navigation"; // Dùng để chuyển trang trong Next.js
 
@@ -13,10 +18,15 @@ const items = [
   { key: "/factories", icon: <BankOutlined />, label: "Quản lý Nhà máy" },
   {
     key: "/departments",
-    icon: <DesktopOutlined />,
+    icon: <ApartmentOutlined />,
     label: "Quản lý Phòng ban",
   },
   { key: "/employees", icon: <TeamOutlined />, label: "Quản lý Nhân viên" },
+  {
+    key: "/attendance-codes",
+    icon: <UnorderedListOutlined />,
+    label: "Danh mục chấm công",
+  },
 ];
 
 const AdminLayout = ({ children }: { children: React.ReactNode }) => {

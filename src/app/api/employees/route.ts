@@ -42,7 +42,6 @@ export async function POST(request: Request) {
       gender,
       address,
       phone,
-      email,
       position,
       departmentId, // bắt buộc
     } = body;
@@ -68,7 +67,6 @@ export async function POST(request: Request) {
         gender: gender,
         address: address,
         phone: phone,
-        email: email,
         position: position,
         departmentId: Number(departmentId), // Đảm bảo Id là số
       },
