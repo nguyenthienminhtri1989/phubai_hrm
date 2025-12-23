@@ -122,12 +122,19 @@ export default function AdminLayout({
             {
               key: "/timesheets/monthly",
               icon: <TableOutlined />,
-              label: <Link href="/timesheets/monthly">Tổng hợp</Link>,
+              label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
             },
             {
               key: "/dashboard",
               icon: <DashboardOutlined />,
-              label: <Link href="/dashboard">Báo cáo</Link>,
+              label: <Link href="/dashboard">Tổng quan</Link>,
+            },
+            {
+              key: "/dashboard/departments",
+              icon: <UnorderedListOutlined />, // Icon dạng danh sách
+              label: (
+                <Link href="/dashboard/departments">Chi tiết bộ phận</Link>
+              ),
             },
             // Chỉ hiện User nếu là ADMIN
             ...(session?.user?.role === "ADMIN"
