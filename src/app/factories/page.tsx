@@ -150,7 +150,7 @@ export default function FactoryPage() {
     {
       title: "Hành động",
       key: "action",
-      render: (_, record: Factory) => (
+      render: (_: any, record: Factory) => (
         <Space size="middle">
           {/* NÚT SỬA */}
           <Button

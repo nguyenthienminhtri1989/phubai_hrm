@@ -165,7 +165,7 @@ export default function DepartmentPage() {
       dataIndex: "code",
       key: "code", // Thêm key
       // SỬA LỖI: Thay vì dùng thuộc tính fontWeight (sai chuẩn), ta dùng render để bọc thẻ <b>
-      render: (text) => <b>{text}</b>,
+      render: (text: string) => <b>{text}</b>,
     },
     {
       title: "Tên Phòng Ban",
@@ -192,7 +192,7 @@ export default function DepartmentPage() {
     {
       title: "Hành động",
       key: "action",
-      render: (_, record) => (
+      render: (_: any, record: any) => (
         <>
           {/* Dùng Space để tạo khoảng cách giữa 2 nút cho đẹp */}
           <Button

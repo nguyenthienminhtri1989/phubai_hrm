@@ -258,7 +258,8 @@ export default function DashboardPage() {
                         paddingAngle={5}
                         dataKey="value"
                         label={({ name, percent }) =>
-                          `${name} ${(percent * 100).toFixed(0)}%`
+                          // Thêm đoạn (percent || 0) để bảo đảm luôn là số
+                          `${name} ${((percent || 0) * 100).toFixed(0)}%`
                         }
                       >
                         {stats.pieData.map((entry, index) => (

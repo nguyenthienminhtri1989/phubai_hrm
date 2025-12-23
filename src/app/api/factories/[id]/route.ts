@@ -1,58 +1,96 @@
 // src/app/api/factories/[id]/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { message } from "antd";
+import { auth } from "@/auth";
 
-// Hàm lấy ID từ URL (Ví dụ: /api/factories/1 -> id = 1)
-// params chính là object chứa { id : '1' }
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+// --- QUAN TRỌNG: Định nghĩa kiểu Props cho Next.js 15 ---
+type Props = {
+  params: Promise<{ id: string }>;
+};
+
+// 1. LẤY CHI TIẾT NHÀ MÁY (GET)
+export async function GET(request: Request, props: Props) {
   try {
+    const params = await props.params; // <--- Await params
     const id = parseInt(params.id);
 
-    // Xóa trong database
-    await prisma.factory.delete({
-      where: { id: id },
+    if (isNaN(id))
+      return NextResponse.json({ error: "ID không hợp lệ" }, { status: 400 });
+
+    const factory = await prisma.factory.findUnique({
+      where: { id },
     });
 
-    return NextResponse.json({ message: "Xóa thành công!" });
+    if (!factory)
+      return NextResponse.json({ error: "Không tìm thấy" }, { status: 404 });
+
+    return NextResponse.json(factory);
   } catch (error) {
-    // Lỗi thường gặp, không xóa được vì nhà máy này đang chứa phòng ban (Ràng buộc khóa ngoại)
-    return NextResponse.json(
-      {
-        error:
-          "Không thể xóa (Có thể do nhà máy này đang có phòng ban: " + error,
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+// 2. CẬP NHẬT NHÀ MÁY (PATCH) - Đây là hàm bị báo lỗi
+export async function PATCH(request: Request, props: Props) {
   try {
-    const id = parseInt(params.id); // Đổi chuỗi thành số
-    const body = await request.json();
-    const { code, name } = body;
+    const session = await auth();
+    if (session?.user?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
+    }
 
-    // Cập nhật dữ liệu
+    const params = await props.params; // <--- SỬA LỖI CHÍNH Ở ĐÂY
+    const id = parseInt(params.id);
+
+    if (isNaN(id))
+      return NextResponse.json({ error: "ID không hợp lệ" }, { status: 400 });
+
+    const body = await request.json();
+    const { name, code } = body;
+
     const updatedFactory = await prisma.factory.update({
-      where: { id: id },
-      data: {
-        code: code,
-        name: name,
-      },
+      where: { id },
+      data: { name, code },
     });
 
-    return NextResponse.json(updatedFactory); // Trả về dữ liệu mới thêm để trình duyệt hiển thị
+    return NextResponse.json(updatedFactory);
   } catch (error) {
-    return NextResponse.json(
-      { error: "Lỗi khi cập nhật: " + error },
-      { status: 500 }
-    );
+    console.error("Lỗi update factory:", error);
+    return NextResponse.json({ error: "Lỗi cập nhật" }, { status: 500 });
+  }
+}
+
+// 3. XÓA NHÀ MÁY (DELETE)
+export async function DELETE(request: Request, props: Props) {
+  try {
+    const session = await auth();
+    if (session?.user?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
+    }
+
+    const params = await props.params; // <--- Await params
+    const id = parseInt(params.id);
+
+    if (isNaN(id))
+      return NextResponse.json({ error: "ID không hợp lệ" }, { status: 400 });
+
+    // Kiểm tra ràng buộc trước khi xóa (có phòng ban nào không)
+    const departmentsCount = await prisma.department.count({
+      where: { factoryId: id },
+    });
+
+    if (departmentsCount > 0) {
+      return NextResponse.json(
+        { error: "Không thể xóa: Nhà máy này đang có phòng ban trực thuộc." },
+        { status: 400 }
+      );
+    }
+
+    await prisma.factory.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ message: "Đã xóa thành công" });
+  } catch (error) {
+    return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }

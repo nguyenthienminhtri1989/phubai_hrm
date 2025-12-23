@@ -242,7 +242,7 @@ export default function DailyTimesheetPage() {
       title: "STT",
       key: "index",
       width: 50,
-      align: "center",
+      align: "center" as const,
       // render nhận vào (text, record, index)
       render: (_: any, __: any, index: number) => (
         <span style={{ color: "#888", fontWeight: 600 }}>{index + 1}</span>
@@ -284,7 +284,7 @@ export default function DailyTimesheetPage() {
                   style={{
                     fontWeight: "bold",
                     minWidth: 40,
-                    textAlign: "center",
+                    textAlign: "center" as const,
                   }}
                 >
                   {code.code}
@@ -302,7 +302,7 @@ export default function DailyTimesheetPage() {
                 style={{
                   fontWeight: "bold",
                   width: "100%",
-                  textAlign: "center",
+                  textAlign: "center" as const,
                   margin: 0,
                 }}
               >

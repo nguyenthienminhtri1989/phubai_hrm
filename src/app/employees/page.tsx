@@ -211,7 +211,7 @@ export default function EmployeePage() {
       dataIndex: "code",
       key: "code",
       width: 100,
-      render: (text) => <b>{text}</b>,
+      render: (text: string) => <b>{text}</b>,
     },
     {
       title: "Họ tên",
@@ -243,14 +243,14 @@ export default function EmployeePage() {
       title: "Ngày sinh",
       dataIndex: "birthday",
       key: "birthday",
-      render: (dateString) =>
+      render: (dateString: any) =>
         dateString ? dayjs(dateString).format("DD/MM/YYYY") : "",
     },
     {
       title: "Giới tính",
       dataIndex: "gender",
       key: "gender",
-      render: (gender) =>
+      render: (gender: any) =>
         gender === "Nam" ? (
           <Tag color="blue">Nam</Tag>
         ) : (
@@ -266,7 +266,7 @@ export default function EmployeePage() {
       title: "Hành động",
       key: "action",
       width: 120,
-      render: (_, record) => (
+      render: (_: any, record: any) => (
         <Space>
           <Button
             type="text"
