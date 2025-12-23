@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import { useSession } from "next-auth/react";
 import {
   Table,
   Button,
@@ -53,6 +54,14 @@ interface Employee {
 }
 
 export default function EmployeePage() {
+  const { data: session } = useSession();
+  // 1. Biến thần thánh kiểm tra quyền
+  // LOGIC MỚI: Cả LEADER và TIMEKEEPER đều không được sửa danh mục
+  // (Chỉ ADMIN và HR_MANAGER mới được sửa)
+  const isViewOnly = !["ADMIN", "HR_MANAGER"].includes(
+    session?.user?.role || ""
+  );
+
   // --- STATE DỮ LIỆU ---
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -140,7 +149,7 @@ export default function EmployeePage() {
         message.error(errorData.error || "Lỗi khi xóa");
       }
     } catch (error) {
-      message.error("Lỗi kết nối");
+      message.error("Lỗi kết nối: " + error);
     }
   };
 
@@ -276,7 +285,11 @@ export default function EmployeePage() {
         </Space>
       ),
     },
-  ];
+  ].filter((col) => {
+    // Nếu là Leader VÀ cột là 'action' -> Loại bỏ (return false)
+    if (isViewOnly && col.key === "action") return false;
+    return true;
+  });
 
   return (
     <AdminLayout>
@@ -288,10 +301,16 @@ export default function EmployeePage() {
           alignItems: "center",
         }}
       >
-        <h2>Quản lý nhân sự ({filteredEmployees.length} nhân viên)</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
-          Thêm nhân viên
-        </Button>
+        <h2 className="text-2xl font-bold">
+          Quản lý nhân sự ({filteredEmployees.length} nhân viên)
+        </h2>
+
+        {/* 3. Chỉ hiện nút Thêm mới nếu được phép sửa */}
+        {!isViewOnly && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
+            Thêm nhân viên
+          </Button>
+        )}
       </div>
 
       {/* --- KHU VỰC BỘ LỌC --- */}

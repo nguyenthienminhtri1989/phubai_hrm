@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import { useSession } from "next-auth/react";
 import {
   Table,
   Button,
@@ -23,6 +24,15 @@ interface Factory {
 }
 
 export default function FactoryPage() {
+  const { data: session } = useSession();
+  // Định nghĩa chế độ CHỈ XEM
+  // 1. Biến thần thánh kiểm tra quyền
+  // LOGIC MỚI: Cả LEADER và TIMEKEEPER đều không được sửa danh mục
+  // (Chỉ ADMIN và HR_MANAGER mới được sửa)
+  const isViewOnly = !["ADMIN", "HR_MANAGER"].includes(
+    session?.user?.role || ""
+  );
+
   // --- PHẦN 1: QUẢN LÝ TRẠNG THÁI (STATE) ---
   const [factories, setFactories] = useState<Factory[]>([]); // Chứa danh sách nhà máy
   const [loading, setLoading] = useState(false); // Trạng thái đang tải xoay vòng vòng
@@ -162,7 +172,11 @@ export default function FactoryPage() {
         </Space>
       ),
     },
-  ];
+  ].filter((col) => {
+    // Nếu là Leader VÀ cột là 'action' -> Loại bỏ (return false)
+    if (isViewOnly && col.key === "action") return false;
+    return true;
+  });
 
   // --- PHẦN 4: GIAO DIỆN NGƯỜI DÙNG (UI) ---
   return (
@@ -176,9 +190,13 @@ export default function FactoryPage() {
       >
         <h2>Quản lý Nhà máy</h2>
         {/* Gọi hàm openAddModal thay vì set trực tiếp */}
-        <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
-          Thêm Nhà máy
-        </Button>
+
+        {/* 3. Chỉ hiện nút Thêm mới nếu được phép sửa */}
+        {!isViewOnly && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
+            Thêm Nhà máy
+          </Button>
+        )}
       </div>
 
       {/* Bảng dữ liệu */}

@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import { useSession } from "next-auth/react";
 // Chú ý: Import thêm Select
 import {
   Table,
@@ -16,12 +17,7 @@ import {
   Popconfirm,
   type TableProps,
 } from "antd";
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  ConsoleSqlOutlined,
-} from "@ant-design/icons";
+import { PlusOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
 import { prisma } from "@/lib/prisma";
 import { title } from "process";
 
@@ -44,6 +40,14 @@ interface Department {
 }
 
 export default function DepartmentPage() {
+  const { data: session } = useSession();
+  // 1. Biến thần thánh kiểm tra quyền
+  // LOGIC MỚI: Cả LEADER và TIMEKEEPER đều không được sửa danh mục
+  // (Chỉ ADMIN và HR_MANAGER mới được sửa)
+  const isViewOnly = !["ADMIN", "HR_MANAGER"].includes(
+    session?.user?.role || ""
+  );
+
   const [departments, setDepartments] = useState<Department[]>([]);
   // THÊM: State để chứa danh sách nhà máy (dùng cho Dropdown)
   const [factories, setFactories] = useState<Factory[]>([]);
@@ -210,7 +214,11 @@ export default function DepartmentPage() {
         </>
       ),
     },
-  ];
+  ].filter((col) => {
+    // Nếu là Leader VÀ cột là 'action' -> Loại bỏ (return false)
+    if (isViewOnly && col.key === "action") return false;
+    return true;
+  });
 
   // --- GIAO DIỆN NGƯỜI DÙNG ---
   return (
@@ -224,9 +232,13 @@ export default function DepartmentPage() {
       >
         <h2>Quản lý Phòng Ban - Bộ phận</h2>
         {/* Gọi hàm openAddModal thay vì set trực tiếp */}
-        <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
-          Thêm Bộ Phận
-        </Button>
+
+        {/* 3. Chỉ hiện nút Thêm mới nếu được phép sửa */}
+        {!isViewOnly && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
+            Thêm Bộ Phận
+          </Button>
+        )}
       </div>
       <Table
         dataSource={departments}

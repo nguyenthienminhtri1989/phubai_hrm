@@ -26,8 +26,11 @@ model Department {
   // Khóa ngoại liên kết nhà máy
   factoryId Int      
   factory   Factory   @relation(fields: [factoryId], references: [id])
-
   employees Employee[] // Quan hệ ngược: 1 phòng có nhiều nhân viên
+  // Thêm dòng này: Những user nào quản lý phòng này?
+  managers User[]
+  // --> THÊM DÒNG NÀY VÀO:
+  timesheetLocks TimesheetLock[]
 }
 
 // 3. Bảng Nhân Viên
@@ -88,3 +91,43 @@ model Timesheet {
   // Đảm bảo 1 nhân viên trong 1 ngày chỉ có 1 dòng chấm công
   @@unique([employeeId, date]) 
 }
+
+// 1. Thêm Enum cho các Vai trò (Role)
+enum Role {
+  ADMIN       // Quản trị hệ thống cao nhất
+  HR_MANAGER  // Quản lý nhân sự (Sửa danh mục, xem tất cả)
+  LEADER      // Lãnh đạo (Chỉ xem)
+  TIMEKEEPER  // Người chấm công (Chỉ được chấm các phòng được giao)
+}
+
+// 2. Thêm bảng User
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique // Dùng tên đăng nhập (vd: to1, admin) thay vì email
+  password  String   // Mật khẩu đã mã hóa
+  fullName  String?
+  role      Role     @default(TIMEKEEPER)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Quan hệ Nhiều-Nhiều: Một User quản lý nhiều Phòng ban
+  managedDepartments Department[] 
+}
+
+// Bảng lưu trạng thái khóa sổ chấm công
+model TimesheetLock {
+  id           Int      @id @default(autoincrement())
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+  month        Int      // Tháng (1-12)
+  year         Int      // Năm (2025)
+  isLocked     Boolean  @default(false)
+  
+  lockedBy     String?  // Ai là người khóa (lưu username)
+  updatedAt    DateTime @updatedAt
+
+  // Đảm bảo mỗi phòng ban trong 1 tháng chỉ có 1 dòng trạng thái
+  @@unique([departmentId, month, year])
+}
+

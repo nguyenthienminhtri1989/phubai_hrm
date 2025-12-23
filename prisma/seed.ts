@@ -1,5 +1,6 @@
 // prisma/seed.ts
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Role } from "@prisma/client";
+import * as bcrypt from "bcryptjs"; // Import thư viện mã hóa
 
 const prisma = new PrismaClient();
 
@@ -95,7 +96,37 @@ async function main() {
     });
   }
 
+  // TẠO USER ADMIN
+  const hashedPassword = await bcrypt.hash("150489", 10); // Mật khẩu là 150489
+
+  const admin = await prisma.user.upsert({
+    where: { username: "admin" },
+    update: {},
+    create: {
+      username: "admin",
+      password: hashedPassword,
+      fullName: "Quản trị viên",
+      role: Role.ADMIN,
+    },
+  });
+
+  // TẠO USER TRƯỞNG PHÒNG ĐIỆN (Quản lý Phòng Điện NM1 và NM3)
+  const tpDien = await prisma.user.upsert({
+    where: { username: "truongca1" },
+    update: {},
+    create: {
+      username: "tpdien",
+      password: hashedPassword,
+      fullName: "Trưởng Phòng Điện",
+      role: Role.TIMEKEEPER,
+      managedDepartments: {
+        connect: [{ id: 19 }, { id: 74 }], // Kết nối với 2 phòng ban
+      },
+    },
+  });
+
   console.log("✅ Đã nạp xong danh mục chấm công!");
+  console.log({ admin, tpDien });
 }
 
 main()

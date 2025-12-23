@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import { useSession } from "next-auth/react";
 import {
   Table,
   Button,
@@ -17,7 +18,17 @@ import {
   Space,
 } from "antd";
 import { PlusOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
-import type { Color } from "antd/es/color-picker";
+
+// 1. ĐỊNH NGHĨA INTERFACE (KHUÔN MẪU DỮ LIỆU)
+interface AttendanceCode {
+  id: number;
+  code: string;
+  name: string;
+  category: string;
+  factor?: number; // Dấu ? vì có thể null
+  color: string;
+  description?: string;
+}
 
 // Định nghĩa các nhóm chế độ để hiển thị cho đẹp
 const CATEGORY_OPTIONS = [
@@ -30,7 +41,15 @@ const CATEGORY_OPTIONS = [
 ];
 
 export default function AttendanceCodePage() {
-  const [codes, setCodes] = useState<any[]>([]);
+  const { data: session } = useSession();
+  // 1. Biến thần thánh kiểm tra quyền
+  // LOGIC MỚI: Cả LEADER và TIMEKEEPER đều không được sửa danh mục
+  // (Chỉ ADMIN và HR_MANAGER mới được sửa)
+  const isViewOnly = !["ADMIN", "HR_MANAGER"].includes(
+    session?.user?.role || ""
+  );
+
+  const [codes, setCodes] = useState<AttendanceCode[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
@@ -105,7 +124,7 @@ export default function AttendanceCodePage() {
   };
 
   // 4. Mở Modal Sửa
-  const handleEdit = (record: any) => {
+  const handleEdit = (record: AttendanceCode) => {
     setEditingId(record.id);
     form.setFieldsValue(record);
     setIsModalOpen(true);
@@ -116,7 +135,7 @@ export default function AttendanceCodePage() {
       title: "Mã",
       dataIndex: "code",
       width: 80,
-      render: (text: string, record: any) => (
+      render: (text: string, record: AttendanceCode) => (
         <Tag
           color={record.color}
           style={{ fontWeight: "bold", minWidth: 40, textAlign: "center" }}
@@ -165,7 +184,8 @@ export default function AttendanceCodePage() {
     },
     {
       title: "Hành động",
-      render: (_: any, record: any) => (
+      key: "action",
+      render: (_: AttendanceCode, record: AttendanceCode) => (
         <Space>
           <Button
             icon={<EditOutlined />}
@@ -182,7 +202,11 @@ export default function AttendanceCodePage() {
         </Space>
       ),
     },
-  ];
+  ].filter((col) => {
+    // Nếu là Leader VÀ cột là 'action' -> Loại bỏ (return false)
+    if (isViewOnly && col.key === "action") return false;
+    return true;
+  });
 
   return (
     <AdminLayout>
@@ -194,19 +218,23 @@ export default function AttendanceCodePage() {
         }}
       >
         <h2>Danh mục Ký hiệu chấm công</h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => {
-            setEditingId(null);
-            form.resetFields();
-            // Mặc định chọn màu xanh lá cho đẹp
-            form.setFieldValue("color", "#1677ff");
-            setIsModalOpen(true);
-          }}
-        >
-          Thêm ký hiệu mới
-        </Button>
+
+        {/* 3. Chỉ hiện nút Thêm mới nếu được phép sửa */}
+        {!isViewOnly && (
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setEditingId(null);
+              form.resetFields();
+              // Mặc định chọn màu xanh lá cho đẹp
+              form.setFieldValue("color", "#1677ff");
+              setIsModalOpen(true);
+            }}
+          >
+            Thêm ký hiệu mới
+          </Button>
+        )}
       </div>
 
       <Table
