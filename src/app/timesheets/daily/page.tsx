@@ -148,10 +148,13 @@ export default function DailyTimesheetPage() {
   }, [departments]);
 
   // B. Lọc danh sách Phòng ban theo Nhà máy đã chọn
+  // SỬA LỖI: Lọc từ 'availableDepartments' để đảm bảo quyền hạn, sau đó mới lọc theo factoryId
   const filteredDepartments = useMemo(() => {
     if (!selectedFactoryId) return [];
-    return departments.filter((d) => d.factory?.id === selectedFactoryId);
-  }, [departments, selectedFactoryId]);
+    return availableDepartments.filter(
+      (d) => d.factory?.id === selectedFactoryId
+    );
+  }, [availableDepartments, selectedFactoryId]);
 
   // 2. Hàm tải bảng chấm công
   const fetchTimesheetData = async () => {
@@ -395,7 +398,8 @@ export default function DailyTimesheetPage() {
               showSearch
               optionFilterProp="children"
             >
-              {availableDepartments.map((d) => (
+              {/* SỬA LỖI: Dùng filteredDepartments thay vì availableDepartments */}
+              {filteredDepartments.map((d) => (
                 <Select.Option key={d.id} value={d.id}>
                   {d.name}
                 </Select.Option>
