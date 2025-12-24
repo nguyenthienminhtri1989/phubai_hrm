@@ -70,6 +70,16 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { date, departmentId, records } = body; // Nhớ gửi departmentId từ Client lên nhé
     // record là mảng: [{ employeeId: 1, attendanceCodeId: 2, note: '...' }, ...]
+
+    // --- THÊM ĐOẠN KIỂM TRA NÀY ---
+    if (!departmentId || !date || !records) {
+      return NextResponse.json(
+        { error: "Thiếu thông tin bắt buộc (departmentId, date, records)" },
+        { status: 400 }
+      );
+    }
+    // -----------------------------
+
     const dateObj = new Date(date);
     const month = dateObj.getMonth() + 1;
     const year = dateObj.getFullYear();

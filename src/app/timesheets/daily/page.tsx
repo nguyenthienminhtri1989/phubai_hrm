@@ -18,7 +18,6 @@ import {
 } from "antd";
 import {
   SaveOutlined,
-  CheckSquareOutlined,
   ReloadOutlined,
   FilterOutlined,
 } from "@ant-design/icons";
@@ -214,6 +213,7 @@ export default function DailyTimesheetPage() {
     try {
       const payload = {
         date: selectedDate.format("YYYY-MM-DD"),
+        departmentId: selectedDeptId, // <--- BẮT BUỘC PHẢI THÊM DÒNG NÀY
         records: employees.map((e) => ({
           employeeId: e.employeeId,
           attendanceCodeId: e.attendanceCodeId,

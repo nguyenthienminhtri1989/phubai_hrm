@@ -89,7 +89,7 @@ model Timesheet {
   updatedAt        DateTime @updatedAt
 
   // Đảm bảo 1 nhân viên trong 1 ngày chỉ có 1 dòng chấm công
-  @@unique([employeeId, date]) 
+  @@unique([employeeId, date], name: "employeeId_date")
 }
 
 // 1. Thêm Enum cho các Vai trò (Role)
@@ -127,7 +127,8 @@ model TimesheetLock {
   lockedBy     String?  // Ai là người khóa (lưu username)
   updatedAt    DateTime @updatedAt
 
-  // Đảm bảo mỗi phòng ban trong 1 tháng chỉ có 1 dòng trạng thái
-  @@unique([departmentId, month, year])
+  // --- SỬA DÒNG NÀY ---
+  // Thêm name: "departmentId_month_year" để khớp với code API
+  @@unique([departmentId, month, year], name: "departmentId_month_year")
 }
 
