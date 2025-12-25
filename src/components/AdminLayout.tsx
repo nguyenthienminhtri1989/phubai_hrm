@@ -15,6 +15,8 @@ import {
   MenuUnfoldOutlined,
   MenuFoldOutlined,
   DownOutlined,
+  QuestionCircleOutlined,
+  AppstoreOutlined, // <-- Thêm cái này (biểu tượng 4 ô vuông)
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -94,25 +96,33 @@ export default function AdminLayout({
           mode="inline"
           defaultSelectedKeys={[pathname]}
           items={[
+            // 2. NHÓM QUẢN LÝ DANH MỤC
             {
-              key: "/factories",
-              icon: <BankOutlined />,
-              label: <Link href="/factories">Danh mục nhà máy</Link>,
-            },
-            {
-              key: "/departments",
-              icon: <ApartmentOutlined />,
-              label: <Link href="/departments">Danh mục bộ phận</Link>,
-            },
-            {
-              key: "/employees",
-              icon: <TeamOutlined />,
-              label: <Link href="/employees">Danh mục nhân viên</Link>,
-            },
-            {
-              key: "/attendance-codes",
-              icon: <UnorderedListOutlined />,
-              label: <Link href="/attendance-codes">Ký hiệu chấm công</Link>,
+              key: "catalog-management", // Key này tên tùy ý
+              icon: <AppstoreOutlined />, // Icon cho menu cha
+              label: "Danh mục", // Tên hiển thị menu cha
+              children: [
+                {
+                  key: "/factories",
+                  icon: <BankOutlined />,
+                  label: <Link href="/factories">Nhà máy</Link>,
+                },
+                {
+                  key: "/departments",
+                  icon: <ApartmentOutlined />,
+                  label: <Link href="/departments">Phòng ban</Link>,
+                },
+                {
+                  key: "/employees",
+                  icon: <TeamOutlined />,
+                  label: <Link href="/employees">Nhân viên</Link>,
+                },
+                {
+                  key: "/attendance-codes",
+                  icon: <UnorderedListOutlined />,
+                  label: <Link href="/attendance-codes">Ký hiệu</Link>,
+                },
+              ],
             },
             {
               key: "/timesheets/daily",
@@ -146,6 +156,11 @@ export default function AdminLayout({
                   },
                 ]
               : []),
+            {
+              key: "/help", // Đường dẫn khớp với folder bạn vừa tạo
+              icon: <QuestionCircleOutlined />,
+              label: <Link href="/help">Hướng dẫn</Link>,
+            },
           ]}
         />
       </Sider>
