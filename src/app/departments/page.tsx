@@ -155,7 +155,7 @@ export default function DepartmentPage() {
       title: "Mã Phòng",
       dataIndex: "code",
       key: "code",
-      render: (text) => <b>{text}</b>,
+      render: (text: string) => <b>{text}</b>,
     },
     { title: "Tên Phòng Ban", dataIndex: "name", key: "name" },
     {
