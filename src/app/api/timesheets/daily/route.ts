@@ -1,65 +1,81 @@
-// src/app/api/timesheets/daily/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth"; // <--- THÊM DÒNG NÀY
+import { auth } from "@/auth";
 
-// 1. LẤY DỮ LIỆU CHẤM CÔNG CỦA 1 PHÒNG BAN TRONG 1 NGÀY
+// 1. LẤY DỮ LIỆU CHẤM CÔNG
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const departmentId = searchParams.get("departmentId");
-    const dateStr = searchParams.get("date"); // Dạng YYYY-MM-DD
+    const dateStr = searchParams.get("date");
+    const kipIdsStr = searchParams.get("kipIds");
 
-    if (!departmentId || !dateStr) {
+    if (!dateStr) {
       return NextResponse.json(
-        {
-          error: "Thiếu thông tin phòng ban hoặc ngày",
-        },
+        { error: "Thiếu ngày chấm công" },
         { status: 400 }
       );
     }
 
-    // Chuyển ngày về dạng chuẩn Date chuẩn UTC (T00:00:00.000Z) để so sánh chính xác
     const targetDate = new Date(`${dateStr}T00:00:00.000Z`);
+    const whereCondition: any = {};
 
-    // Lấy tất cả nhân viên của phòng ban đó
+    // Logic lọc:
+    // 1. Nếu có departmentId -> Lọc theo Phòng (Đây là phòng KHÔNG thuộc Kíp)
+    if (departmentId && departmentId !== "null" && departmentId !== "") {
+      whereCondition.departmentId = parseInt(departmentId);
+    }
+
+    // 2. Nếu có kipIds -> Lọc theo Kíp (Các bộ phận sản xuất)
+    if (kipIdsStr && kipIdsStr !== "") {
+      const kipIds = kipIdsStr.split(",").map(Number);
+      whereCondition.kipId = { in: kipIds };
+    }
+
+    // Nếu không chọn gì cả -> Trả về rỗng
+    if (Object.keys(whereCondition).length === 0) {
+      return NextResponse.json([]);
+    }
+
     const employees = await prisma.employee.findMany({
-      where: { departmentId: parseInt(departmentId) },
-      orderBy: { fullName: "asc" },
+      where: whereCondition,
+      orderBy: [
+        { kip: { name: "asc" } }, // Ưu tiên xếp theo Kíp
+        { department: { name: "asc" } }, // Sau đó đến tên bộ phận
+        { fullName: "asc" }, // Cuối cùng là tên
+      ],
       include: {
-        // Kèm theo dữ liệu chấm công của đúng ngày đó thôi
         timesheets: {
           where: { date: targetDate },
-          include: { attendanceCode: true }, // Lấy luôn chi tiết mã công để hiện màu nếu cần
+          include: { attendanceCode: true },
         },
+        kip: true,
+        department: true,
       },
     });
 
-    // Biến đổi dữ liệu cho Client dễ dùng
     const data = employees.map((emp) => {
-      // Lấy record chấm công đầu tiên (nếu có)
       const timesheet = emp.timesheets[0];
-
       return {
         employeeId: emp.id,
         employeeCode: emp.code,
         fullName: emp.fullName,
-        // Nếu có data thì lấy ID, không thì null
+        departmentName: emp.department?.name,
+        kipName: emp.kip?.name,
         attendanceCodeId: timesheet ? timesheet.attendanceCodeId : null,
         note: timesheet ? timesheet.note : "",
-        // --- MỚI: Lấy thêm thời gian cập nhật ---
         updatedAt: timesheet ? timesheet.updatedAt : null,
       };
     });
 
     return NextResponse.json(data);
   } catch (error) {
-    console.log("Lỗi lấy dữ liệu chấm công: ", error);
-    NextResponse.json({ error: "Lỗi server" }, { status: 500 });
+    console.log("Lỗi lấy dữ liệu: ", error);
+    return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }
 
-// 2. LƯU DỮ LIỆU CHẤM CÔNG (HÀNG LOẠT)
+// 2. LƯU DỮ LIỆU
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -68,72 +84,59 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { date, departmentId, records } = body; // Nhớ gửi departmentId từ Client lên nhé
-    // record là mảng: [{ employeeId: 1, attendanceCodeId: 2, note: '...' }, ...]
+    const { date, departmentId, records } = body;
 
-    // --- THÊM ĐOẠN KIỂM TRA NÀY ---
-    if (!departmentId || !date || !records) {
+    if (!date || !records) {
       return NextResponse.json(
-        { error: "Thiếu thông tin bắt buộc (departmentId, date, records)" },
+        { error: "Thiếu thông tin bắt buộc" },
         { status: 400 }
       );
-    }
-    // -----------------------------
-
-    const dateObj = new Date(date);
-    const month = dateObj.getMonth() + 1;
-    const year = dateObj.getFullYear();
-
-    // --- LOGIC KIỂM TRA KHÓA SỔ ---
-
-    // 1. Kiểm tra xem tháng này của phòng này đã khóa chưa
-    const lockRecord = await prisma.timesheetLock.findUnique({
-      where: {
-        departmentId_month_year: {
-          departmentId: Number(departmentId), // Đảm bảo là số
-          month: month,
-          year: year,
-        },
-      },
-    });
-
-    const isLocked = lockRecord?.isLocked || false;
-
-    // 2. Nếu ĐÃ KHÓA
-    if (isLocked) {
-      // Nếu là TIMEKEEPER -> CHẶN ĐỨNG
-      if (session.user.role === "TIMEKEEPER") {
-        return NextResponse.json(
-          {
-            error: `Bảng công tháng ${month}/${year} đã bị KHÓA SỔ. Vui lòng liên hệ Phòng Nhân sự.`,
-          },
-          { status: 403 }
-        );
-      }
-
-      // Nếu là ADMIN hoặc HR_MANAGER -> CHO PHÉP (Quyền sửa đổi phút cuối)
-      // (Code chạy tiếp xuống dưới)
     }
 
     const targetDate = new Date(`${date}T00:00:00.000Z`);
 
-    // Dùng Transaction để đảm bảo an toàn dữ liệu
+    // --- KIỂM TRA KHÓA SỔ ---
+    // Chỉ kiểm tra nếu người dùng chấm theo Phòng Ban cụ thể (có departmentId)
+    // Nếu chấm theo Kíp (departmentId = null), tạm thời bỏ qua check khóa sổ phòng ban
+    // (Hoặc logic này sẽ được nâng cấp sau để check khóa sổ của từng phòng trong kíp)
+    if (departmentId) {
+      const dateObj = new Date(date);
+      const month = dateObj.getMonth() + 1;
+      const year = dateObj.getFullYear();
+
+      const lockRecord = await prisma.timesheetLock.findUnique({
+        where: {
+          departmentId_month_year: {
+            departmentId: Number(departmentId),
+            month: month,
+            year: year,
+          },
+        },
+      });
+
+      if (lockRecord?.isLocked) {
+        if (session.user.role === "TIMEKEEPER") {
+          return NextResponse.json(
+            { error: `Bảng công tháng ${month}/${year} đã bị KHÓA SỔ.` },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
     await prisma.$transaction(
       records.map((rec: any) =>
         prisma.timesheet.upsert({
           where: {
-            // Ràng buộc Unique mà ta đã định nghĩa trong schema
             employeeId_date: {
               employeeId: rec.employeeId,
               date: targetDate,
             },
           },
-          // Nếu đã có -> Update
           update: {
             attendanceCodeId: rec.attendanceCodeId,
             note: rec.note,
           },
-          // Nếu chưa có -> Create mới
           create: {
             date: targetDate,
             employeeId: rec.employeeId,
@@ -144,9 +147,9 @@ export async function POST(request: Request) {
       )
     );
 
-    return NextResponse.json({ message: "Đã lưu chấm công thành công!" });
+    return NextResponse.json({ message: "Đã lưu thành công!" });
   } catch (error) {
-    console.error("Lôi lưu chấm công: ", error);
+    console.error("Lỗi lưu chấm công: ", error);
     return NextResponse.json({ error: "Lỗi khi lưu dữ liệu" }, { status: 500 });
   }
 }

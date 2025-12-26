@@ -16,6 +16,7 @@ export async function GET() {
             factory: true, // Lấy luôn thông tin nhà máy của phòng ban đó
           },
         },
+        kip: true, // Để hiển thị kíp ra bảng
       },
     });
 
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
       phone,
       position,
       departmentId, // bắt buộc
+      kipId,
     } = body;
 
     // Kiểm tra dữ liệu bắt buộc
@@ -69,6 +71,7 @@ export async function POST(request: Request) {
         phone: phone,
         position: position,
         departmentId: Number(departmentId), // Đảm bảo Id là số
+        kipId: kipId ? Number(kipId) : null,
       },
     });
 

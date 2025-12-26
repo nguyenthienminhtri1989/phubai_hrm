@@ -1,10 +1,9 @@
 // src/app/departments/pages.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react"; // Thêm useMemo
 import AdminLayout from "@/components/AdminLayout";
 import { useSession } from "next-auth/react";
-// Chú ý: Import thêm Select
 import {
   Table,
   Button,
@@ -15,13 +14,17 @@ import {
   Select,
   Tag,
   Popconfirm,
+  Space, // Import thêm Space để căn chỉnh nút và ô lọc
   type TableProps,
 } from "antd";
-import { PlusOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
-import { prisma } from "@/lib/prisma";
-import { title } from "process";
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  FilterOutlined,
+} from "@ant-design/icons";
 
-// Định nghĩa kiểu dữ liệu
+// ... (Giữ nguyên các Interface Factory và Department như cũ)
 interface Factory {
   id: number;
   name: string;
@@ -33,7 +36,6 @@ interface Department {
   code: string;
   name: string;
   factoryId?: number;
-  // Vì trong API ta đã dùng include: { factory: true } nên kết quả sẽ có object factory
   factory?: {
     name: string;
   };
@@ -41,37 +43,34 @@ interface Department {
 
 export default function DepartmentPage() {
   const { data: session } = useSession();
-  // 1. Biến thần thánh kiểm tra quyền
-  // LOGIC MỚI: Cả LEADER và TIMEKEEPER đều không được sửa danh mục
-  // (Chỉ ADMIN và HR_MANAGER mới được sửa)
   const isViewOnly = !["ADMIN", "HR_MANAGER"].includes(
     session?.user?.role || ""
   );
 
   const [departments, setDepartments] = useState<Department[]>([]);
-  // THÊM: State để chứa danh sách nhà máy (dùng cho Dropdown)
   const [factories, setFactories] = useState<Factory[]>([]);
+
+  // --- 1. STATE MỚI CHO BỘ LỌC ---
+  const [filterFactoryId, setFilterFactoryId] = useState<number | null>(null);
+  // ------------------------------
+
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
-  // State mới, lưu ID của dòng đang sửa (nếu null nghĩa là đang thêm mới)
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // --- TẢI DỮ LIỆU ---
+  // ... (Giữ nguyên hàm fetchDepartment và useEffect như cũ)
   const fetchDepartment = async () => {
     setLoading(true);
     try {
-      // Gọi song song cả 2 API cùng lúc cho nhanh
       const [deptRes, facRes] = await Promise.all([
         fetch("/api/departments"),
         fetch("/api/factories"),
       ]);
-
       const deptData = await deptRes.json();
       const factData = await facRes.json();
-
       setDepartments(deptData);
-      setFactories(factData); // Lưu danh sách nhà máy để lát dùng
+      setFactories(factData);
     } catch (error) {
       message.error("Lỗi tải dữ liệu");
     } finally {
@@ -83,16 +82,13 @@ export default function DepartmentPage() {
     fetchDepartment();
   }, []);
 
-  // --- HÀM XỬ LÝ XÓA ---
+  // ... (Giữ nguyên hàm handleDelete, handleEdit, openAddModal, handleOK)
   const handleDelete = async (id: number) => {
     try {
-      const res = await fetch(`/api/departments/${id}`, {
-        method: "DELETE",
-      });
-
+      const res = await fetch(`/api/departments/${id}`, { method: "DELETE" });
       if (res.ok) {
         message.success("Đã xóa thành công!");
-        fetchDepartment(); // Load lại bảng
+        fetchDepartment();
       } else {
         const errorData = await res.json();
         message.error(errorData.error || "Lỗi khi xóa");
@@ -102,29 +98,21 @@ export default function DepartmentPage() {
     }
   };
 
-  // --- HÀM MỞ MODAL ĐỂ SỬA
   const handleEdit = (record: Department) => {
-    setEditingId(record.id); // Đánh dấu là đang sửa ID này
-    form.setFieldsValue(record); // Điền dữ liệu cũ vào form
-    setIsModalOpen(true); // Mở modal lên
-  };
-
-  // --- HÀM MỞ MODAL ĐỂ THÊM MỚI
-  const openAddModal = () => {
-    setEditingId(null); // Thêm mới chứ không phải sửa
-    form.resetFields(); // Xóa trắng form
+    setEditingId(record.id);
+    form.setFieldsValue(record);
     setIsModalOpen(true);
   };
 
-  // --- HÀM LƯU, XỬ LÝ CẢ THÊM VÀ SỬA ---
+  const openAddModal = () => {
+    setEditingId(null);
+    form.resetFields();
+    setIsModalOpen(true);
+  };
+
   const handleOK = async () => {
     try {
       const values = await form.validateFields();
-
-      // LOGIC Phân luồng
-      // Nếu editingId có giá trị -> Gọi API sửa (PATCH)
-      // Nếu editingId = null -> Gọi API thêm mới (POST)
-
       const url = editingId
         ? `/api/departments/${editingId}`
         : "/api/departments";
@@ -140,10 +128,10 @@ export default function DepartmentPage() {
         message.success(
           editingId ? "Cập nhật thành công!" : "Thêm mới thành công!"
         );
-        setIsModalOpen(false); // Đóng modal
-        form.resetFields(); // Xóa trắng form sau khi nhập
-        setEditingId(null); // Reset giá trị
-        fetchDepartment(); // Tải lại dữ liệu để thấy bản ghi mới
+        setIsModalOpen(false);
+        form.resetFields();
+        setEditingId(null);
+        fetchDepartment();
       } else {
         message.error("Có lỗi xảy ra");
       }
@@ -152,40 +140,35 @@ export default function DepartmentPage() {
     }
   };
 
-  // --- CẤU HÌNH CỘT CHO BẢNG (Đã sửa lỗi TypeScript) ---
+  // --- 2. LOGIC LỌC DỮ LIỆU ---
+  // Tạo danh sách mới dựa trên filterFactoryId
+  const filteredDepartments = useMemo(() => {
+    if (!filterFactoryId) return departments; // Nếu không chọn gì thì trả về hết
+    return departments.filter((dept) => dept.factoryId === filterFactoryId);
+  }, [departments, filterFactoryId]);
+  // ---------------------------
+
+  // ... (Giữ nguyên columns)
   const columns: TableProps<Department>["columns"] = [
-    {
-      title: "ID",
-      dataIndex: "id",
-      key: "id", // Thêm key rõ ràng
-      width: 50,
-    },
+    { title: "ID", dataIndex: "id", key: "id", width: 50 },
     {
       title: "Mã Phòng",
       dataIndex: "code",
-      key: "code", // Thêm key
-      // SỬA LỖI: Thay vì dùng thuộc tính fontWeight (sai chuẩn), ta dùng render để bọc thẻ <b>
-      render: (text: string) => <b>{text}</b>,
+      key: "code",
+      render: (text) => <b>{text}</b>,
     },
-    {
-      title: "Tên Phòng Ban",
-      dataIndex: "name",
-      key: "name", // Thêm key
-    },
+    { title: "Tên Phòng Ban", dataIndex: "name", key: "name" },
     {
       title: "Thuộc Nhà Máy",
-      dataIndex: "factory", // Dữ liệu trả về từ API phải include factory
+      dataIndex: "factory",
       key: "factory",
       render: (factory: Factory) => {
         if (!factory) return null;
-
-        // Mapping màu cho Tag (blue, red, green, gold, cyan...)
         let color = "default";
         if (factory.code === "HC") color = "red";
         else if (factory.code === "NM1") color = "blue";
         else if (factory.code === "NM2") color = "green";
         else if (factory.code === "NM3") color = "#faad14";
-
         return <Tag color={color}>{factory.name}</Tag>;
       },
     },
@@ -194,17 +177,14 @@ export default function DepartmentPage() {
       key: "action",
       render: (_: any, record: any) => (
         <>
-          {/* Dùng Space để tạo khoảng cách giữa 2 nút cho đẹp */}
           <Button
             type="text"
             icon={<EditOutlined />}
             style={{ color: "blue" }}
             onClick={() => handleEdit(record)}
           />
-          {/* Nút xóa có xác nhận */}
           <Popconfirm
             title="Xóa bộ phận này?"
-            description="Hành động này không thể hoàn tác."
             onConfirm={() => handleDelete(record.id)}
             okText="Xóa"
             cancelText="Hủy"
@@ -215,12 +195,10 @@ export default function DepartmentPage() {
       ),
     },
   ].filter((col) => {
-    // Nếu là Leader VÀ cột là 'action' -> Loại bỏ (return false)
     if (isViewOnly && col.key === "action") return false;
     return true;
   });
 
-  // --- GIAO DIỆN NGƯỜI DÙNG ---
   return (
     <AdminLayout>
       <div
@@ -228,26 +206,53 @@ export default function DepartmentPage() {
           marginBottom: 16,
           display: "flex",
           justifyContent: "space-between",
+          alignItems: "center", // Căn giữa theo chiều dọc
         }}
       >
-        <h2>Quản lý Phòng Ban - Bộ phận</h2>
-        {/* Gọi hàm openAddModal thay vì set trực tiếp */}
+        <h2>Quản lý Phòng Ban</h2>
 
-        {/* 3. Chỉ hiện nút Thêm mới nếu được phép sửa */}
-        {!isViewOnly && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
-            Thêm Bộ Phận
-          </Button>
-        )}
+        {/* --- 3. CẬP NHẬT THANH CÔNG CỤ (LỌC + NÚT THÊM) --- */}
+        <Space>
+          {/* Ô dropdown Lọc */}
+          <Select
+            placeholder="Lọc theo nhà máy"
+            style={{ width: 200 }}
+            allowClear // Cho phép xóa chọn
+            value={filterFactoryId}
+            onChange={(val) => setFilterFactoryId(val)}
+            suffixIcon={<FilterOutlined />} // Icon cái phễu cho đẹp
+          >
+            {/* Thêm option hiển thị Tất cả nếu cần, hoặc dùng allowClear là đủ */}
+            {factories.map((f) => (
+              <Select.Option key={f.id} value={f.id}>
+                {f.name}
+              </Select.Option>
+            ))}
+          </Select>
+
+          {!isViewOnly && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={openAddModal}
+            >
+              Thêm Bộ Phận
+            </Button>
+          )}
+        </Space>
+        {/* ----------------------------------------------- */}
       </div>
+
       <Table
-        dataSource={departments}
+        // SỬA: Thay departments bằng filteredDepartments
+        dataSource={filteredDepartments}
         columns={columns}
         rowKey="id"
         loading={loading}
         bordered
       />
 
+      {/* Modal giữ nguyên */}
       <Modal
         title={editingId ? "Cập nhật bộ phận" : "Thêm mới bộ phận"}
         open={isModalOpen}
@@ -258,18 +263,11 @@ export default function DepartmentPage() {
           <Form.Item name="code" label="Mã Phòng" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-
           <Form.Item name="name" label="Tên Phòng" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-
-          {/* COMPONENT MỚI: SELECT */}
           <Form.Item name="factoryId" label="Thuộc Nhà Máy">
-            <Select
-              placeholder="Chọn nhà máy (Để trống nếu là phòng ban chung)"
-              allowClear // Cho phép bấm dấu X để xóa chọn (về null)
-            >
-              {/* Dùng vòng lặp để tạo ra các mục chọn từ dữ liệu API */}
+            <Select placeholder="Chọn nhà máy" allowClear>
               {factories.map((factory) => (
                 <Select.Option key={factory.id} value={factory.id}>
                   {factory.name} ({factory.code})

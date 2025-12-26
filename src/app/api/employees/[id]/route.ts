@@ -52,6 +52,7 @@ export async function PATCH(
       phone,
       position,
       departmentId,
+      kipId,
     } = body; // Lấy những thứ cần thiết từ cục hàng body ra để dùng (cập nhật)
 
     // FIX: Xử lý ngày sinh an toàn hơn
@@ -71,6 +72,7 @@ export async function PATCH(
         position: position,
         // FIX: Thêm kiểm tra departmentId trước khi parse để tránh NaN nếu lỡ null
         departmentId: departmentId ? parseInt(departmentId) : undefined,
+        kipId: kipId ? Number(kipId) : null,
       },
     });
 

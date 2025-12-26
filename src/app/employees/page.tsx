@@ -1,4 +1,3 @@
-// src/app/employees/page.tsx
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
@@ -15,7 +14,7 @@ import {
   DatePicker,
   Tag,
   Popconfirm,
-  Card, // Dùng card để bọc bộ lọc cho đẹp
+  Card,
   Space,
   type TableProps,
 } from "antd";
@@ -23,22 +22,31 @@ import {
   PlusOutlined,
   DeleteOutlined,
   EditOutlined,
-  UserOutlined,
-  PhoneOutlined,
   FilterOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  PhoneOutlined,
 } from "@ant-design/icons";
-// Import thư viện ngày tháng
 import dayjs from "dayjs";
 
-// Định nghĩa kiểu dữ liệu (Interfaces)
+// --- 1. DEFINITIONS (INTERFACES) ---
+interface Factory {
+  id: number;
+  code: string;
+  name: string;
+}
+
 interface Department {
   id: number;
   name: string;
-  factory?: {
-    id: number; // Cần ID để lọc chính xác
-    code: string;
-    name: string;
-  };
+  factory?: Factory;
+}
+
+interface Kip {
+  id: number;
+  name: string;
+  factoryId: number;
+  factory?: Factory; // API trả về thêm cái này, ta khai báo để dùng luôn
 }
 
 interface Employee {
@@ -49,50 +57,53 @@ interface Employee {
   gender?: string;
   phone: string;
   department?: Department;
-  position?: string; // Bổ sung thêm trường này cho đủ Interface
+  kip?: Kip; // Thêm thông tin Kíp
+  position?: string;
   address?: string;
 }
 
 export default function EmployeePage() {
   const { data: session } = useSession();
-  // 1. Biến thần thánh kiểm tra quyền
-  // LOGIC MỚI: Cả LEADER và TIMEKEEPER đều không được sửa danh mục
-  // (Chỉ ADMIN và HR_MANAGER mới được sửa)
+
+  // Kiểm tra quyền (Chỉ Admin/HR được sửa)
   const isViewOnly = !["ADMIN", "HR_MANAGER"].includes(
     session?.user?.role || ""
   );
 
-  // --- STATE DỮ LIỆU ---
+  // --- STATE ---
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [kips, setKips] = useState<Kip[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // --- STATE MODAL & FORM ---
+  // State cho Modal (Thêm/Sửa)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // --- STATE BỘ LỌC (FILTER) ---
+  // State cho Bộ lọc (Filter)
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(
     null
   );
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
 
-  // --- 1. TẢI DỮ LIỆU ---
+  // State cho Bulk Update (Cập nhật hàng loạt)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [bulkKipId, setBulkKipId] = useState<number | null>(null);
+
+  // --- 2. FETCH DATA ---
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      // Lấy danh sách nhân viên và phòng ban (để chọn khi thêm mới)
-      const [empRes, deptRes] = await Promise.all([
+      const [empRes, deptRes, kipRes] = await Promise.all([
         fetch("/api/employees"),
         fetch("/api/departments"),
+        fetch("/api/kips"),
       ]);
 
-      const empData = await empRes.json();
-      const deptData = await deptRes.json();
-
-      setEmployees(empData);
-      setDepartments(deptData); // Lưu danh sách bộ phận để dùng cho dropdown
+      setEmployees(await empRes.json());
+      setDepartments(await deptRes.json());
+      setKips(await kipRes.json());
     } catch (error) {
       message.error("Lỗi tải dữ liệu: " + error);
     } finally {
@@ -104,71 +115,117 @@ export default function EmployeePage() {
     fetchEmployees();
   }, []);
 
-  // --- 2. LOGIC TÍNH TOÁN DỮ LIỆU (Memoization) ---
+  // --- 3. MEMOIZED DATA (TỐI ƯU HIỆU NĂNG) ---
 
-  // A. Lấy danh sách Nhà máy duy nhất từ list phòng ban
+  // Lấy danh sách Nhà máy từ danh sách Phòng ban (để lọc)
   const factories = useMemo(() => {
     const map = new Map();
     departments.forEach((d) => {
       if (d.factory) map.set(d.factory.id, d.factory);
     });
-    return Array.from(map.values());
+    return Array.from(map.values()) as Factory[];
   }, [departments]);
 
-  // B. Danh sách Phòng ban trong Dropdown (phụ thuộc vào Nhà máy đã chọn)
+  // Dropdown Phòng ban phụ thuộc vào Nhà máy đang chọn
   const availableDepartments = useMemo(() => {
-    if (!selectedFactoryId) return departments; // Chưa chọn NM thì hiện hết
+    if (!selectedFactoryId) return departments;
     return departments.filter((d) => d.factory?.id === selectedFactoryId);
   }, [departments, selectedFactoryId]);
 
-  // C. Danh sách Nhân viên hiển thị ra bảng (Kết quả lọc)
+  // Dropdown Kíp phụ thuộc vào Nhà máy đang chọn (trong bộ lọc)
+  const availableKips = useMemo(() => {
+    if (!selectedFactoryId) return kips;
+    return kips.filter((k) => k.factoryId === selectedFactoryId);
+  }, [kips, selectedFactoryId]);
+
+  // Dữ liệu bảng (Sau khi lọc)
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
-      // Check Nhà máy
       const matchFactory = selectedFactoryId
         ? emp.department?.factory?.id === selectedFactoryId
         : true;
-      // Check Phòng ban
       const matchDept = selectedDeptId
         ? emp.department?.id === selectedDeptId
         : true;
-
       return matchFactory && matchDept;
     });
   }, [employees, selectedFactoryId, selectedDeptId]);
 
-  // --- 3. CÁC HÀM XỬ LÝ (CRUD) ---
+  // --- 4. ACTIONS (XỬ LÝ) ---
+
+  // Xử lý Cập nhật hàng loạt (Kíp)
+  const handleBulkUpdate = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning("Chưa chọn nhân viên nào!");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/employees/bulk-update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeIds: selectedRowKeys,
+          kipId: bulkKipId, // Nếu null thì hiểu là set về NULL (HC/Khác)
+        }),
+      });
+
+      if (res.ok) {
+        message.success("Cập nhật thành công!");
+        setSelectedRowKeys([]);
+        setBulkKipId(null);
+        const empRes = await fetch("/api/employees");
+        setEmployees(await empRes.json());
+      } else {
+        // --- SỬA ĐOẠN NÀY ---
+        const errorData = await res.json(); // Đọc lỗi từ server
+        console.error("Chi tiết lỗi:", errorData); // In ra console F12
+        message.error("Lỗi: " + (errorData.error || "Không xác định")); // Hiển thị lên màn hình
+        // --------------------
+      }
+    } catch (error) {
+      message.error("Lỗi kết nối server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Xóa nhân viên
   const handleDelete = async (id: number) => {
     try {
       const res = await fetch(`/api/employees/${id}`, { method: "DELETE" });
       if (res.ok) {
-        message.success("Đã xóa thành công!");
+        message.success("Đã xóa!");
         fetchEmployees();
       } else {
-        const errorData = await res.json();
-        message.error(errorData.error || "Lỗi khi xóa");
+        message.error("Lỗi khi xóa");
       }
     } catch (error) {
-      message.error("Lỗi kết nối: " + error);
+      message.error("Lỗi kết nối");
     }
   };
 
+  // Mở modal sửa
   const handleEdit = (record: Employee) => {
     setEditingId(record.id);
     form.setFieldsValue({
       ...record,
       birthday: record.birthday ? dayjs(record.birthday) : null,
       departmentId: record.department?.id,
+      kipId: record.kip?.id, // Load Kíp hiện tại lên form
     });
     setIsModalOpen(true);
   };
 
+  // Mở modal thêm mới
   const openAddModal = () => {
     setEditingId(null);
     form.resetFields();
     setIsModalOpen(true);
   };
 
+  // Lưu form (Thêm/Sửa)
   const handleOK = async () => {
     try {
       const values = await form.validateFields();
@@ -189,9 +246,7 @@ export default function EmployeePage() {
       });
 
       if (res.ok) {
-        message.success(
-          editingId ? "Cập nhật thành công!" : "Thêm mới thành công!"
-        );
+        message.success(editingId ? "Cập nhật xong!" : "Thêm mới xong!");
         setIsModalOpen(false);
         form.resetFields();
         setEditingId(null);
@@ -204,25 +259,39 @@ export default function EmployeePage() {
     }
   };
 
-  // --- 4. CẤU HÌNH CỘT BẢNG ---
+  // Cấu hình chọn dòng (Checkbox)
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys);
+    },
+  };
+
+  // --- 5. COLUMNS DEFINITION ---
   const columns: TableProps<Employee>["columns"] = [
     {
       title: "Mã NV",
       dataIndex: "code",
       key: "code",
-      width: 100,
+      width: 90,
       render: (text: string) => <b>{text}</b>,
     },
     {
       title: "Họ tên",
       dataIndex: "fullName",
       key: "fullName",
-      width: 200,
+      width: 180,
     },
     {
-      title: "Chức vụ",
-      dataIndex: "position",
-      key: "position",
+      title: "Kíp / Tổ", // CỘT QUAN TRỌNG VỪA THÊM
+      dataIndex: "kip",
+      key: "kip",
+      width: 130,
+      render: (kip: Kip | null) => (
+        <Tag color={kip ? "geekblue" : "default"}>
+          {kip ? kip.name : "HC/Khác"}
+        </Tag>
+      ),
     },
     {
       title: "Bộ phận",
@@ -232,7 +301,6 @@ export default function EmployeePage() {
       render: (dept: Department) => (
         <div>
           <div>{dept?.name}</div>
-          {/* Hiển thị thêm tên nhà máy nhỏ ở dưới cho dễ nhìn */}
           {dept?.factory && (
             <small style={{ color: "#888" }}>({dept.factory.name})</small>
           )}
@@ -240,32 +308,14 @@ export default function EmployeePage() {
       ),
     },
     {
-      title: "Ngày sinh",
-      dataIndex: "birthday",
-      key: "birthday",
-      render: (dateString: any) =>
-        dateString ? dayjs(dateString).format("DD/MM/YYYY") : "",
-    },
-    {
-      title: "Giới tính",
-      dataIndex: "gender",
-      key: "gender",
-      render: (gender: any) =>
-        gender === "Nam" ? (
-          <Tag color="blue">Nam</Tag>
-        ) : (
-          <Tag color="magenta">Nữ</Tag>
-        ),
-    },
-    {
-      title: "SĐT",
-      dataIndex: "phone",
-      key: "phone",
+      title: "Chức vụ",
+      dataIndex: "position",
+      key: "position",
     },
     {
       title: "Hành động",
       key: "action",
-      width: 120,
+      width: 100,
       render: (_: any, record: any) => (
         <Space>
           <Button
@@ -275,10 +325,10 @@ export default function EmployeePage() {
             onClick={() => handleEdit(record)}
           />
           <Popconfirm
-            title="Xóa?"
+            title="Xóa nhân viên này?"
             onConfirm={() => handleDelete(record.id)}
-            okText="Có"
-            cancelText="Không"
+            okText="Xóa"
+            cancelText="Hủy"
           >
             <Button type="text" icon={<DeleteOutlined />} danger />
           </Popconfirm>
@@ -286,11 +336,11 @@ export default function EmployeePage() {
       ),
     },
   ].filter((col) => {
-    // Nếu là Leader VÀ cột là 'action' -> Loại bỏ (return false)
     if (isViewOnly && col.key === "action") return false;
     return true;
   });
 
+  // --- 6. RENDER UI ---
   return (
     <AdminLayout>
       <div
@@ -302,10 +352,8 @@ export default function EmployeePage() {
         }}
       >
         <h2 className="text-2xl font-bold">
-          Quản lý nhân sự ({filteredEmployees.length} nhân viên)
+          Quản lý nhân sự ({filteredEmployees.length})
         </h2>
-
-        {/* 3. Chỉ hiện nút Thêm mới nếu được phép sửa */}
         {!isViewOnly && (
           <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
             Thêm nhân viên
@@ -313,29 +361,28 @@ export default function EmployeePage() {
         )}
       </div>
 
-      {/* --- KHU VỰC BỘ LỌC --- */}
+      {/* --- CARD BỘ LỌC --- */}
       <Card size="small" style={{ marginBottom: 16, background: "#f5f5f5" }}>
         <div
           style={{
             display: "flex",
-            gap: 16,
+            gap: 12,
             alignItems: "center",
             flexWrap: "wrap",
           }}
         >
           <span style={{ fontWeight: 600 }}>
-            <FilterOutlined /> Bộ lọc:
+            <FilterOutlined /> Lọc nhanh:
           </span>
 
-          {/* 1. Chọn Nhà Máy */}
           <Select
-            style={{ width: 250 }}
-            placeholder="Chọn Nhà máy / Khối"
+            style={{ width: 220 }}
+            placeholder="Tất cả Nhà máy"
             allowClear
             value={selectedFactoryId}
             onChange={(val) => {
               setSelectedFactoryId(val);
-              setSelectedDeptId(null); // Reset phòng ban khi đổi nhà máy
+              setSelectedDeptId(null);
             }}
           >
             {factories.map((f) => (
@@ -345,14 +392,13 @@ export default function EmployeePage() {
             ))}
           </Select>
 
-          {/* 2. Chọn Phòng Ban (Dropdown phụ thuộc) */}
           <Select
-            style={{ width: 250 }}
-            placeholder="Chọn Phòng ban"
+            style={{ width: 220 }}
+            placeholder="Tất cả Phòng ban"
             allowClear
             value={selectedDeptId}
             onChange={(val) => setSelectedDeptId(val)}
-            disabled={!selectedFactoryId && departments.length > 50} // Có thể disable nếu muốn bắt buộc chọn NM trước
+            disabled={!selectedFactoryId && departments.length > 50}
           >
             {availableDepartments.map((d) => (
               <Select.Option key={d.id} value={d.id}>
@@ -361,7 +407,6 @@ export default function EmployeePage() {
             ))}
           </Select>
 
-          {/* Nút Reset bộ lọc */}
           {(selectedFactoryId || selectedDeptId) && (
             <Button
               type="link"
@@ -376,25 +421,83 @@ export default function EmployeePage() {
         </div>
       </Card>
 
+      {/* --- THANH CÔNG CỤ CẬP NHẬT HÀNG LOẠT (Chỉ hiện khi tick chọn) --- */}
+      {selectedRowKeys.length > 0 && !isViewOnly && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "12px 24px",
+            background: "#e6f7ff",
+            border: "1px solid #91d5ff",
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+          }}
+        >
+          <Space>
+            <CheckCircleOutlined style={{ color: "#1890ff", fontSize: 20 }} />
+            <span style={{ fontWeight: 600, fontSize: 16 }}>
+              Đang chọn {selectedRowKeys.length} nhân viên
+            </span>
+          </Space>
+
+          <Space>
+            <span>Gán vào:</span>
+            <Select
+              style={{ width: 250 }}
+              placeholder="Chọn Kíp / Tổ..."
+              value={bulkKipId}
+              onChange={setBulkKipId}
+              allowClear
+            >
+              {/* HIỂN THỊ DANH SÁCH KÍP RÕ RÀNG */}
+              {kips.map((k) => (
+                <Select.Option key={k.id} value={k.id}>
+                  {k.name} - {k.factory?.name}
+                </Select.Option>
+              ))}
+            </Select>
+
+            <Button
+              type="primary"
+              onClick={handleBulkUpdate}
+              loading={loading}
+              disabled={bulkKipId === undefined} // Cho phép null để xóa kíp, nhưng không được undefined
+            >
+              Cập nhật ngay
+            </Button>
+            <Button
+              icon={<CloseCircleOutlined />}
+              onClick={() => setSelectedRowKeys([])}
+            >
+              Hủy
+            </Button>
+          </Space>
+        </div>
+      )}
+
       {/* --- BẢNG DỮ LIỆU --- */}
-      {/* Lưu ý: dataSource truyền vào là filteredEmployees chứ không phải employees gốc */}
       <Table
+        rowSelection={!isViewOnly ? rowSelection : undefined} // Ẩn checkbox nếu chỉ xem
         columns={columns}
         dataSource={filteredEmployees}
         rowKey="id"
         loading={loading}
         bordered
-        scroll={{ x: 800 }}
-        pagination={{ pageSize: 10 }} // Vẫn giữ phân trang ở client cho gọn bảng
+        scroll={{ x: 900 }}
+        pagination={{ pageSize: 20, showSizeChanger: true }} // Tăng pageSize để dễ tick chọn nhiều
       />
 
-      {/* --- MODAL GIỮ NGUYÊN NHƯ CŨ --- */}
+      {/* --- MODAL FORM --- */}
       <Modal
-        title={editingId ? "Sửa thông tin" : "Thêm Nhân viên"}
+        title={editingId ? "Cập nhật thông tin" : "Thêm mới nhân viên"}
         open={isModalOpen}
         onOk={handleOK}
         onCancel={() => setIsModalOpen(false)}
         width={700}
+        confirmLoading={loading}
       >
         <Form form={form} layout="vertical">
           <div style={{ display: "flex", gap: 16 }}>
@@ -402,31 +505,30 @@ export default function EmployeePage() {
               name="code"
               label="Mã NV"
               style={{ flex: 1 }}
-              rules={[{ required: true }]}
+              rules={[{ required: true, message: "Bắt buộc" }]}
             >
-              <Input />
+              <Input placeholder="NV..." />
             </Form.Item>
             <Form.Item
               name="fullName"
-              label="Họ tên"
+              label="Họ và tên"
               style={{ flex: 2 }}
-              rules={[{ required: true }]}
+              rules={[{ required: true, message: "Bắt buộc" }]}
             >
-              <Input />
+              <Input placeholder="Nhập tên..." />
             </Form.Item>
           </div>
 
           <div style={{ display: "flex", gap: 16 }}>
-            {/* Dropdown phòng ban trong Modal thì vẫn hiện Full nhé */}
             <Form.Item
               name="departmentId"
-              label="Phòng ban"
+              label="Phòng ban / Công đoạn"
               style={{ flex: 1 }}
               rules={[{ required: true }]}
             >
               <Select
                 placeholder="Chọn phòng ban"
-                showSearch // Cho phép gõ tìm kiếm
+                showSearch
                 optionFilterProp="children"
               >
                 {departments.map((dept) => (
@@ -436,16 +538,41 @@ export default function EmployeePage() {
                 ))}
               </Select>
             </Form.Item>
+
+            {/* Ô CHỌN KÍP TRONG FORM */}
+            <Form.Item
+              name="kipId"
+              label="Kíp / Tổ (Tùy chọn)"
+              style={{ flex: 1 }}
+            >
+              <Select placeholder="Chọn Kíp (hoặc để trống)" allowClear>
+                {kips.map((k) => (
+                  <Select.Option key={k.id} value={k.id}>
+                    {k.name} - {k.factory?.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </div>
+
+          <div style={{ display: "flex", gap: 16 }}>
             <Form.Item name="position" label="Chức vụ" style={{ flex: 1 }}>
               <Input />
+            </Form.Item>
+            <Form.Item name="phone" label="Số điện thoại" style={{ flex: 1 }}>
+              <Input prefix={<PhoneOutlined />} />
             </Form.Item>
           </div>
 
           <div style={{ display: "flex", gap: 16 }}>
             <Form.Item name="birthday" label="Ngày sinh" style={{ flex: 1 }}>
-              <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+              <DatePicker
+                style={{ width: "100%" }}
+                format="DD/MM/YYYY"
+                placeholder="Chọn ngày"
+              />
             </Form.Item>
-            <Form.Item name="gender" label="Giới tính" style={{ width: 150 }}>
+            <Form.Item name="gender" label="Giới tính" style={{ width: 120 }}>
               <Select>
                 <Select.Option value="Nam">Nam</Select.Option>
                 <Select.Option value="Nữ">Nữ</Select.Option>
@@ -453,10 +580,7 @@ export default function EmployeePage() {
             </Form.Item>
           </div>
 
-          <Form.Item name="phone" label="SĐT">
-            <Input />
-          </Form.Item>
-          <Form.Item name="address" label="Địa chỉ">
+          <Form.Item name="address" label="Địa chỉ thường trú">
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>

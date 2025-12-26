@@ -15,13 +15,34 @@ model Factory {
   code        String       @unique
   name        String
   departments Department[] // Quan hệ ngược: 1 nhà máy có nhiều phòng
+
+  // --- BỔ SUNG DÒNG NÀY VÀO ---
+  kips        Kip[]        // Quan hệ ngược: 1 nhà máy có nhiều Kíp
 }
 
-// 2. Bảng Phòng Ban
+// 2. Kíp (BẢNG MỚI - Định nghĩa Kíp 1 -> Kíp 10)
+model Kip {
+  id   Int    @id @default(autoincrement())
+  name String // "Kíp 1", "Kíp 2", ..., "Kíp 10"
+  
+  // Liên kết với Nhà máy (Vì Kíp 1 nhà máy 2 khác Kíp 1 nhà máy 3)
+  factoryId Int
+  factory   Factory @relation(fields: [factoryId], references: [id])
+  
+  employees Employee[] // 1 Kíp có nhiều nhân viên
+}
+
+// 2. Bảng Phòng Ban - Công đoạn
 model Department {
   id        Int        @id @default(autoincrement())
   code      String     @unique
-  name      String
+  name      String     // Tên hiển thị: "Sợi con", "Bông chải"
+
+  // --- THÊM CỘT NÀY ---
+  // true: Là bộ phận sản xuất theo Kíp (Kíp 1, Kíp 2...)
+  // false: Là bộ phận hành chính/phụ trợ (Bảo trì, Kho...)
+  isKip     Boolean  @default(false) 
+  // --------------------
   
   // Khóa ngoại liên kết nhà máy
   factoryId Int      
@@ -48,6 +69,11 @@ model Employee {
   departmentId Int
   department   Department @relation(fields: [departmentId], references: [id])
   // Thêm dòng này vào model Employee cũ của bạn
+
+  // --- MỚI: THÊM CÁI NÀY ĐỂ LỌC ---
+  kipId        Int?     // Cho phép NULL (để ông Bảo trì/Văn phòng không cần điền)
+  kip          Kip?     @relation(fields: [kipId], references: [id])
+  // --------------------------------
   timesheets Timesheet[]
 }
 
