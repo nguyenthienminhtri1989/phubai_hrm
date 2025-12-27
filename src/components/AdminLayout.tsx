@@ -1,7 +1,17 @@
 "use client"; // Đảm bảo dòng này ở đầu
 
 import React, { useState } from "react";
-import { Layout, Menu, theme, Dropdown, Space, Avatar, Typography } from "antd";
+import {
+  Layout,
+  Menu,
+  theme,
+  Dropdown,
+  Button,
+  Avatar,
+  Typography,
+  message,
+  Tooltip,
+} from "antd";
 import {
   ApartmentOutlined,
   TeamOutlined,
@@ -17,7 +27,9 @@ import {
   DownOutlined,
   QuestionCircleOutlined,
   AppstoreOutlined, // <-- Thêm cái này (biểu tượng 4 ô vuông)
+  CloudDownloadOutlined, // Nút backup database
 } from "@ant-design/icons";
+import saveAs from "file-saver";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react"; // <--- Import từ next-auth
@@ -42,6 +54,30 @@ export default function AdminLayout({
   const handleLogout = () => {
     // callbackUrl: '/login' -> Đăng xuất xong đá về trang Login
     signOut({ callbackUrl: "/login" });
+  };
+
+  // 2. Hàm xử lý Backup
+  const handleDownloadBackup = async () => {
+    const hide = message.loading("Đang tạo bản backup...", 0);
+    try {
+      const res = await fetch("/api/system/backup");
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Lỗi server");
+      }
+
+      // Nhận Blob từ server và tải về
+      const blob = await res.blob();
+      const dateStr = new Date().toISOString().slice(0, 10);
+      saveAs(blob, `backup_phubai_hrm_${dateStr}.sql`);
+
+      message.success("Tải backup thành công!");
+    } catch (error: any) {
+      message.error(error.message);
+    } finally {
+      hide();
+    }
   };
 
   // Menu xổ xuống khi bấm vào Avatar
@@ -192,6 +228,24 @@ export default function AdminLayout({
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </div>
 
+          {/* // 3. HIỂN THỊ NÚT (Chèn vào nơi bạn muốn, ví dụ trong Header) */}
+          {/* Chỉ hiện nếu là ADMIN */}
+          {session?.user?.role === "ADMIN" && (
+            <Tooltip title="Sao lưu Dữ liệu">
+              <Button
+                type="text"
+                icon={
+                  <CloudDownloadOutlined
+                    style={{ fontSize: 20, color: "#1890ff" }}
+                  />
+                }
+                onClick={handleDownloadBackup}
+                style={{ marginRight: 15 }}
+              >
+                Backup DB
+              </Button>
+            </Tooltip>
+          )}
           {/* --- PHẦN USER INFO & LOGOUT Ở GÓC PHẢI --- */}
           <Dropdown menu={{ items: userMenuItems }} trigger={["click"]}>
             <div
