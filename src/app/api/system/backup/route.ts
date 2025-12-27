@@ -17,8 +17,8 @@ export async function GET() {
       );
     }
 
-    // 2. LẤY DATABASE URL
-    const dbUrl = process.env.DATABASE_URL;
+    // 2. LẤY & XỬ LÝ DATABASE URL (QUAN TRỌNG)
+    let dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
       return NextResponse.json(
         { error: "Chưa cấu hình DATABASE_URL" },
@@ -26,32 +26,31 @@ export async function GET() {
       );
     }
 
-    // 3. CẤU HÌNH ĐƯỜNG DẪN PG_DUMP (QUAN TRỌNG TRÊN WINDOWS)
-    // Bạn hãy sửa đường dẫn dưới đây cho đúng với máy chủ của bạn
-    // Lưu ý: Dùng 2 dấu gạch chéo \\
+    // --- SỬA LỖI: CẮT BỎ THAM SỐ ?schema=public ---
+    // pg_dump không chịu tham số này, nên ta phải bỏ đi
+    if (dbUrl.includes("?")) {
+      dbUrl = dbUrl.split("?")[0];
+    }
+    // ----------------------------------------------
+
+    // 3. CẤU HÌNH ĐƯỜNG DẪN (CẬP NHẬT THEO LOG CỦA BẠN: BẢN 17)
+    // Log của bạn cho thấy bạn đang cài bản 17, hãy sửa số 16 thành 17
     const pgDumpPath = '"C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe"';
 
-    // Nếu bạn đã cài biến môi trường thì dùng dòng dưới này (nhưng hay lỗi trên Windows)
-    // const pgDumpPath = 'pg_dump';
-
-    console.log("Đang bắt đầu backup...");
+    console.log("Đang bắt đầu backup với URL đã làm sạch...");
 
     // 4. TẠO LỆNH
-    // --no-owner --no-acl: Bỏ qua quyền sở hữu để dễ restore
     const command = `${pgDumpPath} "${dbUrl}" --no-owner --no-acl`;
 
     // 5. THỰC THI
-    // Tăng buffer lên 100MB để chứa file sql
     const { stdout, stderr } = await execPromise(command, {
-      maxBuffer: 1024 * 1024 * 100,
-      env: process.env, // Kế thừa biến môi trường hệ thống
+      maxBuffer: 1024 * 1024 * 100, // 100MB buffer
+      env: process.env,
     });
 
     if (stderr) {
-      console.warn("Backup warning (không phải lỗi):", stderr);
+      console.warn("Backup warning:", stderr);
     }
-
-    console.log("Backup thành công, đang gửi file...");
 
     // 6. TRẢ VỀ FILE
     const dateStr = new Date().toISOString().split("T")[0];
@@ -64,9 +63,7 @@ export async function GET() {
       },
     });
   } catch (error: any) {
-    console.error("LỖI BACKUP NGHIÊM TRỌNG:", error);
-
-    // Trả về lỗi chi tiết để Client biết đường sửa
+    console.error("LỖI BACKUP CHI TIẾT:", error);
     return NextResponse.json(
       { error: "Lỗi Server: " + (error.message || error.toString()) },
       { status: 500 }
