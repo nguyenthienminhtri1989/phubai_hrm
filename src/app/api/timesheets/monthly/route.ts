@@ -7,42 +7,62 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const departmentId = searchParams.get("departmentId");
-    const month = searchParams.get("month"); // 1-12
-    const year = searchParams.get("year"); // 2025
+    const kipIdsStr = searchParams.get("kipIds"); // <--- Mới thêm
+    const month = searchParams.get("month");
+    const year = searchParams.get("year");
 
-    if (!departmentId || !month || !year) {
+    if (!month || !year) {
       return NextResponse.json(
-        { error: "Thiếu thông tin bộ lọc" },
+        { error: "Thiếu thông tin thời gian (tháng, năm)" },
         { status: 400 }
       );
     }
 
-    // 1. Xác định thời gian (Ngày đầu và ngày cuối tháng)
+    // 1. Kiểm tra điều kiện lọc: Phải có ít nhất 1 trong 2 (Phòng hoặc Kíp)
+    if (!departmentId && !kipIdsStr) {
+      return NextResponse.json(
+        { error: "Vui lòng chọn Phòng ban hoặc Kíp" },
+        { status: 400 }
+      );
+    }
+
+    // 2. Xây dựng điều kiện lọc (Where Clause)
+    const whereCondition: any = {};
+
+    // Nếu chọn Phòng ban
+    if (departmentId && departmentId !== "null") {
+      whereCondition.departmentId = parseInt(departmentId);
+    }
+
+    // Nếu chọn Kíp (Ưu tiên lọc theo Kíp nếu có)
+    if (kipIdsStr) {
+      const kipIds = kipIdsStr.split(",").map(Number);
+      whereCondition.kipId = { in: kipIds };
+    }
+
+    // 3. Xác định thời gian
     const startDate = dayjs(`${year}-${month}-01`).startOf("month").toDate();
     const endDate = dayjs(`${year}-${month}-01`).endOf("month").toDate();
 
-    // 2. Lấy dữ liệu
+    // 4. Truy vấn
     const employees = await prisma.employee.findMany({
-      where: {
-        departmentId: parseInt(departmentId),
-        // Gợi ý: Có thể thêm điều kiện chỉ lấy nhân viên đang làm việc
-        // status: 'ACTIVE'
-      },
-      // Sắp xếp: Hiện tại đang theo Mã NV.
-      // Nếu bạn muốn xếp theo Tên (A-Z) thì đổi thành: { firstName: 'asc' } hoặc { fullName: 'asc' }
+      where: whereCondition,
       orderBy: { code: "asc" },
       include: {
         timesheets: {
           where: {
             date: {
-              gte: startDate, // >= Ngày 1
-              lte: endDate, // <= Ngày cuối
+              gte: startDate,
+              lte: endDate,
             },
           },
           include: {
-            attendanceCode: true, // Lấy màu và ký hiệu công
+            attendanceCode: true,
           },
         },
+        // Include thêm để hiển thị tên Kíp/Phòng nếu cần
+        department: true,
+        kip: true,
       },
     });
 

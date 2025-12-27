@@ -15,6 +15,7 @@ import {
   Typography,
   Tooltip,
   Tag,
+  Space, // Thêm Space
 } from "antd";
 import {
   ReloadOutlined,
@@ -35,13 +36,14 @@ interface AttendanceCode {
   color: string;
 }
 
-// Interface cho dữ liệu trả về từ API
 interface MonthlyEmployeeData {
   id: number;
   code: string;
   fullName: string;
+  department?: { name: string }; // Thêm thông tin
+  kip?: { name: string }; // Thêm thông tin
   timesheets: {
-    date: string; // Ngày chấm
+    date: string;
     attendanceCode: AttendanceCode;
   }[];
 }
@@ -55,28 +57,159 @@ interface Department {
   id: number;
   name: string;
   factory?: Factory;
+  isKip: boolean; // <--- Quan trọng: cần trường này
+}
+
+interface Kip {
+  id: number;
+  name: string;
+  factoryId: number;
 }
 
 export default function MonthlyTimesheetPage() {
+  const { data: session } = useSession();
+
   // --- STATE ---
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [kips, setKips] = useState<Kip[]>([]); // <--- Mới thêm
   const [employees, setEmployees] = useState<MonthlyEmployeeData[]>([]);
 
   // Bộ lọc
-  const [selectedMonth, setSelectedMonth] = useState<Dayjs>(dayjs()); // Mặc định tháng hiện tại
+  const [selectedMonth, setSelectedMonth] = useState<Dayjs>(dayjs());
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(
     null
   );
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
+  const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]); // <--- Mới thêm
+
   const [loading, setLoading] = useState(false);
-
-  // Thêm state để lưu trạng thái khóa
   const [isLocked, setIsLocked] = useState(false);
-  const { data: session } = useSession(); // Lấy session để check quyền hiển thị nút
 
-  // 1. Hàm kiểm tra trạng thái khóa (Gọi khi department/month thay đổi)
+  // --- CẤU HÌNH NHÀ MÁY 3 ---
+  const SHIFT_FACTORY_IDS = [3]; // ID Nhà máy dùng chế độ Kíp
+
+  // 1. Tải dữ liệu ban đầu (Department + Kips)
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [deptRes, kipRes] = await Promise.all([
+          fetch("/api/departments"),
+          fetch("/api/kips"),
+        ]);
+        setDepartments(await deptRes.json());
+        setKips(await kipRes.json());
+      } catch (error) {
+        message.error("Lỗi tải danh mục");
+      }
+    };
+    fetchData();
+  }, []);
+
+  // --- LOGIC PHÂN QUYỀN (GIỐNG TRANG DAILY) ---
+
+  // A. Lọc danh sách được phép xem
+  const availableDepartments = useMemo(() => {
+    if (departments.length === 0 || !session) return [];
+    const user = session.user;
+    if (["ADMIN", "HR_MANAGER", "LEADER"].includes(user.role))
+      return departments;
+    if (user.role === "TIMEKEEPER") {
+      const allowedIds = user.managedDeptIds || [];
+      return departments.filter((d) => allowedIds.includes(d.id));
+    }
+    return [];
+  }, [departments, session]);
+
+  // B. Kiểm tra quyền xem Kíp
+  const hasKipPermission = useMemo(() => {
+    if (availableDepartments.length === 0) return false;
+    return availableDepartments.some((d) => d.isKip === true);
+  }, [availableDepartments]);
+
+  // C. Xác định xem Nhà máy hiện tại có dùng chế độ Kíp không
+  const isShiftFactory = useMemo(() => {
+    if (!selectedFactoryId) return false;
+    return SHIFT_FACTORY_IDS.includes(selectedFactoryId);
+  }, [selectedFactoryId]);
+
+  // D. Lọc danh sách Nhà máy
+  const factories = useMemo(() => {
+    const map = new Map();
+    availableDepartments.forEach(
+      (d) => d.factory && map.set(d.factory.id, d.factory)
+    );
+    return Array.from(map.values()) as Factory[];
+  }, [availableDepartments]);
+
+  // E. Lọc danh sách Phòng ban hiển thị
+  const filteredDepartments = useMemo(() => {
+    if (!selectedFactoryId) return [];
+
+    let depts = availableDepartments.filter(
+      (d) => d.factory?.id === selectedFactoryId
+    );
+
+    // Nếu là Nhà máy 3 -> Ẩn các phòng sản xuất (isKip=true) để chọn bên ô Kíp
+    if (isShiftFactory) {
+      depts = depts.filter((d) => d.isKip === false);
+    }
+    // Nhà máy 1, 2 -> Hiện tất cả
+
+    return depts;
+  }, [availableDepartments, selectedFactoryId, isShiftFactory]);
+
+  // --- LOGIC HIỂN THỊ UI ---
+  const showKipSelect = isShiftFactory && !selectedDeptId && hasKipPermission;
+  const showDeptSelect = !isShiftFactory || selectedKipIds.length === 0;
+
+  // 2. Tải dữ liệu Bảng công tháng
+  const fetchMonthlyData = async () => {
+    // Nếu chưa chọn gì cả thì không tải, xóa bảng
+    if (!selectedDeptId && selectedKipIds.length === 0) {
+      setEmployees([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const month = selectedMonth.month() + 1;
+      const year = selectedMonth.year();
+      const kipIdsParam =
+        selectedKipIds.length > 0 ? selectedKipIds.join(",") : "";
+
+      const res = await fetch(
+        `/api/timesheets/monthly?departmentId=${
+          selectedDeptId || ""
+        }&kipIds=${kipIdsParam}&month=${month}&year=${year}`
+      );
+      const data = await res.json();
+
+      if (data.error) {
+        message.error(data.error);
+        setEmployees([]);
+      } else {
+        setEmployees(data);
+      }
+    } catch (error) {
+      message.error("Lỗi tải dữ liệu bảng công");
+      setEmployees([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMonthlyData();
+    // Nếu đang chọn phòng ban cụ thể thì check lock, nếu chọn kíp thì thôi (hoặc nâng cấp sau)
+    if (selectedDeptId) checkLockStatus();
+  }, [selectedDeptId, selectedKipIds, selectedMonth]);
+
+  // Check Lock Status
   const checkLockStatus = async () => {
-    if (!selectedDeptId || !selectedMonth) return;
+    if (!selectedDeptId || !selectedMonth) {
+      setIsLocked(false);
+      return;
+    }
     try {
       const m = selectedMonth.month() + 1;
       const y = selectedMonth.year();
@@ -90,53 +223,7 @@ export default function MonthlyTimesheetPage() {
     }
   };
 
-  // 1. Tải danh sách phòng ban
-  useEffect(() => {
-    fetch("/api/departments")
-      .then((res) => res.json())
-      .then((data) => setDepartments(data))
-      .catch(() => message.error("Lỗi tải danh mục"));
-  }, []);
-
-  // Logic lọc Nhà máy -> Phòng ban (Giống trang Daily)
-  const factories = useMemo(() => {
-    const map = new Map();
-    departments.forEach((d) => d.factory && map.set(d.factory.id, d.factory));
-    return Array.from(map.values()) as Factory[];
-  }, [departments]);
-
-  const filteredDepartments = useMemo(() => {
-    if (!selectedFactoryId) return [];
-    return departments.filter((d) => d.factory?.id === selectedFactoryId);
-  }, [departments, selectedFactoryId]);
-
-  // 2. Tải dữ liệu Bảng công tháng
-  const fetchMonthlyData = async () => {
-    if (!selectedDeptId) return;
-
-    setLoading(true);
-    try {
-      const month = selectedMonth.month() + 1; // dayjs month từ 0-11
-      const year = selectedMonth.year();
-
-      const res = await fetch(
-        `/api/timesheets/monthly?departmentId=${selectedDeptId}&month=${month}&year=${year}`
-      );
-      const data = await res.json();
-      setEmployees(data);
-    } catch (error) {
-      message.error("Lỗi tải dữ liệu bảng công");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchMonthlyData();
-    checkLockStatus(); // <-- Thêm dòng này
-  }, [selectedDeptId, selectedMonth]);
-
-  // 2. Hàm xử lý khi bấm nút Khóa/Mở
+  // Toggle Lock
   const handleToggleLock = async () => {
     if (!selectedDeptId) return;
     try {
@@ -150,7 +237,7 @@ export default function MonthlyTimesheetPage() {
           departmentId: selectedDeptId,
           month: m,
           year: y,
-          isLocked: !isLocked, // Đảo ngược trạng thái hiện tại
+          isLocked: !isLocked,
         }),
       });
 
@@ -166,9 +253,8 @@ export default function MonthlyTimesheetPage() {
     }
   };
 
-  // 3. TẠO CẤU TRÚC CỘT (Đã cập nhật theo yêu cầu thống kê chi tiết)
+  // --- CẤU TRÚC CỘT (Cột thông tin nhân viên có thay đổi chút xíu để hiển thị bộ phận) ---
   const columns = useMemo(() => {
-    // A. Cột cố định bên trái
     const fixedColumns: any[] = [
       {
         title: "STT",
@@ -176,7 +262,6 @@ export default function MonthlyTimesheetPage() {
         width: 50,
         fixed: "left",
         align: "center",
-        // render nhận vào (text, record, index)
         render: (_: any, __: any, index: number) => (
           <span style={{ color: "#888", fontWeight: 600 }}>{index + 1}</span>
         ),
@@ -186,10 +271,22 @@ export default function MonthlyTimesheetPage() {
         dataIndex: "fullName",
         width: 160,
         fixed: "left",
-        ellipsis: true,
+        render: (text: string, record: MonthlyEmployeeData) => (
+          <div>
+            <div style={{ fontWeight: 500 }}>{text}</div>
+            <div style={{ fontSize: 11, color: "#888" }}>
+              {record.kip
+                ? `(${record.kip.name})`
+                : record.department
+                ? record.department.name
+                : ""}
+            </div>
+          </div>
+        ),
       },
     ];
 
+    // ... (Phần Cột ngày và Cột tổng hợp GIỮ NGUYÊN như cũ) ...
     // B. Cột ngày (Dynamic)
     const daysInMonth = selectedMonth.daysInMonth();
     const dayColumns = [];
@@ -244,8 +341,7 @@ export default function MonthlyTimesheetPage() {
       });
     }
 
-    // C. Cột Tổng hợp (THEO YÊU CẦU MỚI)
-    // Tôi tạo một hàm helper nhỏ để đếm cho gọn code
+    // Helper đếm
     const countCodes = (record: MonthlyEmployeeData, codes: string[]) => {
       return record.timesheets.filter((t) =>
         codes.includes(t.attendanceCode.code)
@@ -254,13 +350,12 @@ export default function MonthlyTimesheetPage() {
 
     const summaryColumns = [
       {
-        title: <span style={{ color: "#05FA46", fontSize: 12 }}>T.Công</span>, // Tổng công thực tế
+        title: <span style={{ color: "#05FA46", fontSize: 12 }}>T.Công</span>,
         width: 60,
         align: "center",
         fixed: "right",
-        className: "bg-green-50", // Tailwind class cho nền hơi xanh nhẹ
+        className: "bg-green-50",
         render: (_: any, r: MonthlyEmployeeData) => {
-          // X, XD, CT, LĐ, XL, LE, LD (Tất cả các loại đi làm)
           const total = countCodes(r, [
             "X",
             "XD",
@@ -279,46 +374,42 @@ export default function MonthlyTimesheetPage() {
         align: "center",
         fixed: "right",
         render: (_: any, r: MonthlyEmployeeData) => {
-          // XD, LD (Tính cả làm ca 3 ngày lễ)
           const total = countCodes(r, ["XD", "LD"]);
           return total > 0 ? <b>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ color: "#ff78cf", fontSize: 12 }}>100%</span>, // Nghỉ hưởng 100% lương
+        title: <span style={{ color: "#ff78cf", fontSize: 12 }}>100%</span>,
         width: 50,
         align: "center",
         fixed: "right",
         render: (_: any, r: MonthlyEmployeeData) => {
-          // F, R, L, ĐC
           const total = countCodes(r, ["F", "R", "L", "ĐC"]);
           return total > 0 ? <b style={{ color: "#2563eb" }}>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ color: "#F8FF3B", fontSize: 12 }}>BHXH</span>, // Ốm, Thai sản...
+        title: <span style={{ color: "#F8FF3B", fontSize: 12 }}>BHXH</span>,
         width: 50,
         align: "center",
         fixed: "right",
         render: (_: any, r: MonthlyEmployeeData) => {
-          // Ô, CÔ, TS, DS, T, CL
           const total = countCodes(r, ["Ô", "CÔ", "TS", "DS", "T", "CL"]);
           return total > 0 ? <b style={{ color: "#ca8a04" }}>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ color: "#FF4545", fontSize: 12 }}>K.Lương</span>, // Không lương
+        title: <span style={{ color: "#FF4545", fontSize: 12 }}>K.Lương</span>,
         width: 60,
         align: "center",
         fixed: "right",
         render: (_: any, r: MonthlyEmployeeData) => {
-          // RO
           const total = countCodes(r, ["RO"]);
           return total > 0 ? <b style={{ color: "#dc2626" }}>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ fontSize: 12 }}>Vô LD</span>, // Vô lý do
+        title: <span style={{ fontSize: 12 }}>Vô LD</span>,
         width: 50,
         align: "center",
         fixed: "right",
@@ -332,7 +423,7 @@ export default function MonthlyTimesheetPage() {
         },
       },
       {
-        title: <span style={{ fontSize: 12 }}>Bão</span>, // Bão lụt
+        title: <span style={{ fontSize: 12 }}>Bão</span>,
         width: 50,
         align: "center",
         fixed: "right",
@@ -344,61 +435,56 @@ export default function MonthlyTimesheetPage() {
     ];
 
     return [...fixedColumns, ...dayColumns, ...summaryColumns];
-  }, [selectedMonth, employees]); // Cấu trúc cột thay đổi khi thay đổi tháng
+  }, [selectedMonth, employees]);
 
-  // 2. THÊM HÀM XỬ LÝ XUẤT EXCEL
+  // --- EXPORT EXCEL (Đã cập nhật tiêu đề động) ---
   const handleExportExcel = async () => {
     if (employees.length === 0) return;
-    setLoading(true); // Bật loading cho chuyên nghiệp
+    setLoading(true);
 
-    // A. KHỞI TẠO WORKBOOK
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("BangCong");
-
-    // Thiết lập in ấn: Ngang, A4
     worksheet.pageSetup = {
-      paperSize: 9, // A4
+      paperSize: 9,
       orientation: "landscape",
-      fitToPage: true, // Tự co cho vừa trang
+      fitToPage: true,
       fitToWidth: 1,
-      fitToHeight: 0, // 0 nghĩa là chiều dọc tự động nhiều trang
+      fitToHeight: 0,
     };
 
-    // B. TẠO HEADER (TIÊU ĐỀ)
-    // Dòng 1: Tên công ty
-    // worksheet.mergeCells("A1:L1"); <--- Xóa hoặc comment dòng này
+    // Dòng 1
     const row1 = worksheet.getCell("A1");
     row1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
     row1.font = { name: "Times New Roman", size: 14, bold: true };
-    row1.alignment = { horizontal: "left" };
 
-    // Dòng 2: Tiêu đề Bảng chấm công
-    // worksheet.mergeCells("A2:AC2"); <--- Xóa hoặc comment dòng này
+    // Dòng 2
     const row2 = worksheet.getCell("A2");
     row2.value = `BẢNG CHẤM CÔNG THÁNG ${selectedMonth.format("MM/YYYY")}`;
     row2.font = { name: "Times New Roman", size: 16, bold: true };
     row2.alignment = { horizontal: "center" };
 
-    // Dòng 3: Tên phòng ban
-    const deptName =
-      departments.find((d) => d.id === selectedDeptId)?.name || "";
-    // worksheet.mergeCells("A3:AC3"); <--- Xóa hoặc comment dòng này
+    // Dòng 3 (Hiển thị tên Phòng hoặc tên Kíp)
+    let deptName = "";
+    if (selectedDeptId) {
+      deptName = departments.find((d) => d.id === selectedDeptId)?.name || "";
+    } else if (selectedKipIds.length > 0) {
+      // Lấy tên các kíp đã chọn
+      const selectedKipNames = kips
+        .filter((k) => selectedKipIds.includes(k.id))
+        .map((k) => k.name)
+        .join(", ");
+      deptName = `Các Kíp: ${selectedKipNames}`;
+    }
+
     const row3 = worksheet.getCell("A3");
     row3.value = `Bộ phận: ${deptName}`;
     row3.font = { name: "Times New Roman", size: 12, bold: true, italic: true };
     row3.alignment = { horizontal: "center" };
 
-    // C. TẠO HEADER BẢNG DỮ LIỆU (Dòng 4)
-    // Các cột tĩnh
+    // Header bảng
     const headerRow = ["STT", "Mã NV", "Họ và tên"];
     const daysInMonth = selectedMonth.daysInMonth();
-
-    // Các cột ngày (1 -> 30)
-    for (let i = 1; i <= daysInMonth; i++) {
-      headerRow.push(`${i}`);
-    }
-
-    // Các cột tổng hợp
+    for (let i = 1; i <= daysInMonth; i++) headerRow.push(`${i}`);
     const summaryHeaders = [
       "T.Công",
       "Ca 3",
@@ -410,10 +496,7 @@ export default function MonthlyTimesheetPage() {
     ];
     headerRow.push(...summaryHeaders);
 
-    // Add dòng header vào Excel
     const headerRowExcel = worksheet.addRow(headerRow);
-
-    // Style cho dòng Header (Chữ đậm, căn giữa, viền)
     headerRowExcel.eachCell((cell) => {
       cell.font = { name: "Times New Roman", bold: true };
       cell.alignment = { vertical: "middle", horizontal: "center" };
@@ -426,20 +509,13 @@ export default function MonthlyTimesheetPage() {
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FFE0E0E0" }, // Màu xám nhẹ
+        fgColor: { argb: "FFE0E0E0" },
       };
     });
 
-    // D. ĐỔ DỮ LIỆU NHÂN VIÊN
+    // Data
     employees.forEach((emp, index) => {
-      // ... (Đoạn tạo rowData giữ nguyên) ...
-      const rowData: any[] = [
-        index + 1, // STT
-        emp.code,
-        emp.fullName,
-      ];
-
-      // 1. Duyệt qua từng ngày
+      const rowData: any[] = [index + 1, emp.code, emp.fullName];
       for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = dayjs(
           `${selectedMonth.year()}-${selectedMonth.month() + 1}-${i}`
@@ -448,11 +524,10 @@ export default function MonthlyTimesheetPage() {
         rowData.push(log ? log.attendanceCode.code : "");
       }
 
-      // 2. Tính toán lại Tổng hợp (Logic giống hệt Frontend)
+      // Tổng hợp
       const countCodes = (codes: string[]) =>
         emp.timesheets.filter((t) => codes.includes(t.attendanceCode.code))
           .length;
-
       rowData.push(countCodes(["X", "XD", "CT", "LĐ", "XL", "LE", "LD"]) || "");
       rowData.push(countCodes(["XD", "LD"]) || "");
       rowData.push(countCodes(["F", "R", "L", "ĐC"]) || "");
@@ -461,74 +536,41 @@ export default function MonthlyTimesheetPage() {
       rowData.push(countCodes(["O"]) || "");
       rowData.push(countCodes(["B"]) || "");
 
-      // Thêm dòng vào Excel
       const row = worksheet.addRow(rowData);
-
-      // --- SỬA ĐỔI Ở ĐÂY: FORMAT CHO TỪNG Ô ---
       row.eachCell((cell, colNumber) => {
-        // 1. Font chữ chung: Times New Roman, màu đen mặc định
-        cell.font = { name: "Times New Roman", color: { argb: "FF000000" } }; // Màu đen
-
-        // 2. Kẻ khung
+        cell.font = { name: "Times New Roman", color: { argb: "FF000000" } };
         cell.border = {
           top: { style: "thin" },
           left: { style: "thin" },
           bottom: { style: "thin" },
           right: { style: "thin" },
         };
+        if (colNumber === 3) cell.alignment = { horizontal: "left", indent: 1 };
+        else cell.alignment = { horizontal: "center" };
 
-        // 3. Căn lề
-        if (colNumber === 3) {
-          // Cột Họ tên: Căn trái, cách lề một chút cho đẹp
-          cell.alignment = { horizontal: "left", indent: 1 };
-        } else {
-          // Các cột còn lại (STT, Mã, Ngày, Tổng): Căn giữa
-          cell.alignment = { horizontal: "center" };
-        }
-
-        // 4. XỬ LÝ RIÊNG CÁC Ô CHẤM CÔNG (Cột 4 -> 4 + daysInMonth)
-        // Chỉ in đậm, KHÔNG tô màu nền nữa
-        if (colNumber > 3 && colNumber <= 3 + daysInMonth) {
-          const cellValue = cell.value?.toString();
-          if (cellValue) {
-            // Nếu có dữ liệu (X, F...) thì in đậm lên cho dễ nhìn
-            cell.font = { name: "Times New Roman", bold: true };
-          }
-        }
-
-        // 5. XỬ LÝ CÁC CỘT TỔNG HỢP (In đậm luôn cho số liệu rõ ràng)
-        if (colNumber > 3 + daysInMonth) {
-          if (cell.value) {
-            // Nếu có số liệu
-            cell.font = { name: "Times New Roman", bold: true };
-          }
-        }
+        // In đậm mã công
+        if (colNumber > 3 && colNumber <= 3 + daysInMonth && cell.value)
+          cell.font = { name: "Times New Roman", bold: true };
+        // In đậm tổng hợp
+        if (colNumber > 3 + daysInMonth && cell.value)
+          cell.font = { name: "Times New Roman", bold: true };
       });
     });
 
-    // E. CHỈNH ĐỘ RỘNG CỘT
-    worksheet.getColumn(1).width = 5; // STT
-    worksheet.getColumn(2).width = 10; // Mã
-    worksheet.getColumn(3).width = 25; // Họ tên
-    // Các cột ngày
-    for (let i = 4; i <= 3 + daysInMonth; i++) {
-      worksheet.getColumn(i).width = 4; // Nhỏ xinh
-    }
+    // Footer & Export (Giữ nguyên logic cũ)
+    worksheet.getColumn(1).width = 5;
+    worksheet.getColumn(2).width = 10;
+    worksheet.getColumn(3).width = 25;
+    for (let i = 4; i <= 3 + daysInMonth; i++) worksheet.getColumn(i).width = 4;
 
-    // F. FOOTER (CHỮ KÝ)
     const lastRowIdx = worksheet.lastRow ? worksheet.lastRow.number : 0;
-    const footerStartRow = lastRowIdx + 2; // Cách bảng 2 dòng
-
-    // Dòng Ngày tháng (Căn phải)
-    // Tính toán cột cuối cùng để merge
+    const footerStartRow = lastRowIdx + 2;
     const lastColIndex = 3 + daysInMonth + summaryHeaders.length;
-    // Chuyển số thành chữ cái cột (Ví dụ: 30 -> AD). ExcelJS hỗ trợ getCell(row, col) nên không lo.
 
     const dateRow = worksheet.getRow(footerStartRow);
-    const dateCell = dateRow.getCell(lastColIndex - 5); // Lùi về một chút
+    const dateCell = dateRow.getCell(lastColIndex - 5);
     dateCell.value = "Phú Bài, ngày ...... tháng ...... năm 20......";
     dateCell.font = { name: "Times New Roman", italic: true };
-    // Merge từ ô đó đến hết phải
     worksheet.mergeCells(
       footerStartRow,
       lastColIndex - 5,
@@ -539,32 +581,10 @@ export default function MonthlyTimesheetPage() {
       horizontal: "center",
     };
 
-    // Dòng Chữ ký (Cách 1 dòng so với ngày)
-    const signRowIdx = footerStartRow + 2;
+    worksheet.mergeCells(1, 1, 1, lastColIndex);
+    worksheet.mergeCells(2, 1, 2, lastColIndex);
+    worksheet.mergeCells(3, 1, 3, lastColIndex);
 
-    // Chia 3 cột ký
-    const col1Pos = 3; // Cột C
-    const col2Pos = Math.floor(lastColIndex / 2);
-    const col3Pos = lastColIndex - 3;
-
-    // Set giá trị
-    worksheet.getCell(signRowIdx, col1Pos).value = "NGƯỜI CHẤM CÔNG";
-    worksheet.getCell(signRowIdx, col2Pos).value = "PHỤ TRÁCH ĐƠN VỊ";
-    worksheet.getCell(signRowIdx, col3Pos).value = "CÁN BỘ KIỂM TRA";
-
-    // Style đậm
-    [col1Pos, col2Pos, col3Pos].forEach((c) => {
-      const cell = worksheet.getCell(signRowIdx, c);
-      cell.font = { name: "Times New Roman", bold: true };
-      cell.alignment = { horizontal: "center" };
-    });
-
-    // G. GỘP LẠI HEADER CHO CHÍNH XÁC (Vì giờ mới biết tổng số cột)
-    worksheet.mergeCells(1, 1, 1, lastColIndex); // Dòng 1 merge hết chiều ngang
-    worksheet.mergeCells(2, 1, 2, lastColIndex); // Dòng 2 merge hết chiều ngang
-    worksheet.mergeCells(3, 1, 3, lastColIndex); // Dòng 3 merge hết chiều ngang
-
-    // H. XUẤT FILE
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -573,7 +593,6 @@ export default function MonthlyTimesheetPage() {
       blob,
       `BangCong_${selectedMonth.format("MM-YYYY")}_${deptName}.xlsx`
     );
-
     setLoading(false);
   };
 
@@ -583,7 +602,6 @@ export default function MonthlyTimesheetPage() {
         <Title level={3}>Tổng hợp chấm công tháng</Title>
       </div>
 
-      {/* BỘ LỌC */}
       <Card style={{ marginBottom: 16 }} size="small">
         <div
           style={{
@@ -593,6 +611,7 @@ export default function MonthlyTimesheetPage() {
             alignItems: "center",
           }}
         >
+          {/* THÁNG */}
           <div>
             <div style={{ fontWeight: 600 }}>Tháng:</div>
             <DatePicker
@@ -601,9 +620,11 @@ export default function MonthlyTimesheetPage() {
               onChange={(val) => val && setSelectedMonth(val)}
               allowClear={false}
               format="MM/YYYY"
+              style={{ width: 120 }}
             />
           </div>
 
+          {/* NHÀ MÁY */}
           <div>
             <div style={{ fontWeight: 600 }}>Nhà máy:</div>
             <Select
@@ -613,6 +634,7 @@ export default function MonthlyTimesheetPage() {
               onChange={(val) => {
                 setSelectedFactoryId(val);
                 setSelectedDeptId(null);
+                setSelectedKipIds([]);
                 setEmployees([]);
               }}
             >
@@ -624,65 +646,102 @@ export default function MonthlyTimesheetPage() {
             </Select>
           </div>
 
-          <div>
-            <div style={{ fontWeight: 600 }}>Phòng ban:</div>
-            <Select
-              style={{ width: 220 }}
-              placeholder="Chọn phòng ban"
-              value={selectedDeptId}
-              onChange={(val) => setSelectedDeptId(val)}
-              disabled={!selectedFactoryId}
-            >
-              {filteredDepartments.map((d) => (
-                <Select.Option key={d.id} value={d.id}>
-                  {d.name}
-                </Select.Option>
-              ))}
-            </Select>
-          </div>
+          {/* CHỌN KÍP (Chỉ hiện nếu Nhà máy 3 + Có quyền + Chưa chọn Phòng) */}
+          {showKipSelect && (
+            <div>
+              <div style={{ fontWeight: 600 }}>Kíp:</div>
+              <Select
+                mode="multiple"
+                style={{ width: 200 }}
+                placeholder="Chọn Kíp"
+                value={selectedKipIds}
+                onChange={(val) => {
+                  setSelectedKipIds(val);
+                  if (val.length > 0) setSelectedDeptId(null);
+                }}
+              >
+                {kips
+                  .filter((k) => k.factoryId === selectedFactoryId)
+                  .map((k) => (
+                    <Select.Option key={k.id} value={k.id}>
+                      {k.name}
+                    </Select.Option>
+                  ))}
+              </Select>
+            </div>
+          )}
 
+          {/* CHỌN PHÒNG BAN (Ẩn nếu đang chọn Kíp) */}
+          {showDeptSelect && (
+            <div>
+              <div style={{ fontWeight: 600 }}>
+                {isShiftFactory ? "Phòng (HC/Khác):" : "Phòng ban:"}
+              </div>
+              <Select
+                style={{ width: 220 }}
+                placeholder="Chọn phòng ban"
+                value={selectedDeptId}
+                onChange={(val) => {
+                  setSelectedDeptId(val);
+                  if (val) setSelectedKipIds([]);
+                }}
+                disabled={!selectedFactoryId}
+                showSearch
+                optionFilterProp="children"
+              >
+                {filteredDepartments.map((d) => (
+                  <Select.Option key={d.id} value={d.id}>
+                    {d.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+          )}
+
+          {/* NÚT XEM DỮ LIỆU */}
           <div style={{ marginTop: 20 }}>
             <Button
               icon={<ReloadOutlined />}
               onClick={fetchMonthlyData}
-              disabled={!selectedDeptId}
+              disabled={!selectedDeptId && selectedKipIds.length === 0}
             >
-              Xem dữ liệu
+              Xem
             </Button>
           </div>
 
-          {/* Ở khu vực các nút bấm (cạnh nút Xuất Excel) */}
+          {/* NÚT KHÓA SỔ (Chỉ hiện khi chọn Phòng ban cụ thể - Kíp tạm thời chưa hỗ trợ khóa) */}
+          {selectedDeptId && (
+            <div style={{ marginTop: 20, marginLeft: 10 }}>
+              {["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "") && (
+                <Button
+                  type={isLocked ? "default" : "primary"}
+                  danger={!isLocked}
+                  icon={isLocked ? <UnlockOutlined /> : <LockOutlined />}
+                  onClick={handleToggleLock}
+                >
+                  {isLocked ? "Mở khóa sổ" : "Khóa sổ"}
+                </Button>
+              )}
+              {session?.user?.role === "TIMEKEEPER" && isLocked && (
+                <Tag color="red" style={{ padding: "5px 10px", fontSize: 14 }}>
+                  <LockOutlined /> ĐÃ KHÓA SỔ
+                </Tag>
+              )}
+            </div>
+          )}
 
-          <div style={{ marginTop: 20, marginLeft: 10 }}>
-            {/* Chỉ hiện nút này cho ADMIN hoặc HR_MANAGER */}
-            {["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "") && (
-              <Button
-                type={isLocked ? "default" : "primary"}
-                danger={!isLocked} // Màu đỏ nếu đang mở (để cảnh báo cần khóa), hoặc tùy thẩm mỹ của bạn
-                icon={isLocked ? <UnlockOutlined /> : <LockOutlined />}
-                onClick={handleToggleLock}
-                disabled={!selectedDeptId}
-              >
-                {isLocked ? "Mở khóa sổ" : "Khóa sổ tháng này"}
-              </Button>
-            )}
-
-            {/* Nếu là Timekeeper thì chỉ hiện thông báo trạng thái thôi */}
-            {session?.user?.role === "TIMEKEEPER" && isLocked && (
-              <Tag color="red" style={{ padding: "5px 10px", fontSize: 14 }}>
-                <LockOutlined /> ĐÃ KHÓA SỔ
-              </Tag>
-            )}
-          </div>
-
+          {/* NÚT XUẤT EXCEL */}
           <div style={{ marginTop: 20, marginLeft: "auto" }}>
             <Button
               type="primary"
-              style={{ background: "#217346" }} // Màu xanh Excel đặc trưng
+              style={{ background: "#217346" }}
               icon={<FileExcelOutlined />}
-              onClick={handleExportExcel} // <--- Gắn hàm vào đây
-              disabled={!selectedDeptId || employees.length === 0} // Chỉ cho xuất khi có dữ liệu
-              loading={loading} // Hiệu ứng xoay xoay khi đang xuất
+              onClick={handleExportExcel}
+              disabled={
+                (!selectedDeptId && selectedKipIds.length === 0) ||
+                employees.length === 0
+              }
+              loading={loading}
             >
               Xuất Excel
             </Button>
@@ -691,7 +750,7 @@ export default function MonthlyTimesheetPage() {
       </Card>
 
       {/* BẢNG DỮ LIỆU */}
-      {selectedDeptId && (
+      {employees.length > 0 ? (
         <Table
           bordered
           dataSource={employees}
@@ -699,12 +758,10 @@ export default function MonthlyTimesheetPage() {
           rowKey="id"
           loading={loading}
           pagination={false}
-          scroll={{ x: "max-content", y: 600 }} // Cho phép cuộn ngang và dọc
+          scroll={{ x: "max-content", y: 600 }}
           size="small"
         />
-      )}
-
-      {!selectedDeptId && (
+      ) : (
         <div style={{ textAlign: "center", padding: 50, color: "#999" }}>
           Vui lòng chọn bộ lọc để xem bảng công.
         </div>
