@@ -14,8 +14,19 @@ export default function ManualPage() {
           <Typography>
             <Title level={2}>📖 Hướng dẫn sử dụng Phần mềm Chấm công</Title>
             <Paragraph>
-              Chào mừng bạn đến với hệ thống HRM (Quản lý nhân sự). Dưới đây là
-              các bước cơ bản để sử dụng phần mềm.
+              Chào mừng bạn đến với hệ thống HRM (Quản lý nhân sự), phiên bản
+              V.1.0.0. Phát triển bởi Nguyễn Thiện Minh Trí. Dưới đây là các
+              bước cơ bản để sử dụng phần mềm.
+              <p>
+                Click vào{" "}
+                <a
+                  href="https://drive.google.com/file/d/1JmZaeR7wq4_abRDmTU5nbUJz55K87JgB/view?usp=sharing"
+                  target="_blank"
+                >
+                  đường link này
+                </a>{" "}
+                để xem file hướng dẫn chi tiết
+              </p>
             </Paragraph>
 
             <Divider />
