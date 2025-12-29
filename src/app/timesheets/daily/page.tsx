@@ -215,13 +215,29 @@ export default function DailyTimesheetPage() {
     message.success(`Đã thiết lập toàn bộ là ${codeStr}`);
   };
 
+  // Hàm lưu dữ liệu chấm công ngày
   const handleSave = async () => {
+    // BƯỚC 1: Lọc dữ liệu "sạch"
+    // Chỉ lấy những nhân viên mà attendanceCodeId có giá trị (khác null và undefined)
+    const validRecords = employees.filter(
+      (e) => e.attendanceCodeId !== null && e.attendanceCodeId !== undefined
+    );
+
+    // BƯỚC 2: Kiểm tra nếu không có ai được chọn thì dừng luôn
+    if (validRecords.length === 0) {
+      message.warning(
+        "Vui lòng chọn công cho ít nhất 1 nhân viên trước khi lưu!"
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
         date: selectedDate.format("YYYY-MM-DD"),
         departmentId: selectedDeptId,
-        records: employees.map((e) => ({
+        // BƯỚC 3: Chỉ map những bản ghi hợp lệ đã lọc ở trên
+        records: validRecords.map((e) => ({
           employeeId: e.employeeId,
           attendanceCodeId: e.attendanceCodeId,
           note: e.note,
@@ -234,8 +250,11 @@ export default function DailyTimesheetPage() {
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) message.success("Lưu thành công!");
-      else {
+      if (res.ok) {
+        message.success(`Đã lưu thành công ${validRecords.length} nhân viên!`);
+        // Gọi hàm tải lại dữ liệu để cập nhật trạng thái mới nhất từ server
+        fetchTimesheetData();
+      } else {
         const err = await res.json();
         message.error(err.error || "Lỗi khi lưu");
       }
