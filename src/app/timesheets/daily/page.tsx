@@ -94,8 +94,47 @@ export default function DailyTimesheetPage() {
           fetch("/api/kips"),
         ]);
         setDepartments(await deptRes.json());
-        setAttendanceCodes(await codeRes.json());
         setKips(await kipRes.json());
+
+        // --- XỬ LÝ SẮP XẾP MÃ CÔNG ---
+        const codes: AttendanceCode[] = await codeRes.json();
+
+        // Định nghĩa thứ tự ưu tiên (Những mã hay dùng nhất để lên đầu)
+        // Bạn có thể thêm bớt tùy ý vào danh sách này
+        const PRIORITY_ORDER = [
+          "X",
+          "XD",
+          "ĐC",
+          "X/2",
+          "F",
+          "NB",
+          "Ô",
+          "XL",
+          "L",
+          "TS",
+        ];
+
+        codes.sort((a, b) => {
+          const indexA = PRIORITY_ORDER.indexOf(a.code);
+          const indexB = PRIORITY_ORDER.indexOf(b.code);
+
+          // 1. Nếu cả 2 đều nằm trong danh sách ưu tiên -> Sắp theo thứ tự trong danh sách
+          if (indexA !== -1 && indexB !== -1) {
+            return indexA - indexB;
+          }
+
+          // 2. Nếu chỉ có A nằm trong danh sách -> A lên trước
+          if (indexA !== -1) return -1;
+
+          // 3. Nếu chỉ có B nằm trong danh sách -> B lên trước
+          if (indexB !== -1) return 1;
+
+          // 4. Các mã còn lại (ít dùng) -> Sắp xếp Alphabet cho dễ tìm
+          return a.code.localeCompare(b.code);
+        });
+
+        setAttendanceCodes(codes);
+        // -----------------------------
       } catch (error) {
         message.error("Lỗi tải danh mục hệ thống");
       }
