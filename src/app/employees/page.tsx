@@ -26,6 +26,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   PhoneOutlined,
+  SearchOutlined, // <--- 1. IMPORT THÊM ICON TÌM KIẾM
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -46,7 +47,7 @@ interface Kip {
   id: number;
   name: string;
   factoryId: number;
-  factory?: Factory; // API trả về thêm cái này, ta khai báo để dùng luôn
+  factory?: Factory;
 }
 
 interface Employee {
@@ -57,7 +58,7 @@ interface Employee {
   gender?: string;
   phone: string;
   department?: Department;
-  kip?: Kip; // Thêm thông tin Kíp
+  kip?: Kip;
   position?: string;
   address?: string;
 }
@@ -65,7 +66,6 @@ interface Employee {
 export default function EmployeePage() {
   const { data: session } = useSession();
 
-  // Kiểm tra quyền (Chỉ Admin/HR được sửa)
   const isViewOnly = !["ADMIN", "HR_MANAGER"].includes(
     session?.user?.role || ""
   );
@@ -76,22 +76,26 @@ export default function EmployeePage() {
   const [kips, setKips] = useState<Kip[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // State cho Modal (Thêm/Sửa)
+  // State Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // State cho Bộ lọc (Filter)
+  // State Bộ lọc
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(
     null
   );
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
 
-  // State cho Bulk Update (Cập nhật hàng loạt)
+  // --- 2. STATE MỚI CHO TÌM KIẾM ---
+  const [searchText, setSearchText] = useState("");
+  // -------------------------------
+
+  // State Bulk Update
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [bulkKipId, setBulkKipId] = useState<number | null>(null);
 
-  // --- 2. FETCH DATA ---
+  // --- FETCH DATA ---
   const fetchEmployees = async () => {
     setLoading(true);
     try {
@@ -115,9 +119,8 @@ export default function EmployeePage() {
     fetchEmployees();
   }, []);
 
-  // --- 3. MEMOIZED DATA (TỐI ƯU HIỆU NĂNG) ---
+  // --- MEMOIZED DATA ---
 
-  // Lấy danh sách Nhà máy từ danh sách Phòng ban (để lọc)
   const factories = useMemo(() => {
     const map = new Map();
     departments.forEach((d) => {
@@ -126,34 +129,42 @@ export default function EmployeePage() {
     return Array.from(map.values()) as Factory[];
   }, [departments]);
 
-  // Dropdown Phòng ban phụ thuộc vào Nhà máy đang chọn
   const availableDepartments = useMemo(() => {
     if (!selectedFactoryId) return departments;
     return departments.filter((d) => d.factory?.id === selectedFactoryId);
   }, [departments, selectedFactoryId]);
 
-  // Dropdown Kíp phụ thuộc vào Nhà máy đang chọn (trong bộ lọc)
   const availableKips = useMemo(() => {
     if (!selectedFactoryId) return kips;
     return kips.filter((k) => k.factoryId === selectedFactoryId);
   }, [kips, selectedFactoryId]);
 
-  // Dữ liệu bảng (Sau khi lọc)
+  // --- 3. CẬP NHẬT LOGIC LỌC (FILTER) ---
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
+      // Lọc theo Nhà máy
       const matchFactory = selectedFactoryId
         ? emp.department?.factory?.id === selectedFactoryId
         : true;
+
+      // Lọc theo Phòng ban
       const matchDept = selectedDeptId
         ? emp.department?.id === selectedDeptId
         : true;
-      return matchFactory && matchDept;
+
+      // [MỚI] Lọc theo Tên (Không phân biệt hoa thường)
+      // Logic: Chuyển cả tên trong data và từ khóa tìm kiếm về chữ thường (toLowerCase) rồi so sánh
+      const matchName = searchText
+        ? emp.fullName.toLowerCase().includes(searchText.toLowerCase()) ||
+          emp.code.toLowerCase().includes(searchText.toLowerCase()) // Bonus: Tìm luôn cả theo Mã NV
+        : true;
+
+      return matchFactory && matchDept && matchName;
     });
-  }, [employees, selectedFactoryId, selectedDeptId]);
+  }, [employees, selectedFactoryId, selectedDeptId, searchText]); // Nhớ thêm searchText vào dependencies
+  // -------------------------------------
 
-  // --- 4. ACTIONS (XỬ LÝ) ---
-
-  // Xử lý Cập nhật hàng loạt (Kíp)
+  // --- ACTIONS ---
   const handleBulkUpdate = async () => {
     if (selectedRowKeys.length === 0) {
       message.warning("Chưa chọn nhân viên nào!");
@@ -167,7 +178,7 @@ export default function EmployeePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           employeeIds: selectedRowKeys,
-          kipId: bulkKipId, // Nếu null thì hiểu là set về NULL (HC/Khác)
+          kipId: bulkKipId,
         }),
       });
 
@@ -178,11 +189,8 @@ export default function EmployeePage() {
         const empRes = await fetch("/api/employees");
         setEmployees(await empRes.json());
       } else {
-        // --- SỬA ĐOẠN NÀY ---
-        const errorData = await res.json(); // Đọc lỗi từ server
-        console.error("Chi tiết lỗi:", errorData); // In ra console F12
-        message.error("Lỗi: " + (errorData.error || "Không xác định")); // Hiển thị lên màn hình
-        // --------------------
+        const errorData = await res.json();
+        message.error("Lỗi: " + (errorData.error || "Không xác định"));
       }
     } catch (error) {
       message.error("Lỗi kết nối server");
@@ -191,7 +199,6 @@ export default function EmployeePage() {
     }
   };
 
-  // Xóa nhân viên
   const handleDelete = async (id: number) => {
     try {
       const res = await fetch(`/api/employees/${id}`, { method: "DELETE" });
@@ -206,26 +213,23 @@ export default function EmployeePage() {
     }
   };
 
-  // Mở modal sửa
   const handleEdit = (record: Employee) => {
     setEditingId(record.id);
     form.setFieldsValue({
       ...record,
       birthday: record.birthday ? dayjs(record.birthday) : null,
       departmentId: record.department?.id,
-      kipId: record.kip?.id, // Load Kíp hiện tại lên form
+      kipId: record.kip?.id,
     });
     setIsModalOpen(true);
   };
 
-  // Mở modal thêm mới
   const openAddModal = () => {
     setEditingId(null);
     form.resetFields();
     setIsModalOpen(true);
   };
 
-  // Lưu form (Thêm/Sửa)
   const handleOK = async () => {
     try {
       const values = await form.validateFields();
@@ -259,7 +263,6 @@ export default function EmployeePage() {
     }
   };
 
-  // Cấu hình chọn dòng (Checkbox)
   const rowSelection = {
     selectedRowKeys,
     onChange: (newSelectedRowKeys: React.Key[]) => {
@@ -267,7 +270,7 @@ export default function EmployeePage() {
     },
   };
 
-  // --- 5. COLUMNS DEFINITION ---
+  // --- COLUMNS ---
   const columns: TableProps<Employee>["columns"] = [
     {
       title: "Mã NV",
@@ -283,7 +286,7 @@ export default function EmployeePage() {
       width: 180,
     },
     {
-      title: "Kíp / Tổ", // CỘT QUAN TRỌNG VỪA THÊM
+      title: "Kíp / Tổ",
       dataIndex: "kip",
       key: "kip",
       width: 130,
@@ -340,7 +343,7 @@ export default function EmployeePage() {
     return true;
   });
 
-  // --- 6. RENDER UI ---
+  // --- RENDER UI ---
   return (
     <AdminLayout>
       <div
@@ -352,6 +355,7 @@ export default function EmployeePage() {
         }}
       >
         <h2 className="text-2xl font-bold">
+          {/* Hiển thị số lượng sau khi lọc */}
           Quản lý nhân sự ({filteredEmployees.length})
         </h2>
         {!isViewOnly && (
@@ -372,8 +376,19 @@ export default function EmployeePage() {
           }}
         >
           <span style={{ fontWeight: 600 }}>
-            <FilterOutlined /> Lọc nhanh:
+            <FilterOutlined /> Bộ lọc:
           </span>
+
+          {/* --- 4. Ô TÌM KIẾM MỚI --- */}
+          <Input
+            placeholder="Tìm tên hoặc mã NV..."
+            prefix={<SearchOutlined style={{ color: "#bfbfbf" }} />}
+            style={{ width: 200 }}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            allowClear
+          />
+          {/* ------------------------- */}
 
           <Select
             style={{ width: 220 }}
@@ -407,12 +422,13 @@ export default function EmployeePage() {
             ))}
           </Select>
 
-          {(selectedFactoryId || selectedDeptId) && (
+          {(selectedFactoryId || selectedDeptId || searchText) && (
             <Button
               type="link"
               onClick={() => {
                 setSelectedFactoryId(null);
                 setSelectedDeptId(null);
+                setSearchText(""); // Reset ô tìm kiếm
               }}
             >
               Xóa lọc
@@ -421,7 +437,7 @@ export default function EmployeePage() {
         </div>
       </Card>
 
-      {/* --- THANH CÔNG CỤ CẬP NHẬT HÀNG LOẠT (Chỉ hiện khi tick chọn) --- */}
+      {/* --- THANH CÔNG CỤ CẬP NHẬT HÀNG LOẠT --- */}
       {selectedRowKeys.length > 0 && !isViewOnly && (
         <div
           style={{
@@ -452,7 +468,6 @@ export default function EmployeePage() {
               onChange={setBulkKipId}
               allowClear
             >
-              {/* HIỂN THỊ DANH SÁCH KÍP RÕ RÀNG */}
               {kips.map((k) => (
                 <Select.Option key={k.id} value={k.id}>
                   {k.name} - {k.factory?.name}
@@ -464,7 +479,7 @@ export default function EmployeePage() {
               type="primary"
               onClick={handleBulkUpdate}
               loading={loading}
-              disabled={bulkKipId === undefined} // Cho phép null để xóa kíp, nhưng không được undefined
+              disabled={bulkKipId === undefined}
             >
               Cập nhật ngay
             </Button>
@@ -480,17 +495,17 @@ export default function EmployeePage() {
 
       {/* --- BẢNG DỮ LIỆU --- */}
       <Table
-        rowSelection={!isViewOnly ? rowSelection : undefined} // Ẩn checkbox nếu chỉ xem
+        rowSelection={!isViewOnly ? rowSelection : undefined}
         columns={columns}
-        dataSource={filteredEmployees}
+        dataSource={filteredEmployees} // Dùng danh sách đã lọc
         rowKey="id"
         loading={loading}
         bordered
         scroll={{ x: 900 }}
-        pagination={{ pageSize: 20, showSizeChanger: true }} // Tăng pageSize để dễ tick chọn nhiều
+        pagination={{ pageSize: 20, showSizeChanger: true }}
       />
 
-      {/* --- MODAL FORM --- */}
+      {/* --- MODAL FORM GIỮ NGUYÊN --- */}
       <Modal
         title={editingId ? "Cập nhật thông tin" : "Thêm mới nhân viên"}
         open={isModalOpen}
@@ -539,7 +554,6 @@ export default function EmployeePage() {
               </Select>
             </Form.Item>
 
-            {/* Ô CHỌN KÍP TRONG FORM */}
             <Form.Item
               name="kipId"
               label="Kíp / Tổ (Tùy chọn)"

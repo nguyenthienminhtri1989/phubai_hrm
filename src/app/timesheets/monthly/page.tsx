@@ -87,7 +87,7 @@ export default function MonthlyTimesheetPage() {
   const [isLocked, setIsLocked] = useState(false);
 
   // --- CẤU HÌNH NHÀ MÁY 3 ---
-  const SHIFT_FACTORY_IDS = [3];
+  const SHIFT_FACTORY_IDS = [2, 3];
 
   // 1. Tải dữ liệu ban đầu
   useEffect(() => {

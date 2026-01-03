@@ -175,7 +175,7 @@ export default function DailyTimesheetPage() {
   }, [availableDepartments]);
 
   // --- CẤU HÌNH NHÀ MÁY DÙNG KÍP ---
-  const SHIFT_FACTORY_IDS = [3];
+  const SHIFT_FACTORY_IDS = [3, 2];
 
   // --- LOGIC TỰ ĐỘNG PHÁT HIỆN ---
   const isShiftFactory = useMemo(() => {
