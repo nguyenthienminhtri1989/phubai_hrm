@@ -1,4 +1,3 @@
-// src/app/api/timesheets/daily/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
@@ -7,7 +6,7 @@ import { auth } from "@/auth";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const departmentIdStr = searchParams.get("departmentId"); // Nhận chuỗi "1,2,3"
+    const departmentId = searchParams.get("departmentId");
     const dateStr = searchParams.get("date");
     const kipIdsStr = searchParams.get("kipIds");
 
@@ -21,39 +20,19 @@ export async function GET(request: Request) {
     const targetDate = new Date(`${dateStr}T00:00:00.000Z`);
     const whereCondition: any = {};
 
-    // --- [SỬA ĐỔI QUAN TRỌNG] ---
-    // Logic lọc: Hỗ trợ nhiều Department ID cùng lúc (Do chọn nhiều Kíp hoặc chọn Tổ)
-    if (
-      departmentIdStr &&
-      departmentIdStr !== "null" &&
-      departmentIdStr !== ""
-    ) {
-      // Tách chuỗi "15,16" thành mảng số [15, 16]
-      const deptIds = departmentIdStr
-        .split(",")
-        .map(Number)
-        .filter((n) => !isNaN(n));
-
-      if (deptIds.length > 0) {
-        whereCondition.departmentId = { in: deptIds };
-      }
+    // Logic lọc:
+    // 1. Nếu có departmentId -> Lọc theo Phòng (Đây là phòng KHÔNG thuộc Kíp)
+    if (departmentId && departmentId !== "null" && departmentId !== "") {
+      whereCondition.departmentId = parseInt(departmentId);
     }
-    // ----------------------------
 
-    // 2. Nếu có kipIds -> Lọc theo Kíp (Dành cho NM3 hoặc bộ lọc bổ sung)
+    // 2. Nếu có kipIds -> Lọc theo Kíp (Các bộ phận sản xuất)
     if (kipIdsStr && kipIdsStr !== "") {
-      const kipIds = kipIdsStr
-        .split(",")
-        .map(Number)
-        .filter((n) => !isNaN(n));
-      if (kipIds.length > 0) {
-        // Lưu ý: Nếu đã lọc theo departmentId (NM2) thì kipId là điều kiện giao (AND)
-        // Nếu chưa có departmentId (NM3), nó sẽ lọc nhân viên thuộc các kíp này
-        whereCondition.kipId = { in: kipIds };
-      }
+      const kipIds = kipIdsStr.split(",").map(Number);
+      whereCondition.kipId = { in: kipIds };
     }
 
-    // Nếu không chọn gì cả (cả Dept và Kíp đều rỗng) -> Trả về rỗng để tránh tải trộm bộ
+    // Nếu không chọn gì cả -> Trả về rỗng
     if (Object.keys(whereCondition).length === 0) {
       return NextResponse.json([]);
     }
@@ -82,7 +61,6 @@ export async function GET(request: Request) {
         employeeCode: emp.code,
         fullName: emp.fullName,
         departmentName: emp.department?.name,
-        departmentCode: emp.department?.code, // Trả thêm code nếu cần debug
         kipName: emp.kip?.name,
         attendanceCodeId: timesheet ? timesheet.attendanceCodeId : null,
         note: timesheet ? timesheet.note : "",
@@ -118,8 +96,9 @@ export async function POST(request: Request) {
     const targetDate = new Date(`${date}T00:00:00.000Z`);
 
     // --- KIỂM TRA KHÓA SỔ ---
-    // Chỉ kiểm tra nếu người dùng chấm theo 1 Phòng Ban cụ thể (có departmentId)
-    // Nếu chấm gộp nhiều phòng (departmentId = null), tạm thời cho qua để tránh lỗi logic
+    // Chỉ kiểm tra nếu người dùng chấm theo Phòng Ban cụ thể (có departmentId)
+    // Nếu chấm theo Kíp (departmentId = null), tạm thời bỏ qua check khóa sổ phòng ban
+    // (Hoặc logic này sẽ được nâng cấp sau để check khóa sổ của từng phòng trong kíp)
     if (departmentId) {
       const dateObj = new Date(date);
       const month = dateObj.getMonth() + 1;
@@ -145,7 +124,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Thực hiện lưu (Transaction để đảm bảo toàn vẹn)
     await prisma.$transaction(
       records.map((rec: any) =>
         prisma.timesheet.upsert({

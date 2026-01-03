@@ -16,11 +16,7 @@ import {
   Typography,
   Alert,
 } from "antd";
-import {
-  SaveOutlined,
-  ReloadOutlined,
-  FilterOutlined,
-} from "@ant-design/icons";
+import { SaveOutlined, ReloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 
@@ -33,20 +29,18 @@ interface AttendanceCode {
   name: string;
   color: string;
 }
-
 interface Factory {
   id: number;
   name: string;
   code: string;
 }
-
 interface Department {
   id: number;
+  code: string; // Bắt buộc có mã code
   name: string;
   factory?: Factory;
   isKip: boolean;
 }
-
 interface TimesheetRow {
   employeeId: number;
   employeeCode: string;
@@ -55,12 +49,20 @@ interface TimesheetRow {
   note: string;
   updatedAt?: string;
 }
-
 interface Kip {
   id: number;
   name: string;
   factoryId: number;
   factory?: { name: string };
+}
+
+// Helper Interface cho Dropdown gộp
+interface DeptOption {
+  value: string; // Format: "SECTION:GT" hoặc "DEPT:15"
+  label: string;
+  type: "SECTION" | "DEPT";
+  code?: string; // Mã tổ (GT) nếu là Section
+  id?: number; // ID thật nếu là Dept
 }
 
 export default function DailyTimesheetPage() {
@@ -78,13 +80,22 @@ export default function DailyTimesheetPage() {
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(
     null
   );
-  const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
+
+  // State quản lý lựa chọn Dropdown gộp
+  // Giá trị sẽ là "SECTION:GT" hoặc "DEPT:123"
+  const [mixedDeptValue, setMixedDeptValue] = useState<string | null>(null);
+
+  // State Kíp (cho NM2 và NM3)
   const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // 1. Tải danh mục hệ thống
+  // --- CONFIG ---
+  const EXCLUSIVE_FACTORY_IDS = [3]; // NM3: Chọn Kíp HOẶC Phòng
+  const MATRIX_FACTORY_IDS = [2]; // NM2: Ma trận
+
+  // 1. Load Data
   useEffect(() => {
     const fetchInitData = async () => {
       try {
@@ -96,12 +107,8 @@ export default function DailyTimesheetPage() {
         setDepartments(await deptRes.json());
         setKips(await kipRes.json());
 
-        // --- XỬ LÝ SẮP XẾP MÃ CÔNG ---
         const codes: AttendanceCode[] = await codeRes.json();
-
-        // Định nghĩa thứ tự ưu tiên (Những mã hay dùng nhất để lên đầu)
-        // Bạn có thể thêm bớt tùy ý vào danh sách này
-        const PRIORITY_ORDER = [
+        const PRIORITY = [
           "X",
           "XD",
           "ĐC",
@@ -113,45 +120,28 @@ export default function DailyTimesheetPage() {
           "L",
           "TS",
         ];
-
         codes.sort((a, b) => {
-          const indexA = PRIORITY_ORDER.indexOf(a.code);
-          const indexB = PRIORITY_ORDER.indexOf(b.code);
-
-          // 1. Nếu cả 2 đều nằm trong danh sách ưu tiên -> Sắp theo thứ tự trong danh sách
-          if (indexA !== -1 && indexB !== -1) {
-            return indexA - indexB;
-          }
-
-          // 2. Nếu chỉ có A nằm trong danh sách -> A lên trước
-          if (indexA !== -1) return -1;
-
-          // 3. Nếu chỉ có B nằm trong danh sách -> B lên trước
-          if (indexB !== -1) return 1;
-
-          // 4. Các mã còn lại (ít dùng) -> Sắp xếp Alphabet cho dễ tìm
+          const iA = PRIORITY.indexOf(a.code),
+            iB = PRIORITY.indexOf(b.code);
+          if (iA !== -1 && iB !== -1) return iA - iB;
+          if (iA !== -1) return -1;
+          if (iB !== -1) return 1;
           return a.code.localeCompare(b.code);
         });
-
         setAttendanceCodes(codes);
-        // -----------------------------
       } catch (error) {
-        message.error("Lỗi tải danh mục hệ thống");
+        message.error("Lỗi tải danh mục");
       }
     };
     fetchInitData();
   }, []);
 
-  // --- LOGIC PHÂN QUYỀN ---
-
-  // A. Lọc danh sách được phép quản lý
+  // --- LOGIC ---
   const availableDepartments = useMemo(() => {
     if (departments.length === 0 || !session) return [];
     const user = session.user;
-
-    if (["ADMIN", "HR_MANAGER", "LEADER"].includes(user.role)) {
+    if (["ADMIN", "HR_MANAGER", "LEADER"].includes(user.role))
       return departments;
-    }
     if (user.role === "TIMEKEEPER") {
       const allowedIds = user.managedDeptIds || [];
       return departments.filter((d) => allowedIds.includes(d.id));
@@ -159,62 +149,202 @@ export default function DailyTimesheetPage() {
     return [];
   }, [departments, session]);
 
-  // B. KIỂM TRA: User này có quyền xem Kíp hay không?
-  const hasKipPermission = useMemo(() => {
-    if (availableDepartments.length === 0) return false;
-    return availableDepartments.some((d) => d.isKip === true);
-  }, [availableDepartments]);
+  const hasKipPermission = useMemo(
+    () => availableDepartments.some((d) => d.isKip === true),
+    [availableDepartments]
+  );
 
-  // C. List Nhà máy
   const factories = useMemo(() => {
     const map = new Map();
-    availableDepartments.forEach((dept) => {
-      if (dept.factory) map.set(dept.factory.id, dept.factory);
+    availableDepartments.forEach((d) => {
+      if (d.factory) map.set(d.factory.id, d.factory);
     });
     return Array.from(map.values()) as Factory[];
   }, [availableDepartments]);
 
-  // --- CẤU HÌNH NHÀ MÁY DÙNG KÍP ---
-  const SHIFT_FACTORY_IDS = [3, 2];
+  const isExclusive = useMemo(
+    () =>
+      selectedFactoryId
+        ? EXCLUSIVE_FACTORY_IDS.includes(selectedFactoryId)
+        : false,
+    [selectedFactoryId]
+  );
+  const isMatrix = useMemo(
+    () =>
+      selectedFactoryId
+        ? MATRIX_FACTORY_IDS.includes(selectedFactoryId)
+        : false,
+    [selectedFactoryId]
+  );
 
-  // --- LOGIC TỰ ĐỘNG PHÁT HIỆN ---
-  const isShiftFactory = useMemo(() => {
-    if (!selectedFactoryId) return false;
-    return SHIFT_FACTORY_IDS.includes(selectedFactoryId);
-  }, [selectedFactoryId]);
-
-  // D. Lọc Phòng ban hiển thị vào Dropdown
-  const filteredDepartments = useMemo(() => {
+  // --- LOGIC TẠO DANH SÁCH DROPDOWN GỘP (QUAN TRỌNG) ---
+  const mixedDeptOptions = useMemo<DeptOption[]>(() => {
     if (!selectedFactoryId) return [];
-
-    let depts = availableDepartments.filter(
+    const currentDepts = availableDepartments.filter(
       (d) => d.factory?.id === selectedFactoryId
     );
+    const options: DeptOption[] = [];
+    const processedSections = new Set<string>(); // Để tránh trùng lặp Section
 
-    if (isShiftFactory) {
-      depts = depts.filter((d) => d.isKip === false);
+    currentDepts.forEach((d) => {
+      // Check xem có phải là Phòng thuộc Kíp (Ma trận) không? Dựa vào Regex Mã Code
+      // Regex: Bắt đầu bằng ID nhà máy, Chữ cái ở giữa, Kết thúc số
+      const matrixRegex = new RegExp(`^${selectedFactoryId}([a-zA-Z]+)(\\d+)$`);
+      const match = d.code?.match(matrixRegex);
+
+      if (isMatrix && match) {
+        // --- TRƯỜNG HỢP 1: LÀ TỔ SẢN XUẤT (Ma trận) ---
+        const sectionCode = match[1]; // VD: GT
+        if (!processedSections.has(sectionCode)) {
+          // Tạo tên hiển thị đẹp (Cắt bỏ chữ Kíp)
+          let displayName = d.name
+            .replace(/(kíp|ca)\s*\d+.*$/gi, "")
+            .trim()
+            .replace(/-+.*$/gi, "")
+            .trim();
+
+          options.push({
+            value: `SECTION:${sectionCode}`,
+            label: displayName, // VD: "Tổ Ghép thô"
+            type: "SECTION",
+            code: sectionCode,
+          });
+          processedSections.add(sectionCode);
+        }
+      } else {
+        // --- TRƯỜNG HỢP 2: LÀ PHÒNG BAN BÌNH THƯỜNG (Hoặc NM3 HC) ---
+        // Với NM3 Exclusive: Ẩn các phòng SX (isKip=true) để chọn bên ô Kíp riêng
+        if (isExclusive && d.isKip) return;
+
+        options.push({
+          value: `DEPT:${d.id}`,
+          label: d.name,
+          type: "DEPT",
+          id: d.id,
+        });
+      }
+    });
+
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  }, [availableDepartments, selectedFactoryId, isMatrix, isExclusive]);
+
+  // --- XỬ LÝ SỰ KIỆN ---
+  const handleFactoryChange = (val: number) => {
+    setSelectedFactoryId(val);
+    setMixedDeptValue(null);
+    setSelectedKipIds([]);
+    setEmployees([]); // Xóa bảng khi đổi nhà máy
+  };
+
+  const handleMixedDeptChange = (val: string) => {
+    setMixedDeptValue(val);
+    // Nếu chọn loại DEPT (Phòng thường) thì xóa chọn Kíp đi cho sạch
+    if (val && val.startsWith("DEPT")) {
+      setSelectedKipIds([]);
+    }
+    // Nếu là NM3 (Exclusive), chọn Phòng thì xóa Kíp
+    if (isExclusive && val) setSelectedKipIds([]);
+  };
+
+  const handleKipChange = (val: number[]) => {
+    setSelectedKipIds(val);
+    // NM3: Chọn Kíp thì xóa chọn Phòng
+    if (isExclusive && val.length > 0) setMixedDeptValue(null);
+  };
+
+  // --- HÀM TÍNH TOÁN ID PHÒNG BAN THỰC TẾ ---
+  const resolveRealDepartmentIds = (): number[] => {
+    if (!selectedFactoryId) return [];
+
+    // TH1: Chọn Phòng ban cụ thể (DEPT)
+    if (mixedDeptValue && mixedDeptValue.startsWith("DEPT")) {
+      const id = parseInt(mixedDeptValue.split(":")[1]);
+      return [id];
     }
 
-    return depts;
-  }, [availableDepartments, selectedFactoryId, isShiftFactory]);
+    // TH2: Chọn Tổ Sản Xuất (SECTION) - Logic Ma trận
+    if (mixedDeptValue && mixedDeptValue.startsWith("SECTION")) {
+      const sectionCode = mixedDeptValue.split(":")[1]; // GT
 
-  // --- FETCH DATA (ĐÃ SỬA ĐỂ TỰ XÓA DỮ LIỆU) ---
+      // Lấy danh sách số Kíp từ các Kíp đã chọn
+      // Nếu không chọn Kíp nào -> Lấy HẾT các Kíp (Logic: Xem cả tổ)
+      let targetKipNumbers: string[] = [];
+
+      if (selectedKipIds.length > 0) {
+        // Lấy số từ tên Kíp đã chọn (Kíp 1 -> "1")
+        const selectedKipNames = kips
+          .filter((k) => selectedKipIds.includes(k.id))
+          .map((k) => k.name);
+        targetKipNumbers = selectedKipNames
+          .map((name) => name.match(/\d+/)?.[0] || "")
+          .filter((n) => n);
+      } else {
+        // Không chọn kíp -> Không lọc -> Lấy tất cả phòng có mã sectionCode
+        // Tuy nhiên để an toàn, ta sẽ duyệt qua department list
+      }
+
+      const realIds: number[] = [];
+      availableDepartments.forEach((d) => {
+        if (d.factory?.id !== selectedFactoryId) return;
+        // Check Code: Phải khớp Section (2GT...)
+        const regex = new RegExp(`^${selectedFactoryId}${sectionCode}(\\d+)$`);
+        const match = d.code?.match(regex);
+
+        if (match) {
+          const deptKipNum = match[1]; // Số kíp trong mã phòng
+          // Nếu có chọn Kíp cụ thể -> Phải khớp số Kíp
+          if (targetKipNumbers.length > 0) {
+            if (targetKipNumbers.includes(deptKipNum)) {
+              realIds.push(d.id);
+            }
+          } else {
+            // Không chọn Kíp -> Lấy hết
+            realIds.push(d.id);
+          }
+        }
+      });
+      return realIds;
+    }
+
+    return [];
+  };
+
+  // --- FETCH DATA ---
   const fetchTimesheetData = async () => {
-    // [LOGIC MỚI] Nếu chưa chọn gì cả -> Xóa sạch dữ liệu cũ và return
-    if (!selectedDeptId && selectedKipIds.length === 0) {
-      setEmployees([]); // <--- Dòng này giúp bảng biến mất khi xóa ô chọn
-      return;
+    // 1. Kiểm tra điều kiện & Xóa bảng nếu không chọn gì
+    // NM3: Phải chọn Phòng HOẶC Kíp
+    // NM2/1: Phải chọn Phòng/Tổ
+    if (isExclusive) {
+      if (!mixedDeptValue && selectedKipIds.length === 0) {
+        setEmployees([]);
+        return;
+      }
+    } else {
+      if (!mixedDeptValue) {
+        setEmployees([]);
+        return;
+      }
     }
 
     setLoading(true);
     try {
       const dateStr = selectedDate.format("YYYY-MM-DD");
-      const kipIdsParam =
-        selectedKipIds.length > 0 ? selectedKipIds.join(",") : "";
+      let url = `/api/timesheets/daily?date=${dateStr}`;
 
-      const url = `/api/timesheets/daily?date=${dateStr}&departmentId=${
-        selectedDeptId || ""
-      }&kipIds=${kipIdsParam}`;
+      if (isExclusive && selectedKipIds.length > 0 && !mixedDeptValue) {
+        // NM3 trường hợp chỉ chọn Kíp (không chọn phòng)
+        url += `&kipIds=${selectedKipIds.join(",")}`;
+      } else {
+        // Các trường hợp còn lại: Phải phân giải ra Department IDs
+        const realIds = resolveRealDepartmentIds();
+        if (realIds.length === 0) {
+          message.warning("Không tìm thấy dữ liệu phòng ban tương ứng.");
+          setEmployees([]);
+          setLoading(false);
+          return;
+        }
+        url += `&departmentId=${realIds.join(",")}`; // Gửi chuỗi "15,16"
+      }
 
       const res = await fetch(url);
       if (!res.ok) throw new Error("Lỗi tải");
@@ -229,53 +359,35 @@ export default function DailyTimesheetPage() {
     }
   };
 
+  // Auto load
   useEffect(() => {
     fetchTimesheetData();
-  }, [selectedDeptId, selectedDate, selectedKipIds]);
+  }, [selectedDate, selectedFactoryId, mixedDeptValue, selectedKipIds]);
 
-  // --- HANDLERS ---
-  const handleRowChange = (empId: number, field: string, value: any) => {
-    const newData = [...employees];
-    const index = newData.findIndex((item) => item.employeeId === empId);
-    if (index > -1) {
-      newData[index] = { ...newData[index], [field]: value };
-      setEmployees(newData);
-    }
-  };
-
-  const setAllStatus = (codeStr: string) => {
-    const targetCode = attendanceCodes.find((c) => c.code === codeStr);
-    if (!targetCode) return;
-    const newEmployees = employees.map((emp) => ({
-      ...emp,
-      attendanceCodeId: targetCode.id,
-    }));
-    setEmployees(newEmployees);
-    message.success(`Đã thiết lập toàn bộ là ${codeStr}`);
-  };
-
-  // Hàm lưu dữ liệu chấm công ngày
+  // --- SAVE ---
   const handleSave = async () => {
-    // BƯỚC 1: Lọc dữ liệu "sạch"
-    // Chỉ lấy những nhân viên mà attendanceCodeId có giá trị (khác null và undefined)
     const validRecords = employees.filter(
       (e) => e.attendanceCodeId !== null && e.attendanceCodeId !== undefined
     );
-
-    // BƯỚC 2: Kiểm tra nếu không có ai được chọn thì dừng luôn
     if (validRecords.length === 0) {
-      message.warning(
-        "Vui lòng chọn công cho ít nhất 1 nhân viên trước khi lưu!"
-      );
+      message.warning("Chưa chọn công!");
       return;
     }
 
     setSaving(true);
     try {
+      // Vì lưu nhiều phòng ban cùng lúc, ta không gửi departmentId cụ thể ở cấp cao nhất
+      // Mà API daily của ta ở POST nó tự suy ra Department từ EmployeeID (hoặc ta gửi null)
+      // *Lưu ý*: API daily POST cũ của bạn có thể đang cần departmentId để check khóa sổ.
+      // Nếu ta gửi null, logic check khóa sổ phải dựa vào employee list (như ta đã sửa ở các bước trước cho Kíp).
+
+      // Tuy nhiên, để an toàn, nếu chỉ có 1 dept thì gửi, nhiều thì gửi null
+      const realIds = resolveRealDepartmentIds();
+      const payloadDeptId = realIds.length === 1 ? realIds[0] : null;
+
       const payload = {
         date: selectedDate.format("YYYY-MM-DD"),
-        departmentId: selectedDeptId,
-        // BƯỚC 3: Chỉ map những bản ghi hợp lệ đã lọc ở trên
+        departmentId: payloadDeptId,
         records: validRecords.map((e) => ({
           employeeId: e.employeeId,
           attendanceCodeId: e.attendanceCodeId,
@@ -290,20 +402,37 @@ export default function DailyTimesheetPage() {
       });
 
       if (res.ok) {
-        message.success(`Đã lưu thành công ${validRecords.length} nhân viên!`);
-        // Gọi hàm tải lại dữ liệu để cập nhật trạng thái mới nhất từ server
+        message.success(`Lưu thành công ${validRecords.length} NV!`);
         fetchTimesheetData();
       } else {
         const err = await res.json();
-        message.error(err.error || "Lỗi khi lưu");
+        message.error(
+          res.status === 403 ? `KHÓA SỔ: ${err.error}` : err.error || "Lỗi lưu"
+        );
       }
     } catch (error) {
-      message.error("Lỗi kết nối server");
+      message.error("Lỗi kết nối");
     } finally {
       setSaving(false);
     }
   };
 
+  // Helpers
+  const handleRowChange = (empId: number, field: string, value: any) => {
+    const newData = [...employees];
+    const index = newData.findIndex((i) => i.employeeId === empId);
+    if (index > -1) {
+      newData[index] = { ...newData[index], [field]: value };
+      setEmployees(newData);
+    }
+  };
+  const setAllStatus = (codeStr: string) => {
+    const targetCode = attendanceCodes.find((c) => c.code === codeStr);
+    if (!targetCode) return;
+    setEmployees(
+      employees.map((e) => ({ ...e, attendanceCodeId: targetCode.id }))
+    );
+  };
   const timesheetStatus = useMemo(() => {
     if (employees.length === 0) return null;
     const hasData = employees.some((e) => e.attendanceCodeId !== null);
@@ -316,7 +445,18 @@ export default function DailyTimesheetPage() {
     };
   }, [employees]);
 
-  // --- TABLE COLUMNS ---
+  // UI VARS
+  // Show Kip if: (Matrix AND selected Section) OR (Exclusive AND has permission AND not selected Dept)
+  const isSectionSelected = mixedDeptValue?.startsWith("SECTION");
+  const showKipSelect =
+    (isMatrix && isSectionSelected) ||
+    (isExclusive && hasKipPermission && !mixedDeptValue);
+
+  // Show Dept if: Not Exclusive OR (Exclusive AND not selected Kip)
+  const showDeptSelect =
+    !isExclusive || (isExclusive && selectedKipIds.length === 0);
+
+  // COLUMNS (Giữ nguyên)
   const columns = [
     {
       title: "STT",
@@ -351,51 +491,45 @@ export default function DailyTimesheetPage() {
           value={value}
           allowClear
           style={{ width: "100%" }}
-          placeholder="Chọn công"
+          placeholder="Chọn"
           onChange={(val) =>
             handleRowChange(record.employeeId, "attendanceCodeId", val)
           }
-          // 1. Truyền đầy đủ dữ liệu (item) vào options
           options={attendanceCodes.map((c) => ({
             value: c.id,
             label: `${c.code} - ${c.name}`,
-            item: c, // <--- QUAN TRỌNG: Để lấy được màu ở bước sau
+            item: c,
           }))}
-          // 2. Hiển thị màu trong danh sách thả xuống
-          optionRender={(option) => {
-            const code = option.data.item;
-            return (
-              <Space>
-                <Tag
-                  color={code.color}
-                  style={{
-                    fontWeight: "bold",
-                    minWidth: 40,
-                    textAlign: "center",
-                  }}
-                >
-                  {code.code}
-                </Tag>
-                {code.name}
-              </Space>
-            );
-          }}
-          // 3. Hiển thị màu khi đã chọn xong (trong ô input)
-          labelRender={(props) => {
-            const code = attendanceCodes.find((c) => c.id === props.value);
-            if (!code) return props.label;
-            return (
+          optionRender={(opt) => (
+            <Space>
               <Tag
-                color={code.color}
+                color={opt.data.item.color}
+                style={{
+                  fontWeight: "bold",
+                  minWidth: 40,
+                  textAlign: "center",
+                }}
+              >
+                {opt.data.item.code}
+              </Tag>
+              {opt.data.item.name}
+            </Space>
+          )}
+          labelRender={(props) => {
+            const c = attendanceCodes.find((x) => x.id === props.value);
+            return c ? (
+              <Tag
+                color={c.color}
                 style={{
                   fontWeight: "bold",
                   width: "100%",
                   textAlign: "center",
-                  margin: 0,
                 }}
               >
-                {code.code} - {code.name}
+                {c.code} - {c.name}
               </Tag>
+            ) : (
+              props.label
             );
           }}
         />
@@ -404,11 +538,11 @@ export default function DailyTimesheetPage() {
     {
       title: "Ghi chú",
       dataIndex: "note",
-      render: (text: string, record: TimesheetRow) => (
+      render: (txt: string, rec: TimesheetRow) => (
         <Input
-          value={text}
+          value={txt}
           onChange={(e) =>
-            handleRowChange(record.employeeId, "note", e.target.value)
+            handleRowChange(rec.employeeId, "note", e.target.value)
           }
           placeholder="..."
         />
@@ -416,16 +550,11 @@ export default function DailyTimesheetPage() {
     },
   ];
 
-  // --- LOGIC HIỂN THỊ UI ---
-  const showKipSelect = isShiftFactory && !selectedDeptId && hasKipPermission;
-  const showDeptSelect = !isShiftFactory || selectedKipIds.length === 0;
-
   return (
     <AdminLayout>
       <div style={{ marginBottom: 24 }}>
         <Title level={3}>Chấm công hàng ngày</Title>
       </div>
-
       <Card style={{ marginBottom: 16, background: "#f5f5f5" }} size="small">
         <div
           style={{
@@ -435,31 +564,24 @@ export default function DailyTimesheetPage() {
             flexWrap: "wrap",
           }}
         >
-          {/* 1. NGÀY */}
           <div>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Ngày:</div>
             <DatePicker
               value={selectedDate}
-              onChange={(date) => date && setSelectedDate(date)}
+              onChange={(d) => d && setSelectedDate(d)}
               format="DD/MM/YYYY"
               allowClear={false}
               style={{ width: 130 }}
             />
           </div>
 
-          {/* 2. NHÀ MÁY */}
           <div>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Nhà máy:</div>
             <Select
               style={{ width: 180 }}
               placeholder="Chọn Nhà máy"
               value={selectedFactoryId}
-              onChange={(val) => {
-                setSelectedFactoryId(val);
-                setSelectedDeptId(null);
-                setSelectedKipIds([]);
-                setEmployees([]); // Xóa bảng khi đổi nhà máy
-              }}
+              onChange={handleFactoryChange}
             >
               {factories.map((f) => (
                 <Select.Option key={f.id} value={f.id}>
@@ -469,22 +591,42 @@ export default function DailyTimesheetPage() {
             </Select>
           </div>
 
-          {/* 3. Ô CHỌN KÍP */}
+          {showDeptSelect && (
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                {isMatrix ? "Chọn Tổ / Bộ phận:" : "Phòng ban:"}
+              </div>
+              <Select
+                style={{ width: 220 }}
+                placeholder="Chọn..."
+                allowClear
+                value={mixedDeptValue}
+                onChange={handleMixedDeptChange}
+                disabled={!selectedFactoryId}
+                showSearch
+                optionFilterProp="children"
+              >
+                {mixedDeptOptions.map((opt) => (
+                  <Select.Option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+          )}
+
           {showKipSelect && (
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                Kíp (Sản xuất):
+                {isMatrix ? "Lọc theo Kíp (Chọn nhiều):" : "Chọn Kíp:"}
               </div>
               <Select
                 mode="multiple"
                 style={{ width: 220 }}
-                placeholder="Chọn Kíp..."
+                placeholder="Tất cả Kíp"
                 allowClear
                 value={selectedKipIds}
-                onChange={(val) => {
-                  setSelectedKipIds(val);
-                  if (val.length > 0) setSelectedDeptId(null);
-                }}
+                onChange={handleKipChange}
                 disabled={!selectedFactoryId}
               >
                 {kips
@@ -498,39 +640,11 @@ export default function DailyTimesheetPage() {
             </div>
           )}
 
-          {/* 4. Ô CHỌN PHÒNG BAN */}
-          {showDeptSelect && (
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                {isShiftFactory ? "Phòng (Hành chính/Khác):" : "Phòng ban:"}
-              </div>
-              <Select
-                style={{ width: 220 }}
-                placeholder="Chọn Phòng ban"
-                allowClear
-                value={selectedDeptId}
-                onChange={(val) => {
-                  setSelectedDeptId(val);
-                  if (val) setSelectedKipIds([]);
-                }}
-                disabled={!selectedFactoryId}
-                showSearch
-                optionFilterProp="children"
-              >
-                {filteredDepartments.map((d) => (
-                  <Select.Option key={d.id} value={d.id}>
-                    {d.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-          )}
-
           <div style={{ marginTop: 24 }}>
             <Button
               icon={<ReloadOutlined />}
               onClick={fetchTimesheetData}
-              disabled={!selectedDeptId && selectedKipIds.length === 0}
+              disabled={!mixedDeptValue && selectedKipIds.length === 0}
             >
               Tải lại
             </Button>
@@ -538,7 +652,6 @@ export default function DailyTimesheetPage() {
         </div>
       </Card>
 
-      {/* HIỂN THỊ CẢNH BÁO */}
       {employees.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           {timesheetStatus?.isSubmitted ? (
@@ -548,16 +661,11 @@ export default function DailyTimesheetPage() {
               showIcon
             />
           ) : (
-            <Alert
-              message="Chưa có dữ liệu chấm công ngày này."
-              type="info"
-              showIcon
-            />
+            <Alert message="Chưa có dữ liệu." type="info" showIcon />
           )}
         </div>
       )}
 
-      {/* BẢNG DỮ LIỆU */}
       {employees.length > 0 ? (
         <>
           <div
@@ -587,7 +695,6 @@ export default function DailyTimesheetPage() {
               </Button>
             )}
           </div>
-
           <Table
             bordered
             dataSource={employees}
