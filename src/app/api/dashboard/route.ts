@@ -45,6 +45,7 @@ export async function GET(request: Request) {
       "TS",
       "RO",
       "O",
+      "NB",
     ];
 
     const departmentStats = await Promise.all(
