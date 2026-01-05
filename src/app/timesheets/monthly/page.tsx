@@ -556,29 +556,44 @@ export default function MonthlyTimesheetPage() {
     return [...fixedColumns, ...dayColumns, ...summaryColumns];
   }, [selectedMonth, employees]);
 
-  // --- EXPORT EXCEL (Update Title Logic) ---
+  // --- EXPORT EXCEL (Đã thêm dòng Tên Nhà máy) ---
   const handleExportExcel = async () => {
     if (employees.length === 0) return;
     setLoading(true);
+
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("BangCong");
     worksheet.pageSetup = {
-      paperSize: 9,
+      paperSize: 9, // A4
       orientation: "landscape",
       fitToPage: true,
       fitToWidth: 1,
       fitToHeight: 0,
     };
 
+    // --- 1. HEADER (TIÊU ĐỀ) ---
+    // Dòng 1: Tên công ty
     const row1 = worksheet.getCell("A1");
     row1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
     row1.font = { name: "Times New Roman", size: 14, bold: true };
+
+    // Dòng 2: Tiêu đề tháng
     const row2 = worksheet.getCell("A2");
     row2.value = `BẢNG CHẤM CÔNG THÁNG ${selectedMonth.format("MM/YYYY")}`;
     row2.font = { name: "Times New Roman", size: 16, bold: true };
     row2.alignment = { horizontal: "center" };
 
-    // LOGIC TÊN BỘ PHẬN CHO EXCEL
+    // [MỚI] Dòng 3: Tên Nhà máy
+    // Lấy tên nhà máy từ danh sách phòng ban (availableDepartments)
+    const currentFactoryName =
+      availableDepartments.find((d) => d.factory?.id === selectedFactoryId)
+        ?.factory?.name || "";
+    const row3 = worksheet.getCell("A3");
+    row3.value = currentFactoryName.toUpperCase(); // Ví dụ: NHÀ MÁY SỢI 2
+    row3.font = { name: "Times New Roman", size: 14, bold: true };
+    row3.alignment = { horizontal: "center" };
+
+    // [ĐẨY XUỐNG] Dòng 4: Tên Bộ phận
     let deptName = "";
     if (mixedDeptValue) {
       if (mixedDeptValue.startsWith("SECTION")) {
@@ -598,19 +613,32 @@ export default function MonthlyTimesheetPage() {
         .filter((k) => selectedKipIds.includes(k.id))
         .map((k) => k.name)
         .join(", ");
-      deptName = `Các Kíp: ${names}`;
+      deptName = names; // Chỉ hiện tên Kíp vì dòng trên đã có tên Nhà máy rồi
     }
-    // ... (Phần còn lại của Export Excel giữ nguyên như code cũ, tôi đã cắt bớt để tập trung vào logic)
-    // Bạn copy phần loop data và style từ code cũ vào đây nhé
-    const row3 = worksheet.getCell("A3");
-    row3.value = `Bộ phận: ${deptName}`;
-    row3.font = { name: "Times New Roman", size: 12, bold: true, italic: true };
-    row3.alignment = { horizontal: "center" };
 
-    const headerRow = ["STT", "Mã NV", "Họ và tên"];
+    const row4 = worksheet.getCell("A4");
+    row4.value = `Bộ phận: ${deptName}`;
+    row4.font = { name: "Times New Roman", size: 12, bold: true, italic: true };
+    row4.alignment = { horizontal: "center" };
+
+    // --- 2. TABLE HEADER (CỘT) ---
+    // Bỏ "Mã NV"
+    const headerRow = ["STT", "Họ và tên"];
     const daysInMonth = selectedMonth.daysInMonth();
     for (let i = 1; i <= daysInMonth; i++) headerRow.push(`${i}`);
-    headerRow.push("T.Công", "Ca 3", "100%", "BHXH", "K.Lương", "Vô LD", "Bão");
+
+    // Thêm cột X.Loại vào cuối
+    const summaryHeaders = [
+      "T.Công",
+      "Ca 3",
+      "100%",
+      "BHXH",
+      "K.Lương",
+      "Vô LD",
+      "L.Bão",
+      "X.Loại",
+    ];
+    headerRow.push(...summaryHeaders);
 
     const headerRowExcel = worksheet.addRow(headerRow);
     headerRowExcel.eachCell((cell) => {
@@ -629,8 +657,11 @@ export default function MonthlyTimesheetPage() {
       };
     });
 
+    // --- 3. DATA LOOP (DỮ LIỆU) ---
     employees.forEach((emp, index) => {
-      const rowData: any[] = [index + 1, emp.code, emp.fullName];
+      // Bỏ emp.code
+      const rowData: any[] = [index + 1, emp.fullName];
+
       for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = dayjs(
           `${selectedMonth.year()}-${selectedMonth.month() + 1}-${i}`
@@ -638,7 +669,7 @@ export default function MonthlyTimesheetPage() {
         const log = emp.timesheets.find((t) => t.date.startsWith(dateStr));
         rowData.push(log ? log.attendanceCode.code : "");
       }
-      // Count codes logic
+
       const countCodes = (fullCodes: string[], halfCodes: string[] = []) =>
         emp.timesheets.reduce((total, t) => {
           const code = t.attendanceCode.code;
@@ -655,7 +686,10 @@ export default function MonthlyTimesheetPage() {
       rowData.push(countCodes(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
       rowData.push(countCodes(["RO"]) || "");
       rowData.push(countCodes(["O"]) || "");
-      rowData.push(countCodes(["B"]) || "");
+      rowData.push(countCodes(["B"]) || ""); // L.Bão
+
+      // Cột X.Loại để trống
+      rowData.push("");
 
       const row = worksheet.addRow(rowData);
       row.eachCell((cell, colNumber) => {
@@ -666,21 +700,77 @@ export default function MonthlyTimesheetPage() {
           bottom: { style: "thin" },
           right: { style: "thin" },
         };
-        if (colNumber === 3) cell.alignment = { horizontal: "left", indent: 1 };
+
+        // Căn lề: Cột 2 là Tên (Trái), còn lại Giữa
+        if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
         else cell.alignment = { horizontal: "center" };
-        if (colNumber > 3 && colNumber <= 3 + daysInMonth && cell.value)
-          cell.font = { name: "Times New Roman", bold: true };
-        if (colNumber > 3 + daysInMonth && cell.value)
+
+        // In đậm phần tổng hợp
+        if (colNumber > 2 + daysInMonth && cell.value)
           cell.font = { name: "Times New Roman", bold: true };
       });
     });
 
-    // Footer
-    worksheet.getColumn(1).width = 5;
-    worksheet.getColumn(2).width = 10;
-    worksheet.getColumn(3).width = 25;
-    for (let i = 4; i <= 3 + daysInMonth; i++) worksheet.getColumn(i).width = 4;
+    // --- 4. FORMAT COLUMN WIDTH ---
+    worksheet.getColumn(1).width = 5; // STT
+    worksheet.getColumn(2).width = 25; // Họ tên
+    for (let i = 3; i <= 2 + daysInMonth; i++) worksheet.getColumn(i).width = 4;
 
+    // --- 5. FOOTER (CHỮ KÝ) ---
+    const totalCols = 2 + daysInMonth + summaryHeaders.length;
+    const lastRowIdx = worksheet.lastRow ? worksheet.lastRow.number : 0;
+
+    // [CẬP NHẬT MERGE TIÊU ĐỀ] Gộp 4 dòng đầu tiên (thêm dòng Nhà máy)
+    worksheet.mergeCells(1, 1, 1, totalCols); // Tên Cty
+    worksheet.mergeCells(2, 1, 2, totalCols); // Tháng
+    worksheet.mergeCells(3, 1, 3, totalCols); // Nhà máy
+    worksheet.mergeCells(4, 1, 4, totalCols); // Bộ phận
+
+    // Ngày tháng
+    const dateRowIndex = lastRowIdx + 2;
+    const dateStartCol = Math.floor(totalCols * 0.6);
+    worksheet.mergeCells(dateRowIndex, dateStartCol, dateRowIndex, totalCols);
+    const dateCell = worksheet.getCell(dateRowIndex, dateStartCol);
+    dateCell.value = "Phú Bài, ngày ...... tháng ...... năm 20......";
+    dateCell.font = { name: "Times New Roman", italic: true, size: 12 };
+    dateCell.alignment = { horizontal: "center" };
+
+    // Chữ ký (Chia 3)
+    const signTitleRowIndex = dateRowIndex + 1;
+    const sectionSize = Math.floor(totalCols / 3);
+
+    // Trái
+    worksheet.mergeCells(signTitleRowIndex, 1, signTitleRowIndex, sectionSize);
+    const cell1 = worksheet.getCell(signTitleRowIndex, 1);
+    cell1.value = "NGƯỜI CHẤM CÔNG";
+    cell1.font = { name: "Times New Roman", bold: true, size: 12 };
+    cell1.alignment = { horizontal: "center" };
+
+    // Giữa
+    worksheet.mergeCells(
+      signTitleRowIndex,
+      sectionSize + 1,
+      signTitleRowIndex,
+      sectionSize * 2
+    );
+    const cell2 = worksheet.getCell(signTitleRowIndex, sectionSize + 1);
+    cell2.value = "PHỤ TRÁCH ĐƠN VỊ";
+    cell2.font = { name: "Times New Roman", bold: true, size: 12 };
+    cell2.alignment = { horizontal: "center" };
+
+    // Phải
+    worksheet.mergeCells(
+      signTitleRowIndex,
+      sectionSize * 2 + 1,
+      signTitleRowIndex,
+      totalCols
+    );
+    const cell3 = worksheet.getCell(signTitleRowIndex, sectionSize * 2 + 1);
+    cell3.value = "CÁN BỘ KIỂM TRA";
+    cell3.font = { name: "Times New Roman", bold: true, size: 12 };
+    cell3.alignment = { horizontal: "center" };
+
+    // --- 6. WRITE FILE ---
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
