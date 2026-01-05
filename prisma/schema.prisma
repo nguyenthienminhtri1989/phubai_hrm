@@ -18,6 +18,7 @@ model Factory {
 
   // --- BỔ SUNG DÒNG NÀY VÀO ---
   kips        Kip[]        // Quan hệ ngược: 1 nhà máy có nhiều Kíp
+  lockRules   LockRule[] // Liên kết với bảng khóa sổ để chọn nhà máy cần khóa
 }
 
 // 2. Kíp (BẢNG MỚI - Định nghĩa Kíp 1 -> Kíp 10)
@@ -139,4 +140,15 @@ model User {
   managedDepartments Department[] 
 }
 
-
+// Bảng quản lý luật khóa sổ chấm công
+model LockRule {
+  id        Int      @id @default(autoincrement())
+  factoryId Int?     // Nếu null -> Khóa TOÀN BỘ hệ thống. Nếu có ID -> Khóa riêng Nhà máy đó.
+  fromDate  DateTime // Ngày bắt đầu khóa
+  toDate    DateTime // Ngày kết thúc khóa
+  reason    String?  // Lý do (VD: Chốt lương tháng 1)
+  createdAt DateTime @default(now())
+  
+  // Thiết lập quan hệ (Nếu bạn đã có model Factory)
+  factory   Factory? @relation(fields: [factoryId], references: [id])
+}
