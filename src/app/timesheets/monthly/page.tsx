@@ -504,7 +504,7 @@ export default function MonthlyTimesheetPage() {
         align: "center",
         fixed: "right",
         render: (_: any, r: MonthlyEmployeeData) => {
-          const total = countCodes(r, ["F", "R", "L", "ĐC"]);
+          const total = countCodes(r, ["F", "R", "L"]);
           return total > 0 ? <b style={{ color: "#2563eb" }}>{total}</b> : "-";
         },
       },
