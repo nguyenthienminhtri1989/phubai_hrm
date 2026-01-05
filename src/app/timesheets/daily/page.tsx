@@ -197,7 +197,7 @@ export default function DailyTimesheetPage() {
         const sectionCode = match[1]; // VD: GT
         if (!processedSections.has(sectionCode)) {
           // Tạo tên hiển thị đẹp (Cắt bỏ chữ Kíp)
-          let displayName = d.name
+          const displayName = d.name
             .replace(/(kíp|ca)\s*\d+.*$/gi, "")
             .trim()
             .replace(/-+.*$/gi, "")
@@ -680,8 +680,11 @@ export default function DailyTimesheetPage() {
               <Button size="small" onClick={() => setAllStatus("X")}>
                 Đi làm (X)
               </Button>
-              <Button size="small" onClick={() => setAllStatus("L")}>
-                Nghỉ Lễ (L)
+              <Button size="small" onClick={() => setAllStatus("XD")}>
+                Làm ca đêm (XD)
+              </Button>
+              <Button size="small" onClick={() => setAllStatus("ĐC")}>
+                Đảo ca (ĐC)
               </Button>
             </Space>
             {!isViewOnly && (
