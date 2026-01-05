@@ -50,8 +50,6 @@ model Department {
   employees Employee[] // Quan hệ ngược: 1 phòng có nhiều nhân viên
   // Thêm dòng này: Những user nào quản lý phòng này?
   managers User[]
-  // --> THÊM DÒNG NÀY VÀO:
-  timesheetLocks TimesheetLock[]
 }
 
 // 3. Bảng Nhân Viên
@@ -141,20 +139,4 @@ model User {
   managedDepartments Department[] 
 }
 
-// Bảng lưu trạng thái khóa sổ chấm công
-model TimesheetLock {
-  id           Int      @id @default(autoincrement())
-  departmentId Int
-  department   Department @relation(fields: [departmentId], references: [id])
-  month        Int      // Tháng (1-12)
-  year         Int      // Năm (2025)
-  isLocked     Boolean  @default(false)
-  
-  lockedBy     String?  // Ai là người khóa (lưu username)
-  updatedAt    DateTime @updatedAt
-
-  // --- SỬA DÒNG NÀY ---
-  // Thêm name: "departmentId_month_year" để khớp với code API
-  @@unique([departmentId, month, year], name: "departmentId_month_year")
-}
 

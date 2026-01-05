@@ -16,12 +16,7 @@ import {
   Tooltip,
   Tag,
 } from "antd";
-import {
-  ReloadOutlined,
-  FileExcelOutlined,
-  LockOutlined,
-  UnlockOutlined,
-} from "@ant-design/icons";
+import { ReloadOutlined, FileExcelOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 
@@ -83,7 +78,6 @@ export default function MonthlyTimesheetPage() {
   const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
 
   const [loading, setLoading] = useState(false);
-  const [isLocked, setIsLocked] = useState(false);
 
   // --- CONFIG ---
   const EXCLUSIVE_FACTORY_IDS = [3];
@@ -309,73 +303,6 @@ export default function MonthlyTimesheetPage() {
       setEmployees([]);
     }
   }, [selectedFactoryId, selectedMonth, mixedDeptValue, selectedKipIds]); // <-- Khi 4 cái này thay đổi, hàm sẽ tự chạy lại
-
-  // ... (phần checkLockStatus và return giữ nguyên) ...
-
-  // Check Lock Status (Check for the first resolved ID)
-  const checkLockStatus = async () => {
-    let targetId: number | null = null;
-    const realIds = resolveRealDepartmentIds();
-    if (realIds.length > 0) targetId = realIds[0];
-    else if (!isMatrix && mixedDeptValue?.startsWith("DEPT"))
-      targetId = parseInt(mixedDeptValue.split(":")[1]);
-
-    if (!targetId || !selectedMonth) {
-      setIsLocked(false);
-      return;
-    }
-
-    try {
-      const m = selectedMonth.month() + 1;
-      const y = selectedMonth.year();
-      const res = await fetch(
-        `/api/timesheets/lock?departmentId=${targetId}&month=${m}&year=${y}`
-      );
-      const data = await res.json();
-      setIsLocked(data.isLocked);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  useEffect(() => {
-    if (employees.length > 0) checkLockStatus();
-  }, [employees]); // Check lock when data loaded
-
-  const handleToggleLock = async () => {
-    const realIds = resolveRealDepartmentIds();
-    if (realIds.length === 0) return;
-    // Khóa sổ cho tất cả ID tìm được (ví dụ khóa cả tổ Sợi con 3 kíp)
-    try {
-      const m = selectedMonth.month() + 1;
-      const y = selectedMonth.year();
-      let successCount = 0;
-
-      // Loop lock all found departments
-      await Promise.all(
-        realIds.map(async (id) => {
-          const res = await fetch("/api/timesheets/lock", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              departmentId: id,
-              month: m,
-              year: y,
-              isLocked: !isLocked,
-            }),
-          });
-          if (res.ok) successCount++;
-        })
-      );
-
-      if (successCount > 0) {
-        setIsLocked(!isLocked);
-        message.success(`Đã ${!isLocked ? "khóa" : "mở"} sổ thành công!`);
-      }
-    } catch (e) {
-      message.error("Lỗi kết nối");
-    }
-  };
 
   // --- COLUMNS (Giữ nguyên logic cũ) ---
   const columns = useMemo(() => {
@@ -900,21 +827,7 @@ export default function MonthlyTimesheetPage() {
             </Button>
           </div>
 
-          {/* LOCK & EXCEL BUTTONS */}
-          {(mixedDeptValue || selectedKipIds.length > 0) && (
-            <div style={{ marginTop: 20, marginLeft: 10 }}>
-              {["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "") && (
-                <Button
-                  type={isLocked ? "default" : "primary"}
-                  danger={!isLocked}
-                  icon={isLocked ? <UnlockOutlined /> : <LockOutlined />}
-                  onClick={handleToggleLock}
-                >
-                  {isLocked ? "Mở khóa sổ" : "Khóa sổ"}
-                </Button>
-              )}
-            </div>
-          )}
+          {/* EXCEL EXPORT BUTTONS */}
           <div style={{ marginTop: 20, marginLeft: "auto" }}>
             <Button
               type="primary"

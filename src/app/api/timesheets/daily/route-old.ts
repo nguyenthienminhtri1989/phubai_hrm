@@ -95,35 +95,6 @@ export async function POST(request: Request) {
 
     const targetDate = new Date(`${date}T00:00:00.000Z`);
 
-    // --- KIỂM TRA KHÓA SỔ ---
-    // Chỉ kiểm tra nếu người dùng chấm theo Phòng Ban cụ thể (có departmentId)
-    // Nếu chấm theo Kíp (departmentId = null), tạm thời bỏ qua check khóa sổ phòng ban
-    // (Hoặc logic này sẽ được nâng cấp sau để check khóa sổ của từng phòng trong kíp)
-    if (departmentId) {
-      const dateObj = new Date(date);
-      const month = dateObj.getMonth() + 1;
-      const year = dateObj.getFullYear();
-
-      const lockRecord = await prisma.timesheetLock.findUnique({
-        where: {
-          departmentId_month_year: {
-            departmentId: Number(departmentId),
-            month: month,
-            year: year,
-          },
-        },
-      });
-
-      if (lockRecord?.isLocked) {
-        if (session.user.role === "TIMEKEEPER") {
-          return NextResponse.json(
-            { error: `Bảng công tháng ${month}/${year} đã bị KHÓA SỔ.` },
-            { status: 403 }
-          );
-        }
-      }
-    }
-
     await prisma.$transaction(
       records.map((rec: any) =>
         prisma.timesheet.upsert({

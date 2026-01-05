@@ -604,14 +604,15 @@ export default function DailyTimesheetPage() {
                 onChange={handleMixedDeptChange}
                 disabled={!selectedFactoryId}
                 showSearch
-                optionFilterProp="children"
-              >
-                {mixedDeptOptions.map((opt) => (
-                  <Select.Option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </Select.Option>
-                ))}
-              </Select>
+                // 1. Truyền dữ liệu
+                options={mixedDeptOptions}
+                // 2. Logic tìm kiếm CHUẨN (Thay thế cho optionFilterProp)
+                filterOption={(input, option) => {
+                  // Ép kiểu label về string để so sánh (đề phòng label là ReactNode)
+                  const label = (option?.label ?? "").toString();
+                  return label.toLowerCase().includes(input.toLowerCase());
+                }}
+              ></Select>
             </div>
           )}
 
