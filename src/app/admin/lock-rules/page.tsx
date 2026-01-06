@@ -14,8 +14,14 @@ import {
   message,
   Card,
   Typography,
+  Space,
 } from "antd";
-import { DeleteOutlined, PlusOutlined, LockOutlined } from "@ant-design/icons";
+import {
+  DeleteOutlined,
+  PlusOutlined,
+  LockOutlined,
+  EditOutlined,
+} from "@ant-design/icons";
 import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
@@ -25,7 +31,11 @@ export default function LockRulesPage() {
   const [rules, setRules] = useState([]);
   const [factories, setFactories] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // State quản lý Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<any>(null); // Lưu bản ghi đang sửa
+
   const [form] = Form.useForm();
 
   // Load dữ liệu
@@ -34,7 +44,7 @@ export default function LockRulesPage() {
     try {
       const [rulesRes, factRes] = await Promise.all([
         fetch("/api/admin/lock-rules"),
-        fetch("/api/factories"), // API lấy danh sách nhà máy có sẵn của bạn
+        fetch("/api/factories"),
       ]);
       if (rulesRes.ok) setRules(await rulesRes.json());
       if (factRes.ok) setFactories(await factRes.json());
@@ -49,44 +59,70 @@ export default function LockRulesPage() {
     fetchData();
   }, []);
 
-  // Xử lý tạo mới
-  const handleCreate = async (values: any) => {
+  // Mở Modal để TẠO MỚI
+  const openCreateModal = () => {
+    setEditingRule(null); // Xóa trạng thái sửa
+    form.resetFields(); // Xóa form
+    setIsModalOpen(true);
+  };
+
+  // Mở Modal để SỬA
+  const openEditModal = (record: any) => {
+    setEditingRule(record); // Lưu bản ghi đang sửa
+    // Điền dữ liệu cũ vào form
+    form.setFieldsValue({
+      factoryId: record.factoryId ? record.factoryId : "ALL",
+      dateRange: [dayjs(record.fromDate), dayjs(record.toDate)],
+      reason: record.reason,
+    });
+    setIsModalOpen(true);
+  };
+
+  // Xử lý chung cho cả TẠO và SỬA
+  const handleFinish = async (values: any) => {
     try {
       const payload = {
         factoryId: values.factoryId === "ALL" ? null : values.factoryId,
         fromDate: values.dateRange[0].format("YYYY-MM-DD"),
         toDate: values.dateRange[1].format("YYYY-MM-DD"),
         reason: values.reason,
+        id: editingRule ? editingRule.id : undefined, // Nếu đang sửa thì gửi kèm ID
       };
 
-      const res = await fetch("/api/admin/lock-rules", {
-        method: "POST",
+      // Quyết định gọi API nào (POST hay PUT)
+      const method = editingRule ? "PUT" : "POST";
+      const url = "/api/admin/lock-rules";
+
+      const res = await fetch(url, {
+        method: method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       if (res.ok) {
-        message.success("Đã khóa sổ thành công!");
+        message.success(
+          editingRule ? "Đã cập nhật thành công!" : "Đã tạo lệnh khóa mới!"
+        );
         setIsModalOpen(false);
         form.resetFields();
+        setEditingRule(null);
         fetchData(); // Load lại bảng
       } else {
-        message.error("Lỗi khi tạo khóa");
+        message.error("Lỗi khi lưu dữ liệu");
       }
     } catch (e) {
       message.error("Lỗi kết nối");
     }
   };
 
-  // Xử lý xóa (Mở khóa)
   const handleDelete = async (id: number) => {
-    if (!confirm("Bạn có chắc chắn muốn MỞ KHÓA (xóa luật này) không?")) return;
+    if (!confirm("Bạn có chắc chắn muốn XÓA luật này không?")) return;
     try {
       const res = await fetch(`/api/admin/lock-rules?id=${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        message.success("Đã mở khóa thành công");
+        message.success("Đã xóa thành công");
         fetchData();
       } else {
         message.error("Không thể xóa");
@@ -125,13 +161,26 @@ export default function LockRulesPage() {
       title: "Hành động",
       key: "action",
       render: (_: any, record: any) => (
-        <Button
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => handleDelete(record.id)}
-        >
-          Mở khóa
-        </Button>
+        <Space>
+          {/* Nút Sửa */}
+          <Button
+            type="primary"
+            ghost
+            icon={<EditOutlined />}
+            onClick={() => openEditModal(record)}
+          >
+            Sửa
+          </Button>
+
+          {/* Nút Xóa */}
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record.id)}
+          >
+            Xóa
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -150,7 +199,7 @@ export default function LockRulesPage() {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => setIsModalOpen(true)}
+          onClick={openCreateModal}
         >
           Tạo lệnh khóa mới
         </Button>
@@ -159,8 +208,7 @@ export default function LockRulesPage() {
       <Card>
         <div style={{ marginBottom: 16 }}>
           <Text type="secondary">
-            <LockOutlined /> Các khoảng thời gian dưới đây sẽ bị cấm chỉnh sửa
-            dữ liệu chấm công. Xóa dòng để mở khóa.
+            <LockOutlined /> Quản lý các quy tắc chặn sửa dữ liệu chấm công.
           </Text>
         </div>
         <Table
@@ -172,21 +220,23 @@ export default function LockRulesPage() {
         />
       </Card>
 
-      {/* MODAL TẠO KHÓA */}
+      {/* MODAL (Dùng chung cho Tạo và Sửa) */}
       <Modal
-        title="Thiết lập Khóa sổ mới"
+        title={editingRule ? "Cập nhật Lệnh khóa" : "Thiết lập Khóa sổ mới"}
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         footer={null}
       >
-        <Form form={form} layout="vertical" onFinish={handleCreate}>
+        <Form form={form} layout="vertical" onFinish={handleFinish}>
+          {/* Chỉ cho phép sửa Nhà máy khi tạo mới (để tránh lỗi logic khi sửa). 
+              Nếu bạn muốn cho sửa cả nhà máy thì bỏ prop disabled đi */}
           <Form.Item
             name="factoryId"
             label="Phạm vi khóa"
             initialValue="ALL"
             rules={[{ required: true }]}
           >
-            <Select>
+            <Select disabled={!!editingRule}>
               <Select.Option value="ALL">
                 🚫 KHÓA TOÀN BỘ HỆ THỐNG
               </Select.Option>
@@ -218,7 +268,7 @@ export default function LockRulesPage() {
               Hủy
             </Button>
             <Button type="primary" htmlType="submit">
-              Xác nhận Khóa
+              {editingRule ? "Lưu thay đổi" : "Xác nhận Khóa"}
             </Button>
           </div>
         </Form>

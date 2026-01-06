@@ -71,7 +71,7 @@ export default function DashboardPage() {
   // 2. Xử lý dữ liệu tổng hợp (Logic cốt lõi)
   const stats = useMemo(() => {
     // Định nghĩa các nhóm code
-    const WORK_CODES = ["X", "XD", "CT", "LĐ", "XL", "LE", "LD"];
+    const WORK_CODES = ["+", "XD", "CT", "LĐ", "XL", "LE", "LD"];
     // Các nhóm nghỉ để vẽ biểu đồ chi tiết
     const LEAVE_TYPES = {
       "Phép (100%)": ["F", "R", "L", "ĐC"],

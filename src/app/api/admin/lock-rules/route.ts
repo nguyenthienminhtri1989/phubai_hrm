@@ -89,3 +89,40 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }
+
+// ... (Các hàm GET, POST, DELETE giữ nguyên)
+
+// 4. [MỚI] CẬP NHẬT LUẬT (SỬA)
+export async function PUT(request: Request) {
+  try {
+    const session = await auth();
+    if (session?.user?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { id, fromDate, toDate, reason } = body; // Không cho sửa factoryId để tránh phức tạp, hoặc cho sửa tùy bạn
+
+    if (!id || !fromDate || !toDate) {
+      return NextResponse.json({ error: "Thiếu thông tin" }, { status: 400 });
+    }
+
+    // Chuẩn hóa thời gian (Đầu ngày - Cuối ngày)
+    const from = new Date(new Date(fromDate).setHours(0, 0, 0, 0));
+    const to = new Date(new Date(toDate).setHours(23, 59, 59, 999));
+
+    await prisma.lockRule.update({
+      where: { id: Number(id) },
+      data: {
+        fromDate: from,
+        toDate: to,
+        reason: reason,
+      },
+    });
+
+    return NextResponse.json({ message: "Đã cập nhật lệnh khóa thành công!" });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
+  }
+}

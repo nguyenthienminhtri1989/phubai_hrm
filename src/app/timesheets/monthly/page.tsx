@@ -409,7 +409,7 @@ export default function MonthlyTimesheetPage() {
         render: (_: any, r: MonthlyEmployeeData) => {
           const total = countCodes(
             r,
-            ["X", "XD", "CT", "LĐ", "XL", "LE", "LD"],
+            ["+", "XD", "CT", "LĐ", "XL", "LE", "LD"],
             ["X/2"]
           );
           return total > 0 ? <b style={{ color: "#16a34a" }}>{total}</b> : "-";
@@ -606,7 +606,7 @@ export default function MonthlyTimesheetPage() {
         }, 0);
 
       rowData.push(
-        countCodes(["X", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]) || ""
+        countCodes(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]) || ""
       );
       rowData.push(countCodes(["XD", "LD"]) || "");
       rowData.push(countCodes(["F", "R", "L", "ĐC"]) || "");

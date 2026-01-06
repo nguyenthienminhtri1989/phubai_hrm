@@ -109,7 +109,7 @@ export default function DailyTimesheetPage() {
 
         const codes: AttendanceCode[] = await codeRes.json();
         const PRIORITY = [
-          "X",
+          "+",
           "XD",
           "ĐC",
           "X/2",
@@ -647,7 +647,7 @@ export default function DailyTimesheetPage() {
               onClick={fetchTimesheetData}
               disabled={!mixedDeptValue && selectedKipIds.length === 0}
             >
-              Tải lại
+              Xóa
             </Button>
           </div>
         </div>
@@ -678,8 +678,8 @@ export default function DailyTimesheetPage() {
           >
             <Space>
               <span style={{ fontWeight: 600 }}>Thao tác nhanh:</span>
-              <Button size="small" onClick={() => setAllStatus("X")}>
-                Đi làm (X)
+              <Button size="small" onClick={() => setAllStatus("+")}>
+                Đi làm (+)
               </Button>
               <Button size="small" onClick={() => setAllStatus("XD")}>
                 Làm ca đêm (XD)
