@@ -117,7 +117,7 @@ export default function DepartmentDashboardPage() {
           );
         }
         return (
-          <Tag icon={<ClockCircleOutlined />} color="default">
+          <Tag icon={<ClockCircleOutlined />} color="red">
             Chưa chấm
           </Tag>
         );

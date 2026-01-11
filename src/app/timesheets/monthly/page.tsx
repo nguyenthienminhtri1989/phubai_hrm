@@ -80,8 +80,8 @@ export default function MonthlyTimesheetPage() {
   const [loading, setLoading] = useState(false);
 
   // --- CONFIG ---
-  const EXCLUSIVE_FACTORY_IDS = [3];
-  const MATRIX_FACTORY_IDS = [2];
+  const EXCLUSIVE_FACTORY_IDS: number[] = [];
+  const MATRIX_FACTORY_IDS = [2, 3];
 
   // 1. Load Data
   useEffect(() => {
@@ -143,12 +143,17 @@ export default function MonthlyTimesheetPage() {
     const processedSections = new Set<string>();
 
     currentDepts.forEach((d) => {
+      // Logic regex để gom nhóm các tổ có cùng mã (Ví dụ: 3GT1, 3GT2 -> SECTION:GT)
+      // Lưu ý: Để NM3 hoạt động gom nhóm tốt nhất, Mã phòng ban của NM3
+      // nên đặt theo quy tắc: [ID_NM][Mã_Tổ][Số_Kíp] (VD: 3SC1, 3SC2)
       const matrixRegex = new RegExp(`^${selectedFactoryId}([a-zA-Z]+)(\\d+)$`);
       const match = d.code?.match(matrixRegex);
 
       if (isMatrix && match) {
-        const sectionCode = match[1]; // GT
+        // ... (Giữ nguyên logic gom nhóm Section cũ) ...
+        const sectionCode = match[1];
         if (!processedSections.has(sectionCode)) {
+          // ... (Code tạo option SECTION giữ nguyên) ...
           const displayName = d.name
             .replace(/(kíp|ca)\s*\d+.*$/gi, "")
             .trim()
@@ -163,7 +168,9 @@ export default function MonthlyTimesheetPage() {
           processedSections.add(sectionCode);
         }
       } else {
-        if (isExclusive && d.isKip) return; // NM3: Ẩn phòng SX
+        // [SỬA]: Xóa bỏ dòng chặn hiển thị isExclusive cũ này đi
+        // if (isExclusive && d.isKip) return; <--- XÓA DÒNG NÀY
+
         options.push({
           value: `DEPT:${d.id}`,
           label: d.name,
@@ -230,16 +237,10 @@ export default function MonthlyTimesheetPage() {
 
   // --- FETCH DATA ---
   const fetchMonthlyData = async () => {
-    if (isExclusive) {
-      if (!mixedDeptValue && selectedKipIds.length === 0) {
-        setEmployees([]);
-        return;
-      }
-    } else {
-      if (!mixedDeptValue) {
-        setEmployees([]);
-        return;
-      }
+    // [SỬA]: Logic kiểm tra điều kiện đơn giản hơn
+    if (!mixedDeptValue) {
+      setEmployees([]);
+      return;
     }
 
     setLoading(true);
@@ -248,17 +249,29 @@ export default function MonthlyTimesheetPage() {
       const year = selectedMonth.year();
       let url = `/api/timesheets/monthly?month=${month}&year=${year}`;
 
-      if (isExclusive && selectedKipIds.length > 0 && !mixedDeptValue) {
-        url += `&kipIds=${selectedKipIds.join(",")}`;
+      // [SỬA]: Logic phân giải ID phòng ban
+      const realIds = resolveRealDepartmentIds();
+
+      // Nếu chọn SECTION (Tổ gộp), realIds đã được lọc theo Kíp ở hàm resolveRealDepartmentIds
+      if (realIds.length > 0) {
+        url += `&departmentId=${realIds.join(",")}`;
       } else {
-        const realIds = resolveRealDepartmentIds();
-        if (realIds.length === 0) {
+        // Trường hợp chọn Phòng ban lẻ (DEPT)
+        // Ta cần gửi thêm kipIds nếu người dùng có chọn Kíp
+        if (mixedDeptValue.startsWith("DEPT")) {
+          const deptId = mixedDeptValue.split(":")[1];
+          url += `&departmentId=${deptId}`;
+
+          // Gửi thêm Kíp để lọc nhân viên trong phòng đó (nếu API backend hỗ trợ)
+          if (selectedKipIds.length > 0) {
+            url += `&kipIds=${selectedKipIds.join(",")}`;
+          }
+        } else {
           message.warning("Không tìm thấy dữ liệu phòng ban.");
           setEmployees([]);
           setLoading(false);
           return;
         }
-        url += `&departmentId=${realIds.join(",")}`;
       }
 
       const res = await fetch(url);
@@ -281,25 +294,15 @@ export default function MonthlyTimesheetPage() {
 
   // --- [MỚI] TỰ ĐỘNG TẢI DỮ LIỆU KHI THAY ĐỔI BỘ LỌC ---
   useEffect(() => {
-    // Chỉ chạy khi đã chọn Nhà máy
     if (!selectedFactoryId) return;
 
-    // Logic kiểm tra điều kiện hợp lệ để tải:
+    // [SỬA]: Logic đơn giản hóa, chỉ cần có Tổ/Phòng là tải
     let shouldFetch = false;
-
-    if (isExclusive) {
-      // NM3: Chọn (Phòng) HOẶC (Kíp) là được
-      if (mixedDeptValue || selectedKipIds.length > 0) shouldFetch = true;
-    } else {
-      // NM1, NM2: Bắt buộc phải có Phòng/Tổ (mixedDeptValue)
-      // (Với NM2, nếu chưa chọn Kíp thì nó sẽ tự hiểu là lấy cả Tổ)
-      if (mixedDeptValue) shouldFetch = true;
-    }
+    if (mixedDeptValue) shouldFetch = true;
 
     if (shouldFetch) {
       fetchMonthlyData();
     } else {
-      // Nếu bỏ chọn hết thì xóa bảng cho sạch
       setEmployees([]);
     }
   }, [selectedFactoryId, selectedMonth, mixedDeptValue, selectedKipIds]); // <-- Khi 4 cái này thay đổi, hàm sẽ tự chạy lại
@@ -710,12 +713,15 @@ export default function MonthlyTimesheetPage() {
   };
 
   // UI Vars
+  // UI Vars
   const isSectionSelected = mixedDeptValue?.startsWith("SECTION");
-  const showKipSelect =
-    (isMatrix && isSectionSelected) ||
-    (isExclusive && hasKipPermission && !mixedDeptValue);
-  const showDeptSelect =
-    !isExclusive || (isExclusive && selectedKipIds.length === 0);
+
+  // [SỬA]: Luôn hiện chọn Kíp nếu là Matrix (bao gồm cả NM2 và NM3)
+  // Logic cũ chỉ hiện khi chọn Section, giờ ta cho hiện luôn để linh hoạt
+  const showKipSelect = isMatrix;
+
+  // [SỬA]: Luôn hiện chọn Phòng/Tổ
+  const showDeptSelect = true;
 
   return (
     <AdminLayout>
