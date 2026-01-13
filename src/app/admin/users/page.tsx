@@ -24,8 +24,8 @@ import { useSession } from "next-auth/react";
 
 const ROLES = [
   { value: "ADMIN", label: "Quản trị hệ thống (Admin)", color: "red" },
-  { value: "HR_MANAGER", label: "Quản lý nhân sự", color: "blue" },
-  { value: "LEADER", label: "Lãnh đạo (Xem báo cáo)", color: "purple" },
+  { value: "HR_MANAGER", label: "Quản lý chấm công", color: "blue" },
+  { value: "LEADER", label: "Xem báo cáo", color: "purple" },
   { value: "TIMEKEEPER", label: "Người chấm công", color: "green" },
 ];
 

@@ -110,23 +110,8 @@ async function main() {
     },
   });
 
-  // TẠO USER TRƯỞNG PHÒNG ĐIỆN (Quản lý Phòng Điện NM1 và NM3)
-  const tpDien = await prisma.user.upsert({
-    where: { username: "truongca1" },
-    update: {},
-    create: {
-      username: "tpdien",
-      password: hashedPassword,
-      fullName: "Trưởng Phòng Điện",
-      role: Role.TIMEKEEPER,
-      managedDepartments: {
-        connect: [{ id: 19 }, { id: 74 }], // Kết nối với 2 phòng ban
-      },
-    },
-  });
-
   console.log("✅ Đã nạp xong danh mục chấm công!");
-  console.log({ admin, tpDien });
+  console.log({ admin });
 }
 
 main()
