@@ -14,7 +14,6 @@ import {
   Card,
   Typography,
   Tooltip,
-  Tag,
 } from "antd";
 import { ReloadOutlined, FileExcelOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
@@ -43,7 +42,7 @@ interface Factory {
 }
 interface Department {
   id: number;
-  code: string; // Cần trường code
+  code: string;
   name: string;
   factory?: Factory;
   isKip: boolean;
@@ -74,14 +73,15 @@ export default function MonthlyTimesheetPage() {
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(
     null
   );
-  const [mixedDeptValue, setMixedDeptValue] = useState<string | null>(null); // State dropdown gộp
+  const [mixedDeptValues, setMixedDeptValues] = useState<string[]>([]);
   const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
 
   const [loading, setLoading] = useState(false);
 
   // --- CONFIG ---
-  const EXCLUSIVE_FACTORY_IDS: number[] = [];
-  const MATRIX_FACTORY_IDS = [2, 3];
+  // [QUAN TRỌNG]: Đưa tất cả nhà máy vào danh sách MATRIX
+  // Lúc này giao diện NM1 sẽ y hệt NM2, NM3
+  const MATRIX_FACTORY_IDS = [1, 2, 3];
 
   // 1. Load Data
   useEffect(() => {
@@ -100,7 +100,7 @@ export default function MonthlyTimesheetPage() {
     fetchData();
   }, []);
 
-  // --- LOGIC ---
+  // --- LOGIC PERMISSION ---
   const availableDepartments = useMemo(() => {
     if (departments.length === 0 || !session) return [];
     const user = session.user;
@@ -113,18 +113,7 @@ export default function MonthlyTimesheetPage() {
     return [];
   }, [departments, session]);
 
-  const hasKipPermission = useMemo(
-    () => availableDepartments.some((d) => d.isKip === true),
-    [availableDepartments]
-  );
-
-  const isExclusive = useMemo(
-    () =>
-      selectedFactoryId
-        ? EXCLUSIVE_FACTORY_IDS.includes(selectedFactoryId)
-        : false,
-    [selectedFactoryId]
-  );
+  // Kiểm tra xem nhà máy hiện tại có thuộc chế độ Matrix không (Hiện tại luôn là True nếu đã chọn)
   const isMatrix = useMemo(
     () =>
       selectedFactoryId
@@ -143,17 +132,14 @@ export default function MonthlyTimesheetPage() {
     const processedSections = new Set<string>();
 
     currentDepts.forEach((d) => {
-      // Logic regex để gom nhóm các tổ có cùng mã (Ví dụ: 3GT1, 3GT2 -> SECTION:GT)
-      // Lưu ý: Để NM3 hoạt động gom nhóm tốt nhất, Mã phòng ban của NM3
-      // nên đặt theo quy tắc: [ID_NM][Mã_Tổ][Số_Kíp] (VD: 3SC1, 3SC2)
+      // Regex tìm Mã tổ (ví dụ: 3GT1 -> GT, 2SC1 -> SC)
       const matrixRegex = new RegExp(`^${selectedFactoryId}([a-zA-Z]+)(\\d+)$`);
       const match = d.code?.match(matrixRegex);
 
       if (isMatrix && match) {
-        // ... (Giữ nguyên logic gom nhóm Section cũ) ...
+        // [LOGIC GOM NHÓM]: Dành cho các tổ sản xuất (Sợi con, Ống...)
         const sectionCode = match[1];
         if (!processedSections.has(sectionCode)) {
-          // ... (Code tạo option SECTION giữ nguyên) ...
           const displayName = d.name
             .replace(/(kíp|ca)\s*\d+.*$/gi, "")
             .trim()
@@ -168,9 +154,9 @@ export default function MonthlyTimesheetPage() {
           processedSections.add(sectionCode);
         }
       } else {
-        // [SỬA]: Xóa bỏ dòng chặn hiển thị isExclusive cũ này đi
-        // if (isExclusive && d.isKip) return; <--- XÓA DÒNG NÀY
-
+        // [LOGIC ĐƠN LẺ]: Dành cho các phòng ban hành chính (HCNS, Kế toán...)
+        // Hoặc các tổ không tuân theo quy tắc đặt tên mã ở trên.
+        // NM1 thường sẽ rơi vào trường hợp này.
         options.push({
           value: `DEPT:${d.id}`,
           label: d.name,
@@ -180,65 +166,75 @@ export default function MonthlyTimesheetPage() {
       }
     });
     return options.sort((a, b) => a.label.localeCompare(b.label));
-  }, [availableDepartments, selectedFactoryId, isMatrix, isExclusive]);
+  }, [availableDepartments, selectedFactoryId, isMatrix]);
 
-  // --- RESOLVE ID ---
+  // --- RESOLVE ID (Xử lý lấy ID thực tế) ---
   const resolveRealDepartmentIds = (): number[] => {
-    if (!selectedFactoryId) return [];
-    if (mixedDeptValue && mixedDeptValue.startsWith("DEPT")) {
-      return [parseInt(mixedDeptValue.split(":")[1])];
+    if (!selectedFactoryId || mixedDeptValues.length === 0) return [];
+
+    // Lấy số Kíp cần lọc (nếu có)
+    let targetKipNumbers: string[] = [];
+    if (selectedKipIds.length > 0) {
+      const names = kips
+        .filter((k) => selectedKipIds.includes(k.id))
+        .map((k) => k.name);
+      targetKipNumbers = names
+        .map((name) => name.match(/\d+/)?.[0] || "")
+        .filter((n) => n);
     }
-    if (mixedDeptValue && mixedDeptValue.startsWith("SECTION")) {
-      const sectionCode = mixedDeptValue.split(":")[1];
-      let targetKipNumbers: string[] = [];
-      if (selectedKipIds.length > 0) {
-        const names = kips
-          .filter((k) => selectedKipIds.includes(k.id))
-          .map((k) => k.name);
-        targetKipNumbers = names
-          .map((name) => name.match(/\d+/)?.[0] || "")
-          .filter((n) => n);
+
+    const allRealIds: number[] = [];
+
+    mixedDeptValues.forEach((val) => {
+      // TH1: Phòng ban lẻ (NM1 thường dùng cái này)
+      if (val.startsWith("DEPT")) {
+        const id = parseInt(val.split(":")[1]);
+        if (!isNaN(id)) allRealIds.push(id);
       }
-      const realIds: number[] = [];
-      availableDepartments.forEach((d) => {
-        if (d.factory?.id !== selectedFactoryId) return;
-        const regex = new RegExp(`^${selectedFactoryId}${sectionCode}(\\d+)$`);
-        const match = d.code?.match(regex);
-        if (match) {
-          const deptKipNum = match[1];
-          if (
-            targetKipNumbers.length === 0 ||
-            targetKipNumbers.includes(deptKipNum)
-          ) {
-            realIds.push(d.id);
+      // TH2: Tổ gộp (NM2, NM3 thường dùng cái này)
+      else if (val.startsWith("SECTION")) {
+        const sectionCode = val.split(":")[1];
+        availableDepartments.forEach((d) => {
+          if (d.factory?.id !== selectedFactoryId) return;
+          const regex = new RegExp(
+            `^${selectedFactoryId}${sectionCode}(\\d+)$`
+          );
+          const match = d.code?.match(regex);
+          if (match) {
+            const deptKipNum = match[1];
+            if (
+              targetKipNumbers.length === 0 ||
+              targetKipNumbers.includes(deptKipNum)
+            ) {
+              allRealIds.push(d.id);
+            }
           }
-        }
-      });
-      return realIds;
-    }
-    return [];
+        });
+      }
+    });
+
+    return Array.from(new Set(allRealIds));
   };
 
   // --- HANDLERS ---
   const handleFactoryChange = (val: number) => {
     setSelectedFactoryId(val);
-    setMixedDeptValue(null);
+    setMixedDeptValues([]);
     setSelectedKipIds([]);
     setEmployees([]);
   };
-  const handleMixedDeptChange = (val: string) => {
-    setMixedDeptValue(val);
-    if (val?.startsWith("DEPT") || isExclusive) setSelectedKipIds([]);
+
+  const handleMixedDeptChange = (vals: string[]) => {
+    setMixedDeptValues(vals);
   };
+
   const handleKipChange = (val: number[]) => {
     setSelectedKipIds(val);
-    if (isExclusive && val.length > 0) setMixedDeptValue(null);
   };
 
   // --- FETCH DATA ---
   const fetchMonthlyData = async () => {
-    // [SỬA]: Logic kiểm tra điều kiện đơn giản hơn
-    if (!mixedDeptValue) {
+    if (mixedDeptValues.length === 0) {
       setEmployees([]);
       return;
     }
@@ -249,29 +245,19 @@ export default function MonthlyTimesheetPage() {
       const year = selectedMonth.year();
       let url = `/api/timesheets/monthly?month=${month}&year=${year}`;
 
-      // [SỬA]: Logic phân giải ID phòng ban
       const realIds = resolveRealDepartmentIds();
 
-      // Nếu chọn SECTION (Tổ gộp), realIds đã được lọc theo Kíp ở hàm resolveRealDepartmentIds
       if (realIds.length > 0) {
         url += `&departmentId=${realIds.join(",")}`;
-      } else {
-        // Trường hợp chọn Phòng ban lẻ (DEPT)
-        // Ta cần gửi thêm kipIds nếu người dùng có chọn Kíp
-        if (mixedDeptValue.startsWith("DEPT")) {
-          const deptId = mixedDeptValue.split(":")[1];
-          url += `&departmentId=${deptId}`;
-
-          // Gửi thêm Kíp để lọc nhân viên trong phòng đó (nếu API backend hỗ trợ)
-          if (selectedKipIds.length > 0) {
-            url += `&kipIds=${selectedKipIds.join(",")}`;
-          }
-        } else {
-          message.warning("Không tìm thấy dữ liệu phòng ban.");
-          setEmployees([]);
-          setLoading(false);
-          return;
+        // Luôn gửi kèm kipIds để Backend lọc thêm (nếu cần thiết cho các phòng lẻ)
+        if (selectedKipIds.length > 0) {
+          url += `&kipIds=${selectedKipIds.join(",")}`;
         }
+      } else {
+        message.warning("Không tìm thấy dữ liệu phòng ban phù hợp.");
+        setEmployees([]);
+        setLoading(false);
+        return;
       }
 
       const res = await fetch(url);
@@ -290,24 +276,20 @@ export default function MonthlyTimesheetPage() {
     }
   };
 
-  // ... (sau hàm fetchMonthlyData) ...
-
-  // --- [MỚI] TỰ ĐỘNG TẢI DỮ LIỆU KHI THAY ĐỔI BỘ LỌC ---
+  // --- TỰ ĐỘNG TẢI ---
   useEffect(() => {
     if (!selectedFactoryId) return;
-
-    // [SỬA]: Logic đơn giản hóa, chỉ cần có Tổ/Phòng là tải
     let shouldFetch = false;
-    if (mixedDeptValue) shouldFetch = true;
+    if (mixedDeptValues.length > 0) shouldFetch = true;
 
     if (shouldFetch) {
       fetchMonthlyData();
     } else {
       setEmployees([]);
     }
-  }, [selectedFactoryId, selectedMonth, mixedDeptValue, selectedKipIds]); // <-- Khi 4 cái này thay đổi, hàm sẽ tự chạy lại
+  }, [selectedFactoryId, selectedMonth, mixedDeptValues, selectedKipIds]);
 
-  // --- COLUMNS (Giữ nguyên logic cũ) ---
+  // --- COLUMNS ---
   const columns = useMemo(() => {
     const fixedColumns: any[] = [
       {
@@ -482,11 +464,20 @@ export default function MonthlyTimesheetPage() {
           return total > 0 ? <b>{total}</b> : "-";
         },
       },
+      {
+        title: <span style={{ fontSize: 12 }}>X.Loại</span>,
+        width: 60,
+        align: "center",
+        fixed: "right",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          return "";
+        },
+      },
     ];
     return [...fixedColumns, ...dayColumns, ...summaryColumns];
   }, [selectedMonth, employees]);
 
-  // --- EXPORT EXCEL (Đã thêm dòng Tên Nhà máy) ---
+  // --- EXPORT EXCEL ---
   const handleExportExcel = async () => {
     if (employees.length === 0) return;
     setLoading(true);
@@ -494,56 +485,49 @@ export default function MonthlyTimesheetPage() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("BangCong");
     worksheet.pageSetup = {
-      paperSize: 9, // A4
+      paperSize: 9,
       orientation: "landscape",
       fitToPage: true,
       fitToWidth: 1,
       fitToHeight: 0,
     };
 
-    // --- 1. HEADER (TIÊU ĐỀ) ---
-    // Dòng 1: Tên công ty
     const row1 = worksheet.getCell("A1");
     row1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
     row1.font = { name: "Times New Roman", size: 14, bold: true };
 
-    // Dòng 2: Tiêu đề tháng
     const row2 = worksheet.getCell("A2");
     row2.value = `BẢNG CHẤM CÔNG THÁNG ${selectedMonth.format("MM/YYYY")}`;
     row2.font = { name: "Times New Roman", size: 16, bold: true };
     row2.alignment = { horizontal: "center" };
 
-    // [MỚI] Dòng 3: Tên Nhà máy
-    // Lấy tên nhà máy từ danh sách phòng ban (availableDepartments)
     const currentFactoryName =
       availableDepartments.find((d) => d.factory?.id === selectedFactoryId)
         ?.factory?.name || "";
     const row3 = worksheet.getCell("A3");
-    row3.value = currentFactoryName.toUpperCase(); // Ví dụ: NHÀ MÁY SỢI 2
+    row3.value = currentFactoryName.toUpperCase();
     row3.font = { name: "Times New Roman", size: 14, bold: true };
     row3.alignment = { horizontal: "center" };
 
-    // [ĐẨY XUỐNG] Dòng 4: Tên Bộ phận
     let deptName = "";
-    if (mixedDeptValue) {
-      if (mixedDeptValue.startsWith("SECTION")) {
-        const label =
-          mixedDeptOptions.find((o) => o.value === mixedDeptValue)?.label || "";
+    if (mixedDeptValues.length > 0) {
+      const selectedLabels = mixedDeptValues
+        .map((val) => {
+          const found = mixedDeptOptions.find((o) => o.value === val);
+          return found ? found.label : "";
+        })
+        .filter(Boolean)
+        .join(", ");
+
+      let kipSuffix = "";
+      if (selectedKipIds.length > 0) {
         const kNames = kips
           .filter((k) => selectedKipIds.includes(k.id))
           .map((k) => k.name)
           .join(", ");
-        deptName = `${label} ${kNames ? ` - ${kNames}` : ""}`;
-      } else {
-        deptName =
-          mixedDeptOptions.find((o) => o.value === mixedDeptValue)?.label || "";
+        kipSuffix = ` - (Kíp: ${kNames})`;
       }
-    } else if (selectedKipIds.length > 0) {
-      const names = kips
-        .filter((k) => selectedKipIds.includes(k.id))
-        .map((k) => k.name)
-        .join(", ");
-      deptName = names; // Chỉ hiện tên Kíp vì dòng trên đã có tên Nhà máy rồi
+      deptName = `${selectedLabels}${kipSuffix}`;
     }
 
     const row4 = worksheet.getCell("A4");
@@ -551,13 +535,10 @@ export default function MonthlyTimesheetPage() {
     row4.font = { name: "Times New Roman", size: 12, bold: true, italic: true };
     row4.alignment = { horizontal: "center" };
 
-    // --- 2. TABLE HEADER (CỘT) ---
-    // Bỏ "Mã NV"
     const headerRow = ["STT", "Họ và tên"];
     const daysInMonth = selectedMonth.daysInMonth();
     for (let i = 1; i <= daysInMonth; i++) headerRow.push(`${i}`);
 
-    // Thêm cột X.Loại vào cuối
     const summaryHeaders = [
       "T.Công",
       "Ca 3",
@@ -587,11 +568,8 @@ export default function MonthlyTimesheetPage() {
       };
     });
 
-    // --- 3. DATA LOOP (DỮ LIỆU) ---
     employees.forEach((emp, index) => {
-      // Bỏ emp.code
       const rowData: any[] = [index + 1, emp.fullName];
-
       for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = dayjs(
           `${selectedMonth.year()}-${selectedMonth.month() + 1}-${i}`
@@ -616,9 +594,7 @@ export default function MonthlyTimesheetPage() {
       rowData.push(countCodes(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
       rowData.push(countCodes(["RO"]) || "");
       rowData.push(countCodes(["O"]) || "");
-      rowData.push(countCodes(["B"]) || ""); // L.Bão
-
-      // Cột X.Loại để trống
+      rowData.push(countCodes(["B"]) || "");
       rowData.push("");
 
       const row = worksheet.addRow(rowData);
@@ -630,33 +606,25 @@ export default function MonthlyTimesheetPage() {
           bottom: { style: "thin" },
           right: { style: "thin" },
         };
-
-        // Căn lề: Cột 2 là Tên (Trái), còn lại Giữa
         if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
         else cell.alignment = { horizontal: "center" };
-
-        // In đậm phần tổng hợp
         if (colNumber > 2 + daysInMonth && cell.value)
           cell.font = { name: "Times New Roman", bold: true };
       });
     });
 
-    // --- 4. FORMAT COLUMN WIDTH ---
-    worksheet.getColumn(1).width = 5; // STT
-    worksheet.getColumn(2).width = 25; // Họ tên
+    worksheet.getColumn(1).width = 5;
+    worksheet.getColumn(2).width = 25;
     for (let i = 3; i <= 2 + daysInMonth; i++) worksheet.getColumn(i).width = 4;
 
-    // --- 5. FOOTER (CHỮ KÝ) ---
     const totalCols = 2 + daysInMonth + summaryHeaders.length;
     const lastRowIdx = worksheet.lastRow ? worksheet.lastRow.number : 0;
 
-    // [CẬP NHẬT MERGE TIÊU ĐỀ] Gộp 4 dòng đầu tiên (thêm dòng Nhà máy)
-    worksheet.mergeCells(1, 1, 1, totalCols); // Tên Cty
-    worksheet.mergeCells(2, 1, 2, totalCols); // Tháng
-    worksheet.mergeCells(3, 1, 3, totalCols); // Nhà máy
-    worksheet.mergeCells(4, 1, 4, totalCols); // Bộ phận
+    worksheet.mergeCells(1, 1, 1, totalCols);
+    worksheet.mergeCells(2, 1, 2, totalCols);
+    worksheet.mergeCells(3, 1, 3, totalCols);
+    worksheet.mergeCells(4, 1, 4, totalCols);
 
-    // Ngày tháng
     const dateRowIndex = lastRowIdx + 2;
     const dateStartCol = Math.floor(totalCols * 0.6);
     worksheet.mergeCells(dateRowIndex, dateStartCol, dateRowIndex, totalCols);
@@ -665,18 +633,15 @@ export default function MonthlyTimesheetPage() {
     dateCell.font = { name: "Times New Roman", italic: true, size: 12 };
     dateCell.alignment = { horizontal: "center" };
 
-    // Chữ ký (Chia 3)
     const signTitleRowIndex = dateRowIndex + 1;
     const sectionSize = Math.floor(totalCols / 3);
 
-    // Trái
     worksheet.mergeCells(signTitleRowIndex, 1, signTitleRowIndex, sectionSize);
     const cell1 = worksheet.getCell(signTitleRowIndex, 1);
     cell1.value = "NGƯỜI CHẤM CÔNG";
     cell1.font = { name: "Times New Roman", bold: true, size: 12 };
     cell1.alignment = { horizontal: "center" };
 
-    // Giữa
     worksheet.mergeCells(
       signTitleRowIndex,
       sectionSize + 1,
@@ -688,7 +653,6 @@ export default function MonthlyTimesheetPage() {
     cell2.font = { name: "Times New Roman", bold: true, size: 12 };
     cell2.alignment = { horizontal: "center" };
 
-    // Phải
     worksheet.mergeCells(
       signTitleRowIndex,
       sectionSize * 2 + 1,
@@ -700,7 +664,6 @@ export default function MonthlyTimesheetPage() {
     cell3.font = { name: "Times New Roman", bold: true, size: 12 };
     cell3.alignment = { horizontal: "center" };
 
-    // --- 6. WRITE FILE ---
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -711,17 +674,6 @@ export default function MonthlyTimesheetPage() {
     );
     setLoading(false);
   };
-
-  // UI Vars
-  // UI Vars
-  const isSectionSelected = mixedDeptValue?.startsWith("SECTION");
-
-  // [SỬA]: Luôn hiện chọn Kíp nếu là Matrix (bao gồm cả NM2 và NM3)
-  // Logic cũ chỉ hiện khi chọn Section, giờ ta cho hiện luôn để linh hoạt
-  const showKipSelect = isMatrix;
-
-  // [SỬA]: Luôn hiện chọn Phòng/Tổ
-  const showDeptSelect = true;
 
   return (
     <AdminLayout>
@@ -774,66 +726,65 @@ export default function MonthlyTimesheetPage() {
             </Select>
           </div>
 
-          {showDeptSelect && (
-            <div>
-              <div style={{ fontWeight: 600 }}>
-                {isMatrix ? "Chọn Tổ / Bộ phận:" : "Phòng ban:"}
-              </div>
-              <Select
-                style={{ width: 220 }}
-                placeholder="Chọn..."
-                value={mixedDeptValue}
-                onChange={handleMixedDeptChange}
-                allowClear
-                disabled={!selectedFactoryId}
-                showSearch
-                optionFilterProp="children"
-              >
-                {mixedDeptOptions.map((opt) => (
-                  <Select.Option key={opt.value} value={opt.value}>
-                    {opt.label}
+          {/* LUÔN HIỂN THỊ CHỌN PHÒNG BAN CHO TẤT CẢ NHÀ MÁY */}
+          <div>
+            <div style={{ fontWeight: 600 }}>
+              {isMatrix ? "Chọn Tổ / Bộ phận:" : "Phòng ban:"}
+            </div>
+            <Select
+              mode="multiple"
+              style={{ width: 300 }}
+              placeholder="Chọn..."
+              value={mixedDeptValues}
+              onChange={handleMixedDeptChange}
+              allowClear
+              disabled={!selectedFactoryId}
+              showSearch
+              optionFilterProp="children"
+              maxTagCount="responsive"
+            >
+              {mixedDeptOptions.map((opt) => (
+                <Select.Option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
+
+          {/* LUÔN HIỂN THỊ CHỌN KÍP CHO TẤT CẢ NHÀ MÁY */}
+          <div>
+            <div style={{ fontWeight: 600 }}>
+              {isMatrix ? "Lọc theo Kíp:" : "Chọn Kíp:"}
+            </div>
+            <Select
+              mode="multiple"
+              style={{ width: 200 }}
+              placeholder="Chọn Kíp"
+              value={selectedKipIds}
+              onChange={handleKipChange}
+              allowClear
+              disabled={!selectedFactoryId}
+            >
+              {kips
+                .filter((k) => k.factoryId === selectedFactoryId)
+                .map((k) => (
+                  <Select.Option key={k.id} value={k.id}>
+                    {k.name}
                   </Select.Option>
                 ))}
-              </Select>
-            </div>
-          )}
-
-          {showKipSelect && (
-            <div>
-              <div style={{ fontWeight: 600 }}>
-                {isMatrix ? "Lọc theo Kíp:" : "Chọn Kíp:"}
-              </div>
-              <Select
-                mode="multiple"
-                style={{ width: 200 }}
-                placeholder="Chọn Kíp"
-                value={selectedKipIds}
-                onChange={handleKipChange}
-                allowClear
-                disabled={!selectedFactoryId}
-              >
-                {kips
-                  .filter((k) => k.factoryId === selectedFactoryId)
-                  .map((k) => (
-                    <Select.Option key={k.id} value={k.id}>
-                      {k.name}
-                    </Select.Option>
-                  ))}
-              </Select>
-            </div>
-          )}
+            </Select>
+          </div>
 
           <div style={{ marginTop: 20 }}>
             <Button
               icon={<ReloadOutlined />}
               onClick={fetchMonthlyData}
-              disabled={!mixedDeptValue && selectedKipIds.length === 0}
+              disabled={mixedDeptValues.length === 0}
             >
               Xem
             </Button>
           </div>
 
-          {/* EXCEL EXPORT BUTTONS */}
           <div style={{ marginTop: 20, marginLeft: "auto" }}>
             <Button
               type="primary"
