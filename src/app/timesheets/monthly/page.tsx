@@ -14,8 +14,13 @@ import {
   Card,
   Typography,
   Tooltip,
+  Input,
 } from "antd";
-import { ReloadOutlined, FileExcelOutlined } from "@ant-design/icons";
+import {
+  ReloadOutlined,
+  FileExcelOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 
@@ -75,6 +80,9 @@ export default function MonthlyTimesheetPage() {
   );
   const [mixedDeptValues, setMixedDeptValues] = useState<string[]>([]);
   const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
+
+  // State tìm kiếm theo tên
+  const [searchText, setSearchText] = useState("");
 
   const [loading, setLoading] = useState(false);
 
@@ -234,7 +242,9 @@ export default function MonthlyTimesheetPage() {
 
   // --- FETCH DATA ---
   const fetchMonthlyData = async () => {
-    if (mixedDeptValues.length === 0) {
+    // Điều kiện chạy: (Có Phòng) HOẶC (Có Tên)
+    // KHÔNG CẦN quan tâm FactoryId có hay không
+    if (mixedDeptValues.length === 0 && !searchText.trim()) {
       setEmployees([]);
       return;
     }
@@ -245,19 +255,20 @@ export default function MonthlyTimesheetPage() {
       const year = selectedMonth.year();
       let url = `/api/timesheets/monthly?month=${month}&year=${year}`;
 
-      const realIds = resolveRealDepartmentIds();
+      // 1. Gửi FactoryId (NẾU CÓ CHỌN)
+      if (selectedFactoryId) {
+        url += `&factoryId=${selectedFactoryId}`;
+      }
 
-      if (realIds.length > 0) {
-        url += `&departmentId=${realIds.join(",")}`;
-        // Luôn gửi kèm kipIds để Backend lọc thêm (nếu cần thiết cho các phòng lẻ)
-        if (selectedKipIds.length > 0) {
-          url += `&kipIds=${selectedKipIds.join(",")}`;
-        }
-      } else {
-        message.warning("Không tìm thấy dữ liệu phòng ban phù hợp.");
-        setEmployees([]);
-        setLoading(false);
-        return;
+      // 2. Gửi DepartmentId & KipId (như cũ)
+      const realIds = resolveRealDepartmentIds();
+      if (realIds.length > 0) url += `&departmentId=${realIds.join(",")}`;
+      if (selectedKipIds.length > 0)
+        url += `&kipIds=${selectedKipIds.join(",")}`;
+
+      // 3. Gửi Tên (NẾU CÓ NHẬP)
+      if (searchText.trim()) {
+        url += `&name=${encodeURIComponent(searchText.trim())}`;
       }
 
       const res = await fetch(url);
@@ -278,16 +289,47 @@ export default function MonthlyTimesheetPage() {
 
   // --- TỰ ĐỘNG TẢI ---
   useEffect(() => {
-    if (!selectedFactoryId) return;
+    // BỎ DÒNG NÀY: if (!selectedFactoryId) return;
+
     let shouldFetch = false;
     if (mixedDeptValues.length > 0) shouldFetch = true;
+    if (searchText.trim().length > 0) shouldFetch = true;
 
     if (shouldFetch) {
-      fetchMonthlyData();
+      const timer = setTimeout(() => {
+        fetchMonthlyData();
+      }, 500);
+      return () => clearTimeout(timer);
     } else {
+      // Nếu xóa hết (không nhà máy, không phòng, không tên) -> Xóa bảng
+      // Tuy nhiên nếu đang chọn Nhà máy mà chưa chọn phòng -> Cũng xóa bảng
+      // Logic này tùy bạn, ở đây tôi giữ nguyên logic dọn dẹp
       setEmployees([]);
     }
-  }, [selectedFactoryId, selectedMonth, mixedDeptValues, selectedKipIds]);
+  }, [
+    selectedFactoryId,
+    selectedMonth,
+    mixedDeptValues,
+    selectedKipIds,
+    searchText,
+  ]);
+
+  // --- [MỚI] LOGIC LỌC THEO TÊN ---
+  const filteredEmployees = useMemo(() => {
+    //if (!searchText) return employees; // Không nhập gì thì hiện hết
+
+    const lowerText = searchText.toLowerCase();
+    return employees.filter((emp) => {
+      // Tìm theo Tên không dấu/có dấu đều được (cơ bản) hoặc Mã NV
+      // Ở đây ta dùng toLowerCase() đơn giản.
+      // Nếu muốn tìm tiếng Việt không dấu nâng cao thì cần hàm convert riêng,
+      // nhưng toLowerCase vẫn tìm tốt nếu gõ đúng tiếng Việt.
+      return (
+        emp.fullName.toLowerCase().includes(lowerText) ||
+        emp.code.toLowerCase().includes(lowerText)
+      );
+    });
+  }, [employees, searchText]);
 
   // --- COLUMNS ---
   const columns = useMemo(() => {
@@ -775,11 +817,26 @@ export default function MonthlyTimesheetPage() {
             </Select>
           </div>
 
+          {/* [MỚI] Ô TÌM KIẾM TÊN */}
+          <div>
+            <div style={{ fontWeight: 600 }}>Tìm tên / Mã NV:</div>
+            <Input
+              placeholder="Nhập tên..."
+              prefix={<SearchOutlined style={{ color: "#bfbfbf" }} />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              allowClear
+              // [QUAN TRỌNG] BỎ disabled={!selectedFactoryId} ĐI
+              // disabled={!selectedFactoryId} <--- XÓA DÒNG NÀY
+              style={{ width: 180 }}
+            />
+          </div>
+
           <div style={{ marginTop: 20 }}>
             <Button
               icon={<ReloadOutlined />}
               onClick={fetchMonthlyData}
-              disabled={mixedDeptValues.length === 0}
+              disabled={mixedDeptValues.length === 0 && !searchText.trim()}
             >
               Xem
             </Button>
@@ -802,7 +859,7 @@ export default function MonthlyTimesheetPage() {
 
       <Table
         bordered
-        dataSource={employees}
+        dataSource={filteredEmployees} // <--- ĐỔI TỪ employees SANG filteredEmployees
         columns={columns}
         rowKey="id"
         loading={loading}

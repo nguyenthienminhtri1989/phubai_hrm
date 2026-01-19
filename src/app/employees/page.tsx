@@ -23,8 +23,6 @@ import {
   DeleteOutlined,
   EditOutlined,
   FilterOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
   PhoneOutlined,
   SearchOutlined, // <--- 1. IMPORT THÊM ICON TÌM KIẾM
 } from "@ant-design/icons";
@@ -90,10 +88,6 @@ export default function EmployeePage() {
   // --- 2. STATE MỚI CHO TÌM KIẾM ---
   const [searchText, setSearchText] = useState("");
   // -------------------------------
-
-  // State Bulk Update
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [bulkKipId, setBulkKipId] = useState<number | null>(null);
 
   // --- FETCH DATA ---
   const fetchEmployees = async () => {
@@ -165,39 +159,6 @@ export default function EmployeePage() {
   // -------------------------------------
 
   // --- ACTIONS ---
-  const handleBulkUpdate = async () => {
-    if (selectedRowKeys.length === 0) {
-      message.warning("Chưa chọn nhân viên nào!");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/employees/bulk-update", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employeeIds: selectedRowKeys,
-          kipId: bulkKipId,
-        }),
-      });
-
-      if (res.ok) {
-        message.success("Cập nhật thành công!");
-        setSelectedRowKeys([]);
-        setBulkKipId(null);
-        const empRes = await fetch("/api/employees");
-        setEmployees(await empRes.json());
-      } else {
-        const errorData = await res.json();
-        message.error("Lỗi: " + (errorData.error || "Không xác định"));
-      }
-    } catch (error) {
-      message.error("Lỗi kết nối server");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDelete = async (id: number) => {
     try {
@@ -261,13 +222,6 @@ export default function EmployeePage() {
     } catch (error) {
       console.log("Validate Failed", error);
     }
-  };
-
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (newSelectedRowKeys: React.Key[]) => {
-      setSelectedRowKeys(newSelectedRowKeys);
-    },
   };
 
   // --- COLUMNS ---
@@ -437,65 +391,8 @@ export default function EmployeePage() {
         </div>
       </Card>
 
-      {/* --- THANH CÔNG CỤ CẬP NHẬT HÀNG LOẠT --- */}
-      {selectedRowKeys.length > 0 && !isViewOnly && (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: "12px 24px",
-            background: "#e6f7ff",
-            border: "1px solid #91d5ff",
-            borderRadius: 8,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          }}
-        >
-          <Space>
-            <CheckCircleOutlined style={{ color: "#1890ff", fontSize: 20 }} />
-            <span style={{ fontWeight: 600, fontSize: 16 }}>
-              Đang chọn {selectedRowKeys.length} nhân viên
-            </span>
-          </Space>
-
-          <Space>
-            <span>Gán vào:</span>
-            <Select
-              style={{ width: 250 }}
-              placeholder="Chọn Kíp / Tổ..."
-              value={bulkKipId}
-              onChange={setBulkKipId}
-              allowClear
-            >
-              {kips.map((k) => (
-                <Select.Option key={k.id} value={k.id}>
-                  {k.name} - {k.factory?.name}
-                </Select.Option>
-              ))}
-            </Select>
-
-            <Button
-              type="primary"
-              onClick={handleBulkUpdate}
-              loading={loading}
-              disabled={bulkKipId === undefined}
-            >
-              Cập nhật ngay
-            </Button>
-            <Button
-              icon={<CloseCircleOutlined />}
-              onClick={() => setSelectedRowKeys([])}
-            >
-              Hủy
-            </Button>
-          </Space>
-        </div>
-      )}
-
       {/* --- BẢNG DỮ LIỆU --- */}
       <Table
-        rowSelection={!isViewOnly ? rowSelection : undefined}
         columns={columns}
         dataSource={filteredEmployees} // Dùng danh sách đã lọc
         rowKey="id"

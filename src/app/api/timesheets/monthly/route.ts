@@ -6,8 +6,10 @@ import dayjs from "dayjs";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const departmentIdStr = searchParams.get("departmentId"); // Nhận chuỗi "1,2,3"
+    const departmentIdStr = searchParams.get("departmentId");
     const kipIdsStr = searchParams.get("kipIds");
+    const factoryIdStr = searchParams.get("factoryId");
+    const nameStr = searchParams.get("name");
     const month = searchParams.get("month");
     const year = searchParams.get("year");
 
@@ -18,16 +20,41 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!departmentIdStr && !kipIdsStr) {
+    // [SỬA ĐỔI]: Nới lỏng điều kiện validation
+    const hasDeptFilter = !!departmentIdStr || !!kipIdsStr;
+    const hasNameFilter = !!nameStr && nameStr.trim() !== ""; // Chỉ cần có tên là đủ
+
+    // Nếu không có bộ lọc nào (Không Phòng, Không Kíp, Không Tên) -> Chặn
+    if (!hasDeptFilter && !hasNameFilter) {
       return NextResponse.json(
-        { error: "Vui lòng chọn bộ lọc" },
+        {
+          error: "Vui lòng chọn Phòng ban hoặc nhập Tên nhân viên để tìm kiếm",
+        },
         { status: 400 }
       );
     }
 
     const whereCondition: any = {};
 
-    // --- [SỬA ĐỔI QUAN TRỌNG: HỖ TRỢ NHIỀU PHÒNG BAN] ---
+    // 1. LỌC THEO TÊN (Nếu có)
+    if (nameStr && nameStr.trim() !== "") {
+      const keyword = nameStr.trim();
+      whereCondition.OR = [
+        { fullName: { contains: keyword, mode: "insensitive" } },
+        { code: { contains: keyword, mode: "insensitive" } },
+      ];
+    }
+
+    // 2. LỌC THEO NHÀ MÁY (Nếu CÓ chọn thì lọc, KHÔNG chọn thì tìm toàn công ty)
+    if (factoryIdStr && factoryIdStr !== "null") {
+      // Nếu đã có condition department (do logic dưới) thì merge vào, chưa có thì tạo mới
+      whereCondition.department = {
+        ...(whereCondition.department || {}),
+        factoryId: Number(factoryIdStr),
+      };
+    }
+
+    // 3. LỌC THEO PHÒNG BAN
     if (departmentIdStr && departmentIdStr !== "null") {
       const deptIds = departmentIdStr
         .split(",")
@@ -37,15 +64,14 @@ export async function GET(request: Request) {
         whereCondition.departmentId = { in: deptIds };
       }
     }
-    // ----------------------------------------------------
 
+    // 4. LỌC THEO KÍP
     if (kipIdsStr) {
       const kipIds = kipIdsStr
         .split(",")
         .map(Number)
         .filter((n) => !isNaN(n));
-      // Nếu chưa lọc theo phòng (NM3) thì lọc theo Kíp
-      if (!whereCondition.departmentId && kipIds.length > 0) {
+      if (kipIds.length > 0) {
         whereCondition.kipId = { in: kipIds };
       }
     }
@@ -57,23 +83,22 @@ export async function GET(request: Request) {
     const employees = await prisma.employee.findMany({
       where: whereCondition,
       orderBy: [
-        { kip: { name: "asc" } },
+        { department: { factoryId: "asc" } }, // [MỚI] Sắp xếp theo Nhà máy trước
         { department: { name: "asc" } },
+        { kip: { name: "asc" } },
         { code: "asc" },
       ],
       include: {
         timesheets: {
-          where: {
-            date: { gte: startDate, lte: endDate },
-          },
+          where: { date: { gte: startDate, lte: endDate } },
           include: { attendanceCode: true },
         },
-        department: true,
+        department: { include: { factory: true } }, // [MỚI] Include thêm Factory để hiển thị
         kip: true,
       },
     });
 
-    // Map lại cấu trúc dữ liệu trả về cho gọn
+    // Map data
     const data = employees.map((emp) => ({
       id: emp.id,
       code: emp.code,
