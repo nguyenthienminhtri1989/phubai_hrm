@@ -254,7 +254,7 @@ export default function EmployeePage() {
       >
         <Form form={form} layout="vertical">
           {/* --- PHẦN 1: THÔNG TIN CƠ BẢN --- */}
-          <Divider orientation="left" style={{ marginTop: 0 }}>Thông tin cơ bản</Divider>
+          <Divider style={{ marginTop: 0 }}>Thông tin cơ bản</Divider>
           
           <div style={{ display: "flex", gap: 16 }}>
             <Form.Item name="code" label="Mã NV" style={{ flex: 1 }} rules={[{ required: true, message: "Bắt buộc" }]}>
@@ -312,7 +312,7 @@ export default function EmployeePage() {
           </Form.Item>
 
           {/* --- PHẦN 2: THÔNG TIN BỔ SUNG --- */}
-          <Divider orientation="left">Thông tin định danh & Ngân hàng</Divider>
+          <Divider>Thông tin định danh & Ngân hàng</Divider>
 
           <div style={{ display: "flex", gap: 16 }}>
              <Form.Item name="idCardNumber" label="Số CCCD" style={{ flex: 1 }}>
