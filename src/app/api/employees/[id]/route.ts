@@ -53,11 +53,14 @@ export async function PATCH(
       position,
       departmentId,
       kipId,
+      startDate, idCardNumber, idCardDate, idCardPlace, bankAccount, taxCode
     } = body; // Lấy những thứ cần thiết từ cục hàng body ra để dùng (cập nhật)
 
     // FIX: Xử lý ngày sinh an toàn hơn
     // Nếu birthday hợp lệ thì new Date, nếu không thì undefined
     const formatBirthday = birthday ? new Date(birthday) : undefined;
+    const formatStartDate = startDate ? new Date(startDate) : null;     // [MỚI]
+    const formatIdCardDate = idCardDate ? new Date(idCardDate) : null; // [MỚI]
 
     // Cập nhật vào cơ sở dữ liệu
     const updatedEmployee = await prisma.employee.update({
@@ -73,6 +76,12 @@ export async function PATCH(
         // FIX: Thêm kiểm tra departmentId trước khi parse để tránh NaN nếu lỡ null
         departmentId: departmentId ? parseInt(departmentId) : undefined,
         kipId: kipId ? Number(kipId) : null,
+        startDate: formatStartDate,
+        idCardNumber,
+        idCardDate: formatIdCardDate,
+        idCardPlace,
+        bankAccount,
+        taxCode
       },
     });
 

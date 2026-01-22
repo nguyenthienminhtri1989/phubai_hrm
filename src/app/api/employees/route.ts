@@ -46,6 +46,12 @@ export async function POST(request: Request) {
       position,
       departmentId, // bắt buộc
       kipId,
+      startDate, 
+      idCardNumber, 
+      idCardDate, 
+      idCardPlace, 
+      bankAccount, 
+      taxCode
     } = body;
 
     // Kiểm tra dữ liệu bắt buộc
@@ -59,6 +65,8 @@ export async function POST(request: Request) {
     // XỬ LÝ NGÀY THÁNG (Quan trọng)
     // Nếu có gửi ngày sinh thì chuyển từ String sang Date object, nếu không thì để null
     const birthdayDate = birthday ? new Date(birthday) : null;
+    const startDateDate = startDate ? new Date(startDate) : null;   // [MỚI]
+    const idCardDateDate = idCardDate ? new Date(idCardDate) : null; // [MỚI]
 
     // Lưu dữ liệu vào database
     const newEmployee = await prisma.employee.create({
@@ -72,6 +80,12 @@ export async function POST(request: Request) {
         position: position,
         departmentId: Number(departmentId), // Đảm bảo Id là số
         kipId: kipId ? Number(kipId) : null,
+        startDate: startDateDate,
+        idCardNumber,
+        idCardDate: idCardDateDate,
+        idCardPlace,
+        bankAccount,
+        taxCode
       },
     });
 

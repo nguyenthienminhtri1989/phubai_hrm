@@ -63,11 +63,19 @@ model Employee {
   address    String?
   phone      String?
   position   String?    // Nhập tay thoải mái
+
+  // --- [MỚI] CÁC TRƯỜNG BỔ SUNG ---
+  startDate     DateTime? // Ngày vào làm
+  idCardNumber  String?   // Số CCCD
+  idCardDate    DateTime? // Ngày cấp
+  idCardPlace   String?   // Nơi cấp
+  bankAccount   String?   // Số tài khoản
+  taxCode       String?   // Mã số thuế
+  // -------------------------------
   
   // Khóa ngoại liên kết phòng ban
   departmentId Int
   department   Department @relation(fields: [departmentId], references: [id])
-  // Thêm dòng này vào model Employee cũ của bạn
 
   // --- MỚI: THÊM CÁI NÀY ĐỂ LỌC ---
   kipId        Int?     // Cho phép NULL (để ông Bảo trì/Văn phòng không cần điền)

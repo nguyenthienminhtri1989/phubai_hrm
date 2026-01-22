@@ -29,6 +29,7 @@ import {
   AppstoreOutlined, // <-- Thêm cái này (biểu tượng 4 ô vuông)
   CloudDownloadOutlined, // Nút backup database
   LockOutlined,
+  ImportOutlined,
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -195,6 +196,11 @@ export default function AdminLayout({
                     key: "/admin/lock-rules",
                     icon: <LockOutlined />,
                     label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
+                  },
+                  {
+                    key: "/admin/employees/import",
+                    icon: <ImportOutlined />,
+                    label: <Link href="/admin/employees/import">Import</Link>,
                   },
                 ]
               : []),
