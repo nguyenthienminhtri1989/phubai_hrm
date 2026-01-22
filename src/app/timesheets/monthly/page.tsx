@@ -1,3 +1,4 @@
+//src/app/timesheets/monthly/page.tsx
 "use client";
 
 import ExcelJS from "exceljs";
@@ -17,9 +18,9 @@ import {
   Input,
 } from "antd";
 import {
-  ReloadOutlined,
   FileExcelOutlined,
   SearchOutlined,
+  FilterOutlined, // [MỚI] Import icon phễu
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -40,6 +41,7 @@ interface MonthlyEmployeeData {
   department?: { name: string };
   kip?: { name: string };
   timesheets: { date: string; attendanceCode: AttendanceCode }[];
+  classification?: string | null; // Dữ liệu xếp loại
 }
 interface Factory {
   id: number;
@@ -75,9 +77,7 @@ export default function MonthlyTimesheetPage() {
 
   // Filter State
   const [selectedMonth, setSelectedMonth] = useState<Dayjs>(dayjs());
-  const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(
-    null
-  );
+  const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
   const [mixedDeptValues, setMixedDeptValues] = useState<string[]>([]);
   const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
 
@@ -87,8 +87,6 @@ export default function MonthlyTimesheetPage() {
   const [loading, setLoading] = useState(false);
 
   // --- CONFIG ---
-  // [QUAN TRỌNG]: Đưa tất cả nhà máy vào danh sách MATRIX
-  // Lúc này giao diện NM1 sẽ y hệt NM2, NM3
   const MATRIX_FACTORY_IDS = [1, 2, 3];
 
   // 1. Load Data
@@ -121,7 +119,6 @@ export default function MonthlyTimesheetPage() {
     return [];
   }, [departments, session]);
 
-  // Kiểm tra xem nhà máy hiện tại có thuộc chế độ Matrix không (Hiện tại luôn là True nếu đã chọn)
   const isMatrix = useMemo(
     () =>
       selectedFactoryId
@@ -140,16 +137,15 @@ export default function MonthlyTimesheetPage() {
     const processedSections = new Set<string>();
 
     currentDepts.forEach((d) => {
-      // Regex tìm Mã tổ (ví dụ: 3GT1 -> GT, 2SC1 -> SC)
       const matrixRegex = new RegExp(`^${selectedFactoryId}([a-zA-Z]+)(\\d+)$`);
       const match = d.code?.match(matrixRegex);
 
       if (isMatrix && match) {
-        // [LOGIC GOM NHÓM]: Dành cho các tổ sản xuất (Sợi con, Ống...)
         const sectionCode = match[1];
         if (!processedSections.has(sectionCode)) {
           const displayName = d.name
             .replace(/(kíp|ca)\s*\d+.*$/gi, "")
+            .replace(/-+.*$/gi, "")
             .trim()
             .replace(/-+.*$/gi, "")
             .trim();
@@ -162,9 +158,6 @@ export default function MonthlyTimesheetPage() {
           processedSections.add(sectionCode);
         }
       } else {
-        // [LOGIC ĐƠN LẺ]: Dành cho các phòng ban hành chính (HCNS, Kế toán...)
-        // Hoặc các tổ không tuân theo quy tắc đặt tên mã ở trên.
-        // NM1 thường sẽ rơi vào trường hợp này.
         options.push({
           value: `DEPT:${d.id}`,
           label: d.name,
@@ -176,11 +169,10 @@ export default function MonthlyTimesheetPage() {
     return options.sort((a, b) => a.label.localeCompare(b.label));
   }, [availableDepartments, selectedFactoryId, isMatrix]);
 
-  // --- RESOLVE ID (Xử lý lấy ID thực tế) ---
+  // --- RESOLVE ID ---
   const resolveRealDepartmentIds = (): number[] => {
     if (!selectedFactoryId || mixedDeptValues.length === 0) return [];
 
-    // Lấy số Kíp cần lọc (nếu có)
     let targetKipNumbers: string[] = [];
     if (selectedKipIds.length > 0) {
       const names = kips
@@ -194,13 +186,10 @@ export default function MonthlyTimesheetPage() {
     const allRealIds: number[] = [];
 
     mixedDeptValues.forEach((val) => {
-      // TH1: Phòng ban lẻ (NM1 thường dùng cái này)
       if (val.startsWith("DEPT")) {
         const id = parseInt(val.split(":")[1]);
         if (!isNaN(id)) allRealIds.push(id);
-      }
-      // TH2: Tổ gộp (NM2, NM3 thường dùng cái này)
-      else if (val.startsWith("SECTION")) {
+      } else if (val.startsWith("SECTION")) {
         const sectionCode = val.split(":")[1];
         availableDepartments.forEach((d) => {
           if (d.factory?.id !== selectedFactoryId) return;
@@ -240,10 +229,17 @@ export default function MonthlyTimesheetPage() {
     setSelectedKipIds(val);
   };
 
+  // --- [MỚI] HÀM RESET BỘ LỌC ---
+  const handleReset = () => {
+    setSelectedFactoryId(null);
+    setMixedDeptValues([]);
+    setSelectedKipIds([]);
+    setSearchText("");
+    setEmployees([]); // Xóa dữ liệu bảng
+  };
+
   // --- FETCH DATA ---
   const fetchMonthlyData = async () => {
-    // Điều kiện chạy: (Có Phòng) HOẶC (Có Tên)
-    // KHÔNG CẦN quan tâm FactoryId có hay không
     if (mixedDeptValues.length === 0 && !searchText.trim()) {
       setEmployees([]);
       return;
@@ -255,18 +251,15 @@ export default function MonthlyTimesheetPage() {
       const year = selectedMonth.year();
       let url = `/api/timesheets/monthly?month=${month}&year=${year}`;
 
-      // 1. Gửi FactoryId (NẾU CÓ CHỌN)
       if (selectedFactoryId) {
         url += `&factoryId=${selectedFactoryId}`;
       }
 
-      // 2. Gửi DepartmentId & KipId (như cũ)
       const realIds = resolveRealDepartmentIds();
       if (realIds.length > 0) url += `&departmentId=${realIds.join(",")}`;
       if (selectedKipIds.length > 0)
         url += `&kipIds=${selectedKipIds.join(",")}`;
 
-      // 3. Gửi Tên (NẾU CÓ NHẬP)
       if (searchText.trim()) {
         url += `&name=${encodeURIComponent(searchText.trim())}`;
       }
@@ -287,10 +280,8 @@ export default function MonthlyTimesheetPage() {
     }
   };
 
-  // --- TỰ ĐỘNG TẢI ---
+  // --- TỰ ĐỘNG TẢI (AUTO FETCH) ---
   useEffect(() => {
-    // BỎ DÒNG NÀY: if (!selectedFactoryId) return;
-
     let shouldFetch = false;
     if (mixedDeptValues.length > 0) shouldFetch = true;
     if (searchText.trim().length > 0) shouldFetch = true;
@@ -301,9 +292,6 @@ export default function MonthlyTimesheetPage() {
       }, 500);
       return () => clearTimeout(timer);
     } else {
-      // Nếu xóa hết (không nhà máy, không phòng, không tên) -> Xóa bảng
-      // Tuy nhiên nếu đang chọn Nhà máy mà chưa chọn phòng -> Cũng xóa bảng
-      // Logic này tùy bạn, ở đây tôi giữ nguyên logic dọn dẹp
       setEmployees([]);
     }
   }, [
@@ -314,16 +302,10 @@ export default function MonthlyTimesheetPage() {
     searchText,
   ]);
 
-  // --- [MỚI] LOGIC LỌC THEO TÊN ---
+  // --- LOGIC LỌC THEO TÊN (Client Side) ---
   const filteredEmployees = useMemo(() => {
-    //if (!searchText) return employees; // Không nhập gì thì hiện hết
-
     const lowerText = searchText.toLowerCase();
     return employees.filter((emp) => {
-      // Tìm theo Tên không dấu/có dấu đều được (cơ bản) hoặc Mã NV
-      // Ở đây ta dùng toLowerCase() đơn giản.
-      // Nếu muốn tìm tiếng Việt không dấu nâng cao thì cần hàm convert riêng,
-      // nhưng toLowerCase vẫn tìm tốt nếu gõ đúng tiếng Việt.
       return (
         emp.fullName.toLowerCase().includes(lowerText) ||
         emp.code.toLowerCase().includes(lowerText)
@@ -356,8 +338,8 @@ export default function MonthlyTimesheetPage() {
               {record.kip
                 ? `(${record.kip.name})`
                 : record.department
-                ? record.department.name
-                : ""}
+                  ? record.department.name
+                  : ""}
             </div>
           </div>
         ),
@@ -512,7 +494,12 @@ export default function MonthlyTimesheetPage() {
         align: "center",
         fixed: "right",
         render: (_: any, r: MonthlyEmployeeData) => {
-          return "";
+          const grade = r.classification;
+          let color = "#000";
+          if (grade === "A" || grade === "A+") color = "#16a34a";
+          if (grade === "B") color = "#2563eb";
+          if (grade === "C") color = "#ca8a04";
+          return <b style={{ color: color, fontSize: 13 }}>{grade || "-"}</b>;
         },
       },
     ];
@@ -637,7 +624,7 @@ export default function MonthlyTimesheetPage() {
       rowData.push(countCodes(["RO"]) || "");
       rowData.push(countCodes(["O"]) || "");
       rowData.push(countCodes(["B"]) || "");
-      rowData.push("");
+      rowData.push(emp.classification || "");
 
       const row = worksheet.addRow(rowData);
       row.eachCell((cell, colNumber) => {
@@ -768,7 +755,6 @@ export default function MonthlyTimesheetPage() {
             </Select>
           </div>
 
-          {/* LUÔN HIỂN THỊ CHỌN PHÒNG BAN CHO TẤT CẢ NHÀ MÁY */}
           <div>
             <div style={{ fontWeight: 600 }}>
               {isMatrix ? "Chọn Tổ / Bộ phận:" : "Phòng ban:"}
@@ -793,7 +779,6 @@ export default function MonthlyTimesheetPage() {
             </Select>
           </div>
 
-          {/* LUÔN HIỂN THỊ CHỌN KÍP CHO TẤT CẢ NHÀ MÁY */}
           <div>
             <div style={{ fontWeight: 600 }}>
               {isMatrix ? "Lọc theo Kíp:" : "Chọn Kíp:"}
@@ -817,7 +802,6 @@ export default function MonthlyTimesheetPage() {
             </Select>
           </div>
 
-          {/* [MỚI] Ô TÌM KIẾM TÊN */}
           <div>
             <div style={{ fontWeight: 600 }}>Tìm tên / Mã NV:</div>
             <Input
@@ -826,19 +810,20 @@ export default function MonthlyTimesheetPage() {
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               allowClear
-              // [QUAN TRỌNG] BỎ disabled={!selectedFactoryId} ĐI
-              // disabled={!selectedFactoryId} <--- XÓA DÒNG NÀY
               style={{ width: 180 }}
             />
           </div>
 
+          {/* [MỚI] NÚT XÓA LỌC */}
           <div style={{ marginTop: 20 }}>
             <Button
-              icon={<ReloadOutlined />}
-              onClick={fetchMonthlyData}
-              disabled={mixedDeptValues.length === 0 && !searchText.trim()}
+              danger // Màu đỏ
+              icon={<FilterOutlined />}
+              onClick={handleReset}
+              // Chỉ hiện khi có điều kiện lọc (Nhà máy hoặc Tìm tên)
+              disabled={!selectedFactoryId && !searchText}
             >
-              Xem
+              Xóa lọc
             </Button>
           </div>
 
@@ -859,7 +844,7 @@ export default function MonthlyTimesheetPage() {
 
       <Table
         bordered
-        dataSource={filteredEmployees} // <--- ĐỔI TỪ employees SANG filteredEmployees
+        dataSource={filteredEmployees}
         columns={columns}
         rowKey="id"
         loading={loading}

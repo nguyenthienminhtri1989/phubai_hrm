@@ -82,6 +82,8 @@ model Employee {
   kip          Kip?     @relation(fields: [kipId], references: [id])
   // --------------------------------
   timesheets Timesheet[]
+
+  evaluations MonthlyEvaluation[] // Truy vấn xếp loại
 }
 
 // 1. Bảng định nghĩa các loại công (X, F, Ô...)
@@ -159,4 +161,25 @@ model LockRule {
   
   // Thiết lập quan hệ (Nếu bạn đã có model Factory)
   factory   Factory? @relation(fields: [factoryId], references: [id])
+}
+
+// Bảng lưu kết quả xếp loại tháng
+model MonthlyEvaluation {
+  id          Int      @id @default(autoincrement())
+  
+  // Liên kết nhân viên
+  employeeId  Int
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  month       Int      // Ví dụ: 1
+  year        Int      // Ví dụ: 2026
+  
+  grade       String   // Giá trị: "A", "B", "C", "A+"...
+  note        String?  // Ghi chú lý do (nếu cần)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Ràng buộc: Mỗi nhân viên chỉ có 1 kết quả xếp loại trong 1 tháng
+  @@unique([employeeId, month, year])
 }

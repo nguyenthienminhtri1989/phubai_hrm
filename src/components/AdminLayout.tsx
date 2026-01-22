@@ -30,6 +30,7 @@ import {
   CloudDownloadOutlined, // Nút backup database
   LockOutlined,
   ImportOutlined,
+  SettingOutlined
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -134,11 +135,11 @@ export default function AdminLayout({
           mode="inline"
           defaultSelectedKeys={[pathname]}
           items={[
-            // 2. NHÓM QUẢN LÝ DANH MỤC
+            // ... (Các mục cũ giữ nguyên) ...
             {
-              key: "catalog-management", // Key này tên tùy ý
-              icon: <AppstoreOutlined />, // Icon cho menu cha
-              label: "Danh mục", // Tên hiển thị menu cha
+              key: "catalog-management",
+              icon: <AppstoreOutlined />,
+              label: "Danh mục",
               children: [
                 {
                   key: "/factories",
@@ -168,6 +169,11 @@ export default function AdminLayout({
               label: <Link href="/timesheets/daily">Chấm công</Link>,
             },
             {
+              key: "/evaluations/monthly",
+              icon: <FormOutlined />,
+              label: <Link href="/evaluations/monthly">Xếp loại</Link>,
+            },
+            {
               key: "/timesheets/monthly",
               icon: <TableOutlined />,
               label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
@@ -179,38 +185,50 @@ export default function AdminLayout({
             },
             {
               key: "/dashboard/departments",
-              icon: <UnorderedListOutlined />, // Icon dạng danh sách
+              icon: <UnorderedListOutlined />,
               label: (
-                <Link href="/dashboard/departments">Chi tiết bộ phận</Link>
+                <Link href="/dashboard/departments">Tình hình lao động</Link>
               ),
             },
-            // Chỉ hiện User nếu là ADMIN
+
+            // --- [SỬA ĐỔI TẠI ĐÂY] ---
+            // Gom nhóm Quản trị, chỉ hiện nếu là ADMIN
             ...(session?.user?.role === "ADMIN"
               ? [
-                  {
-                    key: "/admin/users",
-                    icon: <UserOutlined />,
-                    label: <Link href="/admin/users">Người dùng</Link>,
-                  },
-                  {
-                    key: "/admin/lock-rules",
-                    icon: <LockOutlined />,
-                    label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
-                  },
-                  {
-                    key: "/admin/employees/import",
-                    icon: <ImportOutlined />,
-                    label: <Link href="/admin/employees/import">Import</Link>,
-                  },
-                ]
+                {
+                  key: "admin-management", // Key của nhóm cha
+                  icon: <SettingOutlined />, // Bạn nhớ import icon này
+                  label: "Quản trị", // Tên hiển thị nhóm cha
+                  children: [
+                    {
+                      key: "/admin/users",
+                      icon: <UserOutlined />,
+                      label: <Link href="/admin/users">Người dùng</Link>,
+                    },
+                    {
+                      key: "/admin/lock-rules",
+                      icon: <LockOutlined />,
+                      label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
+                    },
+                    {
+                      key: "/admin/employees/import",
+                      icon: <ImportOutlined />,
+                      label: <Link href="/admin/employees/import">Import</Link>,
+                    },
+                  ],
+                },
+              ]
               : []),
+            // -------------------------
+
             {
-              key: "/help", // Đường dẫn khớp với folder bạn vừa tạo
+              key: "/help",
               icon: <QuestionCircleOutlined />,
               label: <Link href="/help">Hướng dẫn</Link>,
             },
           ]}
         />
+
       </Sider>
 
       <Layout>
