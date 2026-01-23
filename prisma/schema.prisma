@@ -136,6 +136,7 @@ enum Role {
   HR_MANAGER  // Quản lý nhân sự (Sửa danh mục, xem tất cả)
   LEADER      // Lãnh đạo (Chỉ xem)
   TIMEKEEPER  // Người chấm công (Chỉ được chấm các phòng được giao)
+  STAFF       // Nhân viên bình thường, chỉ xem và sửa bảng làm thêm
 }
 
 // 2. Thêm bảng User
@@ -199,6 +200,8 @@ model OvertimeRecord {
   startTime    DateTime // Giờ vào (VD: 2026-01-22 17:00:00)
   endTime      DateTime // Giờ ra  (VD: 2026-01-22 19:30:00)
   totalMinutes Int      // Tổng thời gian (tính bằng phút để dễ cộng trừ)
-
   createdAt    DateTime @default(now())
+
+  // [MỚI] Lưu username người tạo (Ví dụ: "admin", "to1", "bao_tri")
+  createdBy    String?
 }

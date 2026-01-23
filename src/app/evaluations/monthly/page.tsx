@@ -99,13 +99,14 @@ export default function MonthlyEvaluationPage() {
         // Lọc theo Nhà máy trước
         const factoryDepts = departments.filter((d) => d.factory?.id === selectedFactoryId);
 
-        // Nếu là Admin/HR/Leader -> Xem hết trong nhà máy đó
+        // Nhóm 1: Xem tất cả (Admin, HR, Lãnh đạo)
         if (["ADMIN", "HR_MANAGER", "LEADER"].includes(user.role)) {
             return factoryDepts;
         }
 
-        // Nếu là Timekeeper -> Chỉ xem các phòng được gán (managedDeptIds)
-        if (user.role === "TIMEKEEPER") {
+        // Nhóm 2: Xem theo phân công (Chấm công VÀ Nhân viên)
+        // STAFF cũng dùng managedDeptIds để biết mình thuộc phòng nào mà xem
+        if (["TIMEKEEPER", "STAFF"].includes(user.role)) {
             const allowedIds = user.managedDeptIds || [];
             return factoryDepts.filter((d) => allowedIds.includes(d.id));
         }
@@ -309,13 +310,22 @@ export default function MonthlyEvaluationPage() {
         setChanges(newChanges);
         message.success(`Đã xếp loại ${targetGrade} toàn bộ!`);
     };
+
+    // Chỉ hiện nút LƯU và ĐIỀN NHANH nếu KHÔNG PHẢI là STAFF
+    const canEdit = session?.user?.role !== "STAFF";
+
     const columns = [
         { title: "STT", key: "idx", width: 50, align: "center" as const, render: (_: any, __: any, i: number) => i + 1 },
         { title: "Mã NV", dataIndex: "code", key: "code", width: 80, render: (t: string) => <b>{t}</b> },
         { title: "Họ tên", dataIndex: "fullName", key: "fullName", width: 180, render: (t: string, r: EvaluationData) => (<div><div>{t}</div><div style={{ fontSize: 11, color: "#888" }}>{r.kipName}</div></div>) },
         {
             title: "Xếp loại", key: "grade", width: 100, align: "center" as const, render: (_: any, r: EvaluationData) => (
-                <Select style={{ width: 80 }} value={getDataGrade(r.id)} onChange={(val) => handleGradeChange(r.id, val)} placeholder="-">
+                <Select
+                    style={{ width: 80 }}
+                    value={getDataGrade(r.id)}
+                    onChange={(val) => handleGradeChange(r.id, val)} placeholder="-"
+                    disabled={!canEdit} // STAFF không chọn được, chỉ xem
+                >
                     <Option value="A"><span style={{ color: "green", fontWeight: "bold" }}>A</span></Option>
                     <Option value="A-">A-</Option>
                     <Option value="B"><span style={{ color: "blue", fontWeight: "bold" }}>B</span></Option>
@@ -342,7 +352,7 @@ export default function MonthlyEvaluationPage() {
                     <div style={{ marginTop: 20 }}><Button danger icon={<FilterOutlined />} onClick={handleReset} disabled={!selectedFactoryId}>Xóa lọc</Button></div>
                 </div>
             </Card>
-            {data.length > 0 && (<div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", padding: 12, borderRadius: 8, border: "1px solid #f0f0f0" }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontWeight: 500, color: "#666" }}><ThunderboltOutlined style={{ color: "#faad14" }} /> Điền nhanh:</span><Popconfirm title="Xếp loại A tất cả?" onConfirm={() => handleQuickFill("A")}><Button>Tất cả A</Button></Popconfirm></div><Button type="primary" icon={<SaveOutlined />} size="large" onClick={handleSave} loading={loading} style={{ background: "#217346", borderColor: "#217346" }}>Lưu thay đổi ({Object.keys(changes).length})</Button></div>)}
+            {data.length > 0 && canEdit && (<div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", padding: 12, borderRadius: 8, border: "1px solid #f0f0f0" }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontWeight: 500, color: "#666" }}><ThunderboltOutlined style={{ color: "#faad14" }} /> Điền nhanh:</span><Popconfirm title="Xếp loại A tất cả?" onConfirm={() => handleQuickFill("A")}><Button>Tất cả A</Button></Popconfirm></div><Button type="primary" icon={<SaveOutlined />} size="large" onClick={handleSave} loading={loading} style={{ background: "#217346", borderColor: "#217346" }}>Lưu thay đổi ({Object.keys(changes).length})</Button></div>)}
             <Table dataSource={data} columns={columns} rowKey="id" bordered pagination={false} scroll={{ y: 600 }} loading={loading} size="small" />
         </AdminLayout>
     );

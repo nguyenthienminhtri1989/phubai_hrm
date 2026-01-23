@@ -48,7 +48,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { employeeId, content, startTime, endTime } = body;
+    // [MỚI] Nhận thêm createdBy từ frontend gửi lên
+    const { employeeId, content, startTime, endTime, createdBy } = body;
 
     const start = dayjs(startTime);
     const end = dayjs(endTime);
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
         startTime: start.toDate(),
         endTime: end.toDate(),
         totalMinutes: diffMinutes,
+        createdBy: createdBy,  // Lưu người tạo
       },
       include: { employee: { include: { department: { include: { factory: true } } } } }
     });

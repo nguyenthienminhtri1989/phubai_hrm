@@ -24,9 +24,10 @@ import { useSession } from "next-auth/react";
 
 const ROLES = [
   { value: "ADMIN", label: "Quản trị hệ thống (Admin)", color: "red" },
-  { value: "HR_MANAGER", label: "Quản lý chấm công", color: "blue" },
+  { value: "HR_MANAGER", label: "Quản lý nhân sự", color: "blue" },
   { value: "LEADER", label: "Xem báo cáo", color: "purple" },
   { value: "TIMEKEEPER", label: "Người chấm công", color: "green" },
+  { value: "STAFF", label: "Nhân viên", color: "brown" }, // Role mới
 ];
 
 export default function UserManagementPage() {
@@ -37,9 +38,11 @@ export default function UserManagementPage() {
 
   // State quản lý Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<any>(null); // null = Chế độ Thêm, có object = Chế độ Sửa
+  const [editingUser, setEditingUser] = useState<any>(null);
 
   const [form] = Form.useForm();
+
+  // Theo dõi giá trị Role đang chọn để hiện ẩn ô Phòng ban
   const selectedRole = Form.useWatch("role", form);
 
   // 1. Tải dữ liệu
@@ -65,33 +68,29 @@ export default function UserManagementPage() {
 
   // 2. Mở Modal ở chế độ THÊM MỚI
   const handleOpenAdd = () => {
-    setEditingUser(null); // Xóa user đang sửa
-    form.resetFields(); // Xóa trắng form
-    form.setFieldValue("role", "TIMEKEEPER"); // Mặc định role
+    setEditingUser(null);
+    form.resetFields();
+    form.setFieldValue("role", "STAFF"); // Mặc định role STAFF cho an toàn
     setIsModalOpen(true);
   };
 
   // 3. Mở Modal ở chế độ SỬA
   const handleOpenEdit = (record: any) => {
     setEditingUser(record);
-    // Đổ dữ liệu cũ vào form
     form.setFieldsValue({
       username: record.username,
       fullName: record.fullName,
       role: record.role,
-      // Map danh sách object phòng ban thành mảng ID: [1, 3]
       departmentIds: record.managedDepartments.map((d: any) => d.id),
-      password: "", // Mật khẩu để trống (chỉ nhập nếu muốn đổi)
+      password: "",
     });
     setIsModalOpen(true);
   };
 
-  // 4. Xử lý Lưu (Chung cho cả Thêm và Sửa)
+  // 4. Xử lý Lưu
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-
-      // Nếu là Sửa -> PUT, Nếu là Thêm -> POST
       const url = editingUser ? `/api/users/${editingUser.id}` : "/api/users";
       const method = editingUser ? "PUT" : "POST";
 
@@ -102,11 +101,9 @@ export default function UserManagementPage() {
       });
 
       if (res.ok) {
-        message.success(
-          editingUser ? "Cập nhật thành công!" : "Tạo tài khoản thành công!"
-        );
+        message.success(editingUser ? "Cập nhật thành công!" : "Tạo tài khoản thành công!");
         setIsModalOpen(false);
-        fetchData(); // Tải lại bảng
+        fetchData();
       } else {
         const err = await res.json();
         message.error(err.error || "Có lỗi xảy ra");
@@ -150,7 +147,7 @@ export default function UserManagementPage() {
       },
     },
     {
-      title: "Phòng ban quản lý",
+      title: "Phòng ban phụ trách",
       dataIndex: "managedDepartments",
       key: "depts",
       render: (depts: any[]) => (
@@ -168,7 +165,6 @@ export default function UserManagementPage() {
       key: "action",
       render: (_: any, record: any) => (
         <Space>
-          {/* NÚT SỬA */}
           <Tooltip title="Sửa thông tin">
             <Button
               icon={<EditOutlined />}
@@ -176,27 +172,20 @@ export default function UserManagementPage() {
               type="primary"
               ghost
               onClick={() => handleOpenEdit(record)}
-              disabled={record.username === "admin"} // Không cho sửa admin gốc (nếu muốn)
+              disabled={record.username === "admin"}
             />
           </Tooltip>
 
-          {/* NÚT XÓA */}
           <Popconfirm
             title="Bạn chắc chắn muốn xóa?"
             onConfirm={() => handleDelete(record.id)}
-            disabled={
-              record.username === "admin" ||
-              record.username === session?.user?.username
-            }
+            disabled={record.username === "admin" || record.username === session?.user?.username}
           >
             <Button
               danger
               icon={<DeleteOutlined />}
               size="small"
-              disabled={
-                record.username === "admin" ||
-                record.username === session?.user?.username
-              }
+              disabled={record.username === "admin" || record.username === session?.user?.username}
             />
           </Popconfirm>
         </Space>
@@ -214,30 +203,14 @@ export default function UserManagementPage() {
 
   return (
     <AdminLayout>
-      <div
-        style={{
-          marginBottom: 16,
-          display: "flex",
-          justifyContent: "space-between",
-        }}
-      >
+      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
         <h2>Quản lý Tài khoản hệ thống</h2>
-        <Button
-          type="primary"
-          icon={<UserAddOutlined />}
-          onClick={handleOpenAdd} // Gọi hàm mở modal thêm mới
-        >
+        <Button type="primary" icon={<UserAddOutlined />} onClick={handleOpenAdd}>
           Tạo tài khoản mới
         </Button>
       </div>
 
-      <Table
-        dataSource={users}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        bordered
-      />
+      <Table dataSource={users} columns={columns} rowKey="id" loading={loading} bordered />
 
       <Modal
         title={editingUser ? "Cập nhật tài khoản" : "Tạo tài khoản mới"}
@@ -246,36 +219,19 @@ export default function UserManagementPage() {
         onCancel={() => setIsModalOpen(false)}
       >
         <Form form={form} layout="vertical">
-          <Form.Item
-            name="username"
-            label="Tên đăng nhập"
-            rules={[{ required: true }]}
-          >
-            {/* Khi sửa thì không cho đổi Username để tránh lỗi hệ thống */}
-            <Input placeholder="VD: soi1_leader" disabled={!!editingUser} />
+          <Form.Item name="username" label="Tên đăng nhập" rules={[{ required: true }]}>
+            <Input placeholder="VD: nv_to1" disabled={!!editingUser} />
           </Form.Item>
 
           <Form.Item
             name="password"
-            label={
-              editingUser ? "Mật khẩu mới (Để trống nếu không đổi)" : "Mật khẩu"
-            }
-            rules={[
-              { required: !editingUser, message: "Vui lòng nhập mật khẩu" },
-            ]}
+            label={editingUser ? "Mật khẩu mới (Để trống nếu không đổi)" : "Mật khẩu"}
+            rules={[{ required: !editingUser, message: "Vui lòng nhập mật khẩu" }]}
           >
-            <Input.Password
-              placeholder={
-                editingUser ? "Nhập mật khẩu mới..." : "Nhập mật khẩu"
-              }
-            />
+            <Input.Password placeholder={editingUser ? "Nhập mật khẩu mới..." : "Nhập mật khẩu"} />
           </Form.Item>
 
-          <Form.Item
-            name="fullName"
-            label="Họ và tên hiển thị"
-            rules={[{ required: true }]}
-          >
+          <Form.Item name="fullName" label="Họ và tên hiển thị" rules={[{ required: true }]}>
             <Input placeholder="VD: Nguyễn Văn A" />
           </Form.Item>
 
@@ -283,17 +239,13 @@ export default function UserManagementPage() {
             <Select options={ROLES} />
           </Form.Item>
 
-          {/* Chỉ hiện chọn phòng ban nếu Role là TIMEKEEPER */}
-          {selectedRole === "TIMEKEEPER" && (
+          {/* [QUAN TRỌNG] Logic hiển thị ô chọn phòng ban */}
+          {/* Hiện nếu là TIMEKEEPER (để chấm công) HOẶC STAFF (để xem dữ liệu/nhập OT) */}
+          {["TIMEKEEPER", "STAFF"].includes(selectedRole) && (
             <Form.Item
               name="departmentIds"
-              label="Phân quyền chấm công"
-              rules={[
-                {
-                  required: true,
-                  message: "Vui lòng chọn ít nhất 1 phòng ban",
-                },
-              ]}
+              label={selectedRole === "TIMEKEEPER" ? "Phân quyền chấm công" : "Phòng ban được xem dữ liệu"}
+              rules={[{ required: true, message: "Vui lòng chọn ít nhất 1 phòng ban" }]}
             >
               <Select
                 mode="multiple"

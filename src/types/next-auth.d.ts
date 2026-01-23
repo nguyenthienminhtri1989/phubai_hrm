@@ -1,5 +1,6 @@
 import NextAuth, { DefaultSession } from "next-auth";
 import { JWT } from "next-auth/jwt";
+import { Role } from "@prisma/client";
 
 // Định nghĩa lại các trường mở rộng
 declare module "next-auth" {
@@ -10,7 +11,7 @@ declare module "next-auth" {
     user: {
       id: string;
       username: string;
-      role: "ADMIN" | "HR_MANAGER" | "LEADER" | "TIMEKEEPER"; // Hoặc để string nếu muốn linh hoạt
+      role: Role;
       managedDeptIds: number[];
     } & DefaultSession["user"];
   }
@@ -21,7 +22,7 @@ declare module "next-auth" {
   interface User {
     id: string;
     username: string;
-    role: "ADMIN" | "HR_MANAGER" | "LEADER" | "TIMEKEEPER";
+    role: Role;
     managedDeptIds: number[];
   }
 }
@@ -33,7 +34,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string;
     username: string;
-    role: "ADMIN" | "HR_MANAGER" | "LEADER" | "TIMEKEEPER";
+    role: Role;
     managedDeptIds: number[];
   }
 }

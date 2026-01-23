@@ -112,7 +112,7 @@ export default function MonthlyTimesheetPage() {
     const user = session.user;
     if (["ADMIN", "HR_MANAGER", "LEADER"].includes(user.role))
       return departments;
-    if (user.role === "TIMEKEEPER") {
+    if (["TIMEKEEPER", "STAFF"].includes(user.role)) {
       const allowedIds = user.managedDeptIds || [];
       return departments.filter((d) => allowedIds.includes(d.id));
     }
