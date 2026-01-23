@@ -84,6 +84,9 @@ model Employee {
   timesheets Timesheet[]
 
   evaluations MonthlyEvaluation[] // Truy vấn xếp loại
+  
+  // --- Liên kết đến bảng làm thêm ---
+  overtimeRecords OvertimeRecord[]
 }
 
 // 1. Bảng định nghĩa các loại công (X, F, Ô...)
@@ -182,4 +185,20 @@ model MonthlyEvaluation {
 
   // Ràng buộc: Mỗi nhân viên chỉ có 1 kết quả xếp loại trong 1 tháng
   @@unique([employeeId, month, year])
+}
+
+// Thêm vào cuối file schema.prisma
+
+model OvertimeRecord {
+  id           Int      @id @default(autoincrement())
+  
+  employeeId   Int
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  content      String   // Nội dung công việc
+  startTime    DateTime // Giờ vào (VD: 2026-01-22 17:00:00)
+  endTime      DateTime // Giờ ra  (VD: 2026-01-22 19:30:00)
+  totalMinutes Int      // Tổng thời gian (tính bằng phút để dễ cộng trừ)
+
+  createdAt    DateTime @default(now())
 }

@@ -30,7 +30,8 @@ import {
   CloudDownloadOutlined, // Nút backup database
   LockOutlined,
   ImportOutlined,
-  SettingOutlined
+  SettingOutlined,
+  FieldTimeOutlined
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -177,6 +178,11 @@ export default function AdminLayout({
               key: "/timesheets/monthly",
               icon: <TableOutlined />,
               label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
+            },
+            {
+              key: "/overtime",
+              icon: <FieldTimeOutlined />,
+              label: <Link href="/overtime">Làm thêm giờ</Link>,
             },
             {
               key: "/dashboard",
