@@ -1,4 +1,4 @@
-"use client"; // Đảm bảo dòng này ở đầu
+"use client";
 
 import React, { useState } from "react";
 import {
@@ -11,6 +11,9 @@ import {
   Typography,
   message,
   Tooltip,
+  Modal,
+  Form,
+  Input,
 } from "antd";
 import {
   ApartmentOutlined,
@@ -18,7 +21,7 @@ import {
   BankOutlined,
   UnorderedListOutlined,
   FormOutlined,
-  LogoutOutlined, // <--- Import icon Logout
+  LogoutOutlined,
   TableOutlined,
   DashboardOutlined,
   UserOutlined,
@@ -26,20 +29,20 @@ import {
   MenuFoldOutlined,
   DownOutlined,
   QuestionCircleOutlined,
-  AppstoreOutlined, // <-- Thêm cái này (biểu tượng 4 ô vuông)
-  CloudDownloadOutlined, // Nút backup database
+  AppstoreOutlined,
+  CloudDownloadOutlined,
   LockOutlined,
   ImportOutlined,
   SettingOutlined,
-  FieldTimeOutlined
+  FieldTimeOutlined,
+  KeyOutlined, // [MỚI] Icon đổi mật khẩu
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut, useSession } from "next-auth/react"; // <--- Import từ next-auth
+import { signOut, useSession } from "next-auth/react";
 
 const { Header, Sider, Content, Footer } = Layout;
-const { Text } = Typography;
 
 export default function AdminLayout({
   children,
@@ -48,15 +51,19 @@ export default function AdminLayout({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
-  const { data: session } = useSession(); // <--- Lấy thông tin user đang đăng nhập
+  const { data: session } = useSession();
+
+  // --- [MỚI] STATE CHO ĐỔI MẬT KHẨU ---
+  const [isChangePassOpen, setIsChangePassOpen] = useState(false);
+  const [passForm] = Form.useForm();
+  const [passLoading, setPassLoading] = useState(false);
 
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
 
-  // Xử lý Đăng xuất
+  // 1. Hàm xử lý Đăng xuất
   const handleLogout = () => {
-    // callbackUrl: '/login' -> Đăng xuất xong đá về trang Login
     signOut({ callbackUrl: "/login" });
   };
 
@@ -71,7 +78,6 @@ export default function AdminLayout({
         throw new Error(err.error || "Lỗi server");
       }
 
-      // Nhận Blob từ server và tải về
       const blob = await res.blob();
       const dateStr = new Date().toISOString().slice(0, 10);
       saveAs(blob, `backup_phubai_hrm_${dateStr}.sql`);
@@ -84,30 +90,62 @@ export default function AdminLayout({
     }
   };
 
-  // Menu xổ xuống khi bấm vào Avatar
+  // 3. [MỚI] Hàm xử lý Đổi mật khẩu
+  const handleChangePassword = async (values: any) => {
+    setPassLoading(true);
+    try {
+      const res = await fetch("/api/user/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        message.success("Đổi mật khẩu thành công! Vui lòng đăng nhập lại.");
+        setIsChangePassOpen(false);
+        passForm.resetFields();
+        signOut({ callbackUrl: "/login" }); // Đăng xuất để user đăng nhập lại
+      } else {
+        message.error(data.error || "Có lỗi xảy ra");
+      }
+    } catch (error) {
+      message.error("Lỗi kết nối server");
+    } finally {
+      setPassLoading(false);
+    }
+  };
+
+  // 4. Menu User xổ xuống (Đã thêm nút Đổi mật khẩu)
   const userMenuItems = [
     {
-      key: "1",
+      key: "info",
       label: (
-        <div style={{ padding: "4px 8px" }}>
+        <div style={{ padding: "4px 8px", cursor: "default" }}>
           <div style={{ fontWeight: "bold" }}>
-            {session?.user?.name || session?.user?.username}
+            {session?.user?.fullName || session?.user?.name || session?.user?.username}
           </div>
           <div style={{ fontSize: 12, color: "#666" }}>
             {session?.user?.role}
           </div>
         </div>
       ),
+      disabled: true,
     },
+    { type: "divider" as const },
     {
-      type: "divider" as const,
+      key: "change-pass",
+      icon: <KeyOutlined />,
+      label: "Đổi mật khẩu",
+      onClick: () => setIsChangePassOpen(true), // Mở modal
     },
+    { type: "divider" as const },
     {
-      key: "2",
-      danger: true, // Màu đỏ cảnh báo
+      key: "logout",
+      danger: true,
       icon: <LogoutOutlined />,
       label: "Đăng xuất",
-      onClick: handleLogout, // Gắn hàm logout vào đây
+      onClick: handleLogout,
     },
   ];
 
@@ -130,13 +168,12 @@ export default function AdminLayout({
           {collapsed ? "PB" : "PHU BAI HRM"}
         </div>
 
-        {/* MENU BÊN TRÁI GIỮ NGUYÊN (Tôi chỉ viết gọn lại để bạn dễ nhìn) */}
         <Menu
           theme="dark"
           mode="inline"
           defaultSelectedKeys={[pathname]}
           items={[
-            // ... (Các mục cũ giữ nguyên) ...
+            // ... (Các mục menu giữ nguyên như cũ)
             {
               key: "catalog-management",
               icon: <AppstoreOutlined />,
@@ -196,15 +233,13 @@ export default function AdminLayout({
                 <Link href="/dashboard/departments">Tình hình lao động</Link>
               ),
             },
-
-            // --- [SỬA ĐỔI TẠI ĐÂY] ---
-            // Gom nhóm Quản trị, chỉ hiện nếu là ADMIN
+            // Chỉ hiện Menu Quản trị nếu là ADMIN
             ...(session?.user?.role === "ADMIN"
               ? [
                 {
-                  key: "admin-management", // Key của nhóm cha
-                  icon: <SettingOutlined />, // Bạn nhớ import icon này
-                  label: "Quản trị", // Tên hiển thị nhóm cha
+                  key: "admin-management",
+                  icon: <SettingOutlined />,
+                  label: "Quản trị",
                   children: [
                     {
                       key: "/admin/users",
@@ -225,8 +260,6 @@ export default function AdminLayout({
                 },
               ]
               : []),
-            // -------------------------
-
             {
               key: "/help",
               icon: <QuestionCircleOutlined />,
@@ -234,7 +267,6 @@ export default function AdminLayout({
             },
           ]}
         />
-
       </Sider>
 
       <Layout>
@@ -248,7 +280,6 @@ export default function AdminLayout({
             paddingRight: 24,
           }}
         >
-          {/* Nút Toggle Menu */}
           <div
             onClick={() => setCollapsed(!collapsed)}
             style={{
@@ -264,44 +295,46 @@ export default function AdminLayout({
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </div>
 
-          {/* // 3. HIỂN THỊ NÚT (Chèn vào nơi bạn muốn, ví dụ trong Header) */}
-          {/* Chỉ hiện nếu là ADMIN */}
-          {session?.user?.role === "ADMIN" && (
-            <Tooltip title="Sao lưu Dữ liệu">
-              <Button
-                type="text"
-                icon={
-                  <CloudDownloadOutlined
-                    style={{ fontSize: 20, color: "#1890ff" }}
-                  />
-                }
-                onClick={handleDownloadBackup}
-                style={{ marginRight: 15 }}
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {/* Nút Backup (Chỉ Admin) */}
+            {session?.user?.role === "ADMIN" && (
+              <Tooltip title="Sao lưu Dữ liệu">
+                <Button
+                  type="text"
+                  icon={
+                    <CloudDownloadOutlined
+                      style={{ fontSize: 20, color: "#1890ff" }}
+                    />
+                  }
+                  onClick={handleDownloadBackup}
+                  style={{ marginRight: 15 }}
+                >
+                  Backup DB
+                </Button>
+              </Tooltip>
+            )}
+
+            {/* Dropdown User */}
+            <Dropdown menu={{ items: userMenuItems }} trigger={["click"]}>
+              <div
+                style={{
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
               >
-                Backup DB
-              </Button>
-            </Tooltip>
-          )}
-          {/* --- PHẦN USER INFO & LOGOUT Ở GÓC PHẢI --- */}
-          <Dropdown menu={{ items: userMenuItems }} trigger={["click"]}>
-            <div
-              style={{
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <Avatar
-                style={{ backgroundColor: "#1677ff" }}
-                icon={<UserOutlined />}
-              />
-              <span style={{ fontWeight: 500 }}>
-                {session?.user?.name || "Người dùng"}{" "}
-                <DownOutlined style={{ fontSize: 10 }} />
-              </span>
-            </div>
-          </Dropdown>
+                <Avatar
+                  style={{ backgroundColor: "#1677ff" }}
+                  icon={<UserOutlined />}
+                />
+                <span style={{ fontWeight: 500 }}>
+                  {session?.user?.fullName || session?.user?.name || "Người dùng"}{" "}
+                  <DownOutlined style={{ fontSize: 10 }} />
+                </span>
+              </div>
+            </Dropdown>
+          </div>
         </Header>
 
         <Content
@@ -318,6 +351,61 @@ export default function AdminLayout({
         <Footer style={{ textAlign: "center" }}>
           Quản lý nhân sự ©2026 Thiết kế bởi Nguyễn Thiện Minh Trí
         </Footer>
+
+        {/* --- [MỚI] MODAL ĐỔI MẬT KHẨU --- */}
+        <Modal
+          title="Đổi mật khẩu cá nhân"
+          open={isChangePassOpen}
+          onCancel={() => {
+            setIsChangePassOpen(false);
+            passForm.resetFields();
+          }}
+          onOk={() => passForm.submit()}
+          confirmLoading={passLoading}
+          okText="Xác nhận"
+          cancelText="Hủy"
+        >
+          <Form form={passForm} layout="vertical" onFinish={handleChangePassword}>
+            <Form.Item
+              name="oldPassword"
+              label="Mật khẩu hiện tại"
+              rules={[{ required: true, message: "Vui lòng nhập mật khẩu cũ" }]}
+            >
+              <Input.Password placeholder="Nhập mật khẩu cũ..." />
+            </Form.Item>
+
+            <Form.Item
+              name="newPassword"
+              label="Mật khẩu mới"
+              rules={[
+                { required: true, message: "Vui lòng nhập mật khẩu mới" },
+                { min: 6, message: "Mật khẩu phải từ 6 ký tự" }
+              ]}
+            >
+              <Input.Password placeholder="Nhập mật khẩu mới..." />
+            </Form.Item>
+
+            <Form.Item
+              name="confirmPassword"
+              label="Nhập lại mật khẩu mới"
+              dependencies={['newPassword']}
+              rules={[
+                { required: true, message: "Vui lòng nhập lại mật khẩu" },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue('newPassword') === value) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(new Error('Mật khẩu nhập lại không khớp!'));
+                  },
+                }),
+              ]}
+            >
+              <Input.Password placeholder="Xác nhận mật khẩu mới..." />
+            </Form.Item>
+          </Form>
+        </Modal>
+
       </Layout>
     </Layout>
   );

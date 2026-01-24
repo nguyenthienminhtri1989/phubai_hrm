@@ -11,6 +11,7 @@ declare module "next-auth" {
     user: {
       id: string;
       username: string;
+      fullName: string;
       role: Role;
       managedDeptIds: number[];
     } & DefaultSession["user"];
@@ -22,18 +23,17 @@ declare module "next-auth" {
   interface User {
     id: string;
     username: string;
+    fullName: string;
     role: Role;
     managedDeptIds: number[];
   }
 }
 
 declare module "next-auth/jwt" {
-  /**
-   * Mở rộng kiểu JWT (token)
-   */
   interface JWT {
     id: string;
     username: string;
+    fullName: string;
     role: Role;
     managedDeptIds: number[];
   }

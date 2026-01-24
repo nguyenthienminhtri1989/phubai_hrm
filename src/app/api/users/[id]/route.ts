@@ -1,71 +1,17 @@
 // src/app/api/users/[id]/route.ts
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth";
+import { auth } from "@/auth"; // Hoặc đường dẫn auth của bạn
 import bcrypt from "bcryptjs";
 
-// Định nghĩa kiểu cho params (Bắt buộc với Next.js 15)
-type Props = {
+interface Props {
   params: Promise<{ id: string }>;
-};
-
-// 1. HÀM XÓA USER (DELETE)
-export async function DELETE(request: Request, props: Props) {
-  try {
-    // --- QUAN TRỌNG: Phải await params trước ---
-    const params = await props.params;
-    const id = parseInt(params.id);
-
-    if (isNaN(id))
-      return NextResponse.json({ error: "ID không hợp lệ" }, { status: 400 });
-
-    const session = await auth();
-    if (session?.user?.role !== "ADMIN") {
-      return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
-    }
-
-    if (session.user.id === id.toString()) {
-      return NextResponse.json(
-        { error: "Không thể tự xóa tài khoản đang đăng nhập" },
-        { status: 400 }
-      );
-    }
-
-    // Kiểm tra và gỡ kết nối phòng ban trước khi xóa
-    const existingUser = await prisma.user.findUnique({
-      where: { id },
-      include: { managedDepartments: true },
-    });
-
-    if (!existingUser)
-      return NextResponse.json(
-        { error: "User không tồn tại" },
-        { status: 404 }
-      );
-
-    if (existingUser.managedDepartments.length > 0) {
-      await prisma.user.update({
-        where: { id },
-        data: { managedDepartments: { set: [] } },
-      });
-    }
-
-    await prisma.user.delete({ where: { id } });
-
-    return NextResponse.json({ message: "Đã xóa thành công" });
-  } catch (error: any) {
-    console.error("LỖI XÓA:", error);
-    return NextResponse.json(
-      { error: "Lỗi server: " + error.message },
-      { status: 500 }
-    );
-  }
 }
 
-// 2. HÀM SỬA USER (PUT)
 export async function PUT(request: Request, props: Props) {
   try {
-    // --- QUAN TRỌNG: Phải await params ở đây nữa ---
+    // --- QUAN TRỌNG: Phải await params ở đây nữa (Next.js 15) ---
     const params = await props.params;
     const id = parseInt(params.id);
 
@@ -85,20 +31,24 @@ export async function PUT(request: Request, props: Props) {
       role,
     };
 
-    // Logic cập nhật mật khẩu
+    // 1. Logic cập nhật mật khẩu (Admin Reset)
+    // Chỉ hash và update nếu Admin có nhập gì đó vào ô mật khẩu
     if (password && password.trim() !== "") {
       updateData.password = await bcrypt.hash(password, 10);
     }
 
-    // Logic cập nhật phòng ban (Xử lý kỹ kiểu dữ liệu Number)
+    // 2. Logic cập nhật phòng ban [ĐÃ SỬA ĐỔI CHO STAFF]
     if (Array.isArray(departmentIds)) {
+      // Trường hợp có gửi danh sách phòng ban lên (dù là rỗng [])
       updateData.managedDepartments = {
         // Ép kiểu về Number để tránh lỗi Prisma
         set: departmentIds.map((deptId: any) => ({ id: Number(deptId) })),
       };
     } else {
-      // Nếu đổi sang vai trò khác (không phải Timekeeper), tự động xóa quyền chấm công cũ
-      if (role !== "TIMEKEEPER") {
+      // Trường hợp không gửi departmentIds lên (ví dụ chỉ sửa tên)
+      // Ta kiểm tra: Nếu Role mới không cần phòng ban -> Xóa sạch liên kết cũ cho sạch DB
+      // Các role cần phòng ban là: TIMEKEEPER và STAFF
+      if (role !== "TIMEKEEPER" && role !== "STAFF") {
         updateData.managedDepartments = { set: [] };
       }
     }
