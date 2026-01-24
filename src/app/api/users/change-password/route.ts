@@ -1,19 +1,23 @@
-// src/app/api/user/change-password/route.ts
+// src/app/api/users/change-password/route.ts (Lưu ý đường dẫn folder users hay user tùy dự án của bạn)
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"; // Đường dẫn file cấu hình Auth của bạn
-import bcrypt from "bcryptjs"; // Cần cài: npm install bcryptjs @types/bcryptjs
+import { auth } from "@/auth"; // <--- Dùng hàm auth() của v5
+import bcrypt from "bcryptjs";
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    // Truyền authOptions vào getServerSession
+    const session = await auth(); // <--- Gọi hàm auth()
+
     if (!session || !session.user?.username) {
       return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
     }
 
     const body = await request.json();
     const { oldPassword, newPassword } = body;
+    // Lấy username từ session (ép kiểu vì TypeScript mặc định chưa biết field này)
+    const username = (session.user as any).username;
 
     if (!oldPassword || !newPassword) {
       return NextResponse.json({ error: "Vui lòng nhập đủ thông tin" }, { status: 400 });
