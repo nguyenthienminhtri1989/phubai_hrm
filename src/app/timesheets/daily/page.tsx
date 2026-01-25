@@ -43,7 +43,10 @@ interface TimesheetRow {
 
 export default function DailyTimesheetPage() {
     const { data: session } = useSession();
-    const isViewOnly = session?.user?.role === "LEADER";
+
+    // 1. [SỬA ĐỔI QUAN TRỌNG] Logic xác định chế độ "Chỉ xem"
+    // Nếu là LEADER hoặc STAFF thì bật chế độ Chỉ xem (Ẩn nút Lưu, Khóa nhập liệu)
+    const isViewOnly = ["LEADER", "STAFF"].includes(session?.user?.role as string);
 
     // --- STATE ---
     const [employees, setEmployees] = useState<TimesheetRow[]>([]);
@@ -128,8 +131,6 @@ export default function DailyTimesheetPage() {
         setSaving(true);
         try {
             // Logic xác định ID phòng ban để check khóa sổ:
-            // Nếu lọc ra đúng 1 phòng -> Gửi ID đó.
-            // Nếu lọc ra nhiều phòng (VD: Tổ ghép gồm 3 phòng) -> Gửi null (Backend tự xử lý check từng NV)
             const payloadDeptId = currentFilter.realDepartmentIds.length === 1
                 ? currentFilter.realDepartmentIds[0]
                 : null;
@@ -224,7 +225,7 @@ export default function DailyTimesheetPage() {
                     allowClear
                     style={{ width: "100%" }}
                     placeholder="Chọn"
-                    disabled={isViewOnly}
+                    disabled={isViewOnly} // KHÓA NHẬP LIỆU NẾU LÀ STAFF/LEADER
                     onChange={(val) => handleRowChange(record.employeeId, "attendanceCodeId", val)}
                     options={attendanceCodes.map((c) => ({
                         value: c.id,
@@ -256,7 +257,7 @@ export default function DailyTimesheetPage() {
             render: (txt: string, rec: TimesheetRow) => (
                 <Input
                     value={txt}
-                    disabled={isViewOnly}
+                    disabled={isViewOnly} // KHÓA NHẬP LIỆU
                     onChange={(e) => handleRowChange(rec.employeeId, "note", e.target.value)}
                     placeholder="..."
                 />
@@ -270,11 +271,11 @@ export default function DailyTimesheetPage() {
 
             {/* --- SỬ DỤNG COMPONENT LỌC DÙNG CHUNG --- */}
             <CommonFilter
-                dateMode="date" // Chế độ chọn Ngày
+                dateMode="date"
                 onFilterChange={handleFilterChange}
             />
 
-            {/* --- PHẦN HIỂN THỊ TRẠNG THÁI & BẢNG --- */}
+            {/* --- PHẦN HIỂN THỊ TRẠNG THÁI --- */}
             {employees.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                     {timesheetStatus?.isSubmitted ? (
@@ -291,19 +292,26 @@ export default function DailyTimesheetPage() {
 
             {employees.length > 0 ? (
                 <>
-                    <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
-                        <Space>
-                            <span style={{ fontWeight: 600 }}>Thao tác nhanh:</span>
-                            <Button size="small" onClick={() => setAllStatus("+")}>Đi làm (+)</Button>
-                            <Button size="small" onClick={() => setAllStatus("XD")}>Làm ca đêm (XD)</Button>
-                            <Button size="small" onClick={() => setAllStatus("ĐC")}>Đảo ca (ĐC)</Button>
-                        </Space>
-                        {!isViewOnly && (
+                    {/* Thanh công cụ: Chỉ hiện nếu KHÔNG PHẢI là ViewOnly */}
+                    {!isViewOnly ? (
+                        <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
+                            <Space>
+                                <span style={{ fontWeight: 600 }}>Thao tác nhanh:</span>
+                                <Button size="small" onClick={() => setAllStatus("+")}>Đi làm (+)</Button>
+                                <Button size="small" onClick={() => setAllStatus("XD")}>Làm ca đêm (XD)</Button>
+                                <Button size="small" onClick={() => setAllStatus("ĐC")}>Đảo ca (ĐC)</Button>
+                            </Space>
+
                             <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving}>
                                 LƯU DỮ LIỆU
                             </Button>
-                        )}
-                    </div>
+                        </div>
+                    ) : (
+                        <div style={{ marginBottom: 16, fontStyle: "italic", color: "#888" }}>
+                            * Bạn đang ở chế độ xem, không có quyền chỉnh sửa bảng công.
+                        </div>
+                    )}
+
                     <Table
                         bordered
                         dataSource={employees}
