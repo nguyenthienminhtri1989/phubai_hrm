@@ -324,8 +324,14 @@ export default function DailyTimesheetPage() {
                     />
                 </>
             ) : (
-                <div style={{ textAlign: "center", padding: "50px", color: "#999", background: "#fff", border: "1px dashed #ddd" }}>
-                    Vui lòng chọn điều kiện lọc bên trên để hiển thị dữ liệu.
+                <div style={{ textAlign: "left", padding: "50px", color: "#999", background: "#fff", border: "1px dashed #ddd" }}>
+                    <b>Hướng dẫn:</b> <br />
+                    <b>Bước 1:</b> Chọn ngày cần chấm <br />
+                    <b>Bước 2:</b> Chọn nhà máy có phòng ban hay tổ mình cần chấm. <br />
+                    <b>Bước 3:</b> Chọn Phòng ban hoặc Tổ, nếu là ca kíp thì chọn tổ của kíp cần chấm (ví dụ tổ bông chải, tổ ghép thô, tổ sợi con, vv...) <br />
+                    <b>Bước 4:</b> Sau khi chọn tổ thì tất cả nhân viên của 7 kíp hoặc 10 kíp sẽ hiện ra cùng lúc, lúc này chọn vào ô kíp để lọc lại những kíp cần chấm (ví dụ kíp 2, kíp 3,...) <br />
+                    <b>Bước 5:</b> Lọc kíp xong tiến hành chấm và lưu bình thường. <br />
+                    Đối với phòng ban không phải ca kíp thì không cần chọn ô kíp
                 </div>
             )}
         </AdminLayout>
