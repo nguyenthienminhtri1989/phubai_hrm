@@ -233,6 +233,13 @@ export default function AdminLayout({
                 <Link href="/dashboard/departments">Tình hình lao động</Link>
               ),
             },
+            {
+              key: "/evaluations/yearly",
+              icon: <TableOutlined />,
+              label: (
+                <Link href="/evaluations/yearly">Tổng hợp năm</Link>
+              ),
+            },
             // Chỉ hiện Menu Quản trị nếu là ADMIN
             ...(session?.user?.role === "ADMIN"
               ? [

@@ -16,11 +16,10 @@ export async function GET(request: Request) {
   const type = searchParams.get("type") || "evaluation"; // evaluation | workday | leave
 
   try {
-    // 1. Lọc nhân viên theo Phòng/Kíp
+    // 1. Lọc nhân viên (Logic giữ nguyên)
     const whereEmployee: any = {};
     if (departmentIds) whereEmployee.departmentId = { in: departmentIds };
     if (kipIds) whereEmployee.kipId = { in: kipIds };
-    // Nếu lọc theo nhà máy mà chưa lọc phòng ban, cần lấy tất cả NV trong nhà máy đó (thông qua phòng ban)
     if (factoryId && !departmentIds) {
       whereEmployee.department = { factoryId: parseInt(factoryId) };
     }
@@ -38,12 +37,13 @@ export async function GET(request: Request) {
     });
 
     const employeeIds = employees.map((e) => e.id);
-    const startDate = new Date(year, 0, 1); // 01/01
-    const endDate = new Date(year, 11, 31); // 31/12
+    const startDate = new Date(year, 0, 1);
+    const endDate = new Date(year, 11, 31);
 
-    // --- LOGIC 1: XẾP LOẠI (Lấy từ bảng Evaluation) ---
+    // --- LOGIC 1: XẾP LOẠI (Dùng model MonthlyEvaluation) ---
     if (type === "evaluation") {
-      const evaluations = await prisma.evaluation.findMany({
+      // [ĐÃ SỬA] Dùng monthlyEvaluation thay vì evaluation
+      const evaluations = await prisma.monthlyEvaluation.findMany({
         where: {
           employeeId: { in: employeeIds },
           year: year,
@@ -61,6 +61,7 @@ export async function GET(request: Request) {
           const monthIdx = ev.month - 1;
           if (monthIdx >= 0 && monthIdx < 12) {
             monthlyGrades[monthIdx] = ev.grade;
+            // Logic đếm tổng hợp
             if (ev.grade?.startsWith("A")) countA++;
             else if (ev.grade?.startsWith("B")) countB++;
             else if (ev.grade?.startsWith("C")) countC++;
@@ -71,31 +72,29 @@ export async function GET(request: Request) {
           ...emp,
           departmentName: emp.department?.name,
           kipName: emp.kip?.name,
-          data: monthlyGrades, // Mảng 12 tháng (A, B, C...)
-          summary: { col1: countA, col2: countB, col3: countC }, // A, B, C
+          data: monthlyGrades,
+          summary: { col1: countA, col2: countB, col3: countC },
         };
       });
       return NextResponse.json(result);
     }
 
-    // --- LOGIC 2 & 3: ĐẾM CÔNG / PHÉP (Lấy từ bảng Timesheet) ---
-    // Xác định mã chấm công cần đếm
+    // --- LOGIC 2 & 3: ĐẾM CÔNG / PHÉP (Dùng model Timesheet) ---
+    // Giả sử model Timesheet có quan hệ: date, attendanceCode (code)
     let targetCodes: string[] = [];
     if (type === "workday") targetCodes = ["+", "XD"];
     if (type === "leave") targetCodes = ["F"];
 
-    // Truy vấn dữ liệu chấm công gói gọn (Aggregate)
-    // Lưu ý: groupBy có thể không hỗ trợ join code trực tiếp tùy DB, nên ta dùng findMany + xử lý code JS cho linh hoạt
     const timesheets = await prisma.timesheet.findMany({
       where: {
         employeeId: { in: employeeIds },
         date: { gte: startDate, lte: endDate },
-        attendanceCode: { code: { in: targetCodes } }, // Chỉ lấy những ngày có mã cần tìm
+        attendanceCode: { code: { in: targetCodes } },
       },
       select: {
         employeeId: true,
         date: true,
-        attendanceCode: { select: { code: true } }, // Để debug hoặc tính toán nếu cần hệ số
+        attendanceCode: { select: { code: true } },
       },
     });
 
@@ -105,17 +104,16 @@ export async function GET(request: Request) {
       let totalCount = 0;
 
       empLogs.forEach((log) => {
-        const monthIdx = new Date(log.date).getMonth(); // 0-11
-        monthlyCounts[monthIdx] += 1; // Cộng 1 công
+        const monthIdx = new Date(log.date).getMonth();
+        monthlyCounts[monthIdx] += 1;
         totalCount += 1;
       });
 
-      // Cấu trúc trả về summary tùy theo loại báo cáo
       let summaryData;
       if (type === "workday") {
-        summaryData = { col1: totalCount }; // Tổng công đi làm
+        summaryData = { col1: totalCount };
       } else {
-        // Phép: col1 = Đã nghỉ, col2 = Còn lại (14 - Đã nghỉ)
+        // Tổng phép chuẩn là 14
         summaryData = { col1: totalCount, col2: 14 - totalCount };
       }
 
@@ -123,7 +121,7 @@ export async function GET(request: Request) {
         ...emp,
         departmentName: emp.department?.name,
         kipName: emp.kip?.name,
-        data: monthlyCounts, // Mảng 12 tháng (số lượng)
+        data: monthlyCounts,
         summary: summaryData,
       };
     });
