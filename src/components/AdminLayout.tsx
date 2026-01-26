@@ -35,7 +35,8 @@ import {
   ImportOutlined,
   SettingOutlined,
   FieldTimeOutlined,
-  KeyOutlined, // [MỚI] Icon đổi mật khẩu
+  KeyOutlined,
+  BarChartOutlined, // [MỚI] Icon đổi mật khẩu
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -209,7 +210,7 @@ export default function AdminLayout({
             {
               key: "/evaluations/monthly",
               icon: <FormOutlined />,
-              label: <Link href="/evaluations/monthly">Xếp loại</Link>,
+              label: <Link href="/evaluations/monthly">Xếp loại A,B,C</Link>,
             },
             {
               key: "/timesheets/monthly",
@@ -235,7 +236,7 @@ export default function AdminLayout({
             },
             {
               key: "/evaluations/yearly",
-              icon: <TableOutlined />,
+              icon: <BarChartOutlined />,
               label: (
                 <Link href="/evaluations/yearly">Tổng hợp năm</Link>
               ),

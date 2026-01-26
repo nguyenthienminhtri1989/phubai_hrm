@@ -225,10 +225,7 @@ export default function MonthlyEvaluationPage() {
     return (
         <AdminLayout>
             <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <Title level={3} style={{ margin: 0 }}>Xếp loại nhân viên tháng</Title>
-                <Button type="primary" icon={<BarChartOutlined />} onClick={() => router.push('/evaluations/yearly')}>
-                    Xem Tổng hợp Năm
-                </Button>
+                <Title level={3} style={{ margin: 0 }}>Xếp loại nhân viên trong tháng</Title>
             </div>
 
             {/* --- SỬ DỤNG COMPONENT LỌC (Thay thế toàn bộ Card cũ) --- */}

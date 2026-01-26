@@ -183,12 +183,6 @@ export default function YearlyEvaluationPage() {
         <AdminLayout>
             <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: 'center' }}>
                 <Title level={3} style={{ margin: 0 }}>Báo cáo Tổng hợp Năm {displayYear}</Title>
-                <Button
-                    icon={<ArrowLeftOutlined />}
-                    onClick={() => router.push("/evaluations/monthly")}
-                >
-                    Về xếp loại tháng
-                </Button>
             </div>
 
             <CommonFilter
