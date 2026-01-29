@@ -13,6 +13,9 @@ export async function GET(request: Request) {
         const month = searchParams.get("month");
         const year = searchParams.get("year");
 
+        // [MỚI] Lấy thêm tham số view
+        const viewMode = searchParams.get("view");
+
         // Validate thời gian
         if (!month || !year) {
             return NextResponse.json(
@@ -24,17 +27,16 @@ export async function GET(request: Request) {
         // Điều kiện validation bộ lọc
         const hasDeptFilter = !!departmentIdStr || !!kipIdsStr;
         const hasNameFilter = !!nameStr && nameStr.trim() !== "";
+        // [MỚI] Kiểm tra thêm điều kiện viewMode
+        const isViewAll = viewMode === "all";
 
-        // Nếu không có bộ lọc nào -> Chặn để tránh load quá nặng
-        if (!hasDeptFilter && !hasNameFilter) {
+        // Logic chặn tải nặng: Nếu KHÔNG lọc VÀ KHÔNG phải xem tất cả -> Chặn
+        if (!hasDeptFilter && !hasNameFilter && !isViewAll) {
             return NextResponse.json(
-                {
-                    error: "Vui lòng chọn Phòng ban hoặc nhập Tên nhân viên để tìm kiếm",
-                },
+                { error: "Vui lòng chọn Phòng ban hoặc nhấn nút 'Xem tất cả'" },
                 { status: 400 }
             );
         }
-
         const whereCondition: any = {};
 
         // 1. LỌC THEO TÊN
@@ -73,6 +75,17 @@ export async function GET(request: Request) {
                 .filter((n) => !isNaN(n));
             if (kipIds.length > 0) {
                 whereCondition.kipId = { in: kipIds };
+            }
+        }
+
+        if (!isViewAll) {
+            if (departmentIdStr && departmentIdStr !== "null") {
+                const deptIds = departmentIdStr.split(",").map(Number).filter((n) => !isNaN(n));
+                if (deptIds.length > 0) whereCondition.departmentId = { in: deptIds };
+            }
+            if (kipIdsStr) {
+                const kipIds = kipIdsStr.split(",").map(Number).filter((n) => !isNaN(n));
+                if (kipIds.length > 0) whereCondition.kipId = { in: kipIds };
             }
         }
 
