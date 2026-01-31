@@ -364,7 +364,7 @@ export default function MonthlyTimesheetPage() {
 
   }, [currentFilter, employees]);
 
-  // --- 3. EXPORT EXCEL (ĐÃ CẬP NHẬT CĂN GIỮA & CHỮ KÝ) ---
+  // --- 3. EXPORT EXCEL (ĐÃ CẬP NHẬT ĐỘ RỘNG CỘT) ---
   const handleExportExcel = async () => {
     if (employees.length === 0 || !currentFilter) return;
     setLoading(true);
@@ -372,7 +372,7 @@ export default function MonthlyTimesheetPage() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("BangCong");
 
-    // Setup trang in: Ngang, vừa khít 1 trang bề rộng
+    // Setup trang in
     worksheet.pageSetup = {
       paperSize: 9,
       orientation: "landscape",
@@ -386,24 +386,38 @@ export default function MonthlyTimesheetPage() {
     };
 
     // --- TÍNH TOÁN SỐ CỘT ---
-    // Ta cần biết tổng số cột để Merge tiêu đề cho chuẩn
     const daysInMonth = currentFilter.date.daysInMonth();
     // 2 cột đầu (STT, Tên) + Số ngày + 8 cột tổng hợp
     const totalColumns = 2 + daysInMonth + 8;
+
+    // --- [MỚI] THIẾT LẬP ĐỘ RỘNG CỘT (QUAN TRỌNG) ---
+    // Cột 1: STT -> Hẹp
+    worksheet.getColumn(1).width = 5;
+    // Cột 2: Họ tên -> Rộng
+    worksheet.getColumn(2).width = 28;
+
+    // Các cột ngày: Từ cột 3 đến cột (2 + số ngày) -> Rất hẹp
+    for (let i = 1; i <= daysInMonth; i++) {
+      worksheet.getColumn(2 + i).width = 4.5;
+    }
+
+    // Các cột tổng hợp cuối cùng -> Vừa phải
+    for (let i = 2 + daysInMonth + 1; i <= totalColumns; i++) {
+      worksheet.getColumn(i).width = 7;
+    }
+    // -----------------------------------------------
 
     // --- HEADER (CĂN GIỮA) ---
     const row1 = worksheet.getCell("A1");
     row1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
     row1.font = { name: "Times New Roman", size: 14, bold: true };
     row1.alignment = { vertical: "middle", horizontal: "center" };
-    // Merge từ A1 đến cột cuối cùng
     worksheet.mergeCells(1, 1, 1, totalColumns);
 
     const row2 = worksheet.getCell("A2");
     row2.value = `BẢNG CHẤM CÔNG THÁNG ${currentFilter.date.format("MM/YYYY")}`;
     row2.font = { name: "Times New Roman", size: 16, bold: true };
     row2.alignment = { vertical: "middle", horizontal: "center" };
-    // Merge từ A2 đến cột cuối cùng
     worksheet.mergeCells(2, 1, 2, totalColumns);
 
     // Tên bộ phận
@@ -415,7 +429,6 @@ export default function MonthlyTimesheetPage() {
     row3.value = deptDisplayName.toUpperCase();
     row3.font = { name: "Times New Roman", size: 14, bold: true };
     row3.alignment = { vertical: "middle", horizontal: "center" };
-    // Merge từ A3 đến cột cuối cùng
     worksheet.mergeCells(3, 1, 3, totalColumns);
 
     // --- TABLE HEADER ---
@@ -460,43 +473,38 @@ export default function MonthlyTimesheetPage() {
       row.eachCell((cell, colNumber) => {
         cell.font = { name: "Times New Roman" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        // Canh trái cho Họ tên, còn lại canh giữa
         if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
         else cell.alignment = { horizontal: "center" };
       });
     });
 
     // --- FOOTER CHỮ KÝ (3 CỘT) ---
-    // Thêm 2 dòng trống để cách ra
     worksheet.addRow([]);
     worksheet.addRow([]);
 
-    // Lấy dòng hiện tại để bắt đầu ghi chữ ký
     const signRowIndex = worksheet.lastRow!.number + 1;
 
-    // 1. NGƯỜI CHẤM CÔNG (Bên trái: Cột 2 đến 6)
+    // 1. NGƯỜI CHẤM CÔNG
     worksheet.mergeCells(signRowIndex, 2, signRowIndex, 6);
     const cellLeft = worksheet.getCell(signRowIndex, 2);
     cellLeft.value = "Người chấm công";
 
-    // 2. PHỤ TRÁCH ĐƠN VỊ (Ở giữa)
+    // 2. PHỤ TRÁCH ĐƠN VỊ
     const midCol = Math.floor(totalColumns / 2);
     worksheet.mergeCells(signRowIndex, midCol - 2, signRowIndex, midCol + 2);
     const cellMid = worksheet.getCell(signRowIndex, midCol - 2);
     cellMid.value = "Phụ trách đơn vị";
 
-    // 3. CÁN BỘ KIỂM TRA (Bên phải: 5 cột cuối cùng)
+    // 3. CÁN BỘ KIỂM TRA
     worksheet.mergeCells(signRowIndex, totalColumns - 4, signRowIndex, totalColumns);
     const cellRight = worksheet.getCell(signRowIndex, totalColumns - 4);
     cellRight.value = "Cán bộ kiểm tra";
 
-    // Format chung cho dòng chữ ký
     [cellLeft, cellMid, cellRight].forEach(cell => {
       cell.font = { name: "Times New Roman", bold: true, size: 11 };
       cell.alignment = { horizontal: "center" };
     });
-
-    // Thêm dòng "Ký tên" bên dưới (nếu cần) hoặc để trống cho họ ký
-    // Ở đây ta để trống khoảng 4 dòng để ký, sau đó có thể thêm tên nếu muốn
 
     // --- LƯU FILE ---
     const buffer = await workbook.xlsx.writeBuffer();
