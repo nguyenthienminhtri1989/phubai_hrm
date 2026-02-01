@@ -27,7 +27,7 @@ const ROLES = [
   { value: "HR_MANAGER", label: "Quản lý nhân sự", color: "blue" },
   { value: "LEADER", label: "Xem báo cáo", color: "purple" },
   { value: "TIMEKEEPER", label: "Người chấm công", color: "green" },
-  { value: "STAFF", label: "Nhân viên", color: "brown" }, // Role mới
+  { value: "STAFF", label: "Nhân viên", color: "brown" },
 ];
 
 export default function UserManagementPage() {
@@ -35,26 +35,26 @@ export default function UserManagementPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // State quản lý Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [employees, setEmployees] = useState<any[]>([]);
 
   const [form] = Form.useForm();
-
-  // Theo dõi giá trị Role đang chọn để hiện ẩn ô Phòng ban
   const selectedRole = Form.useWatch("role", form);
 
-  // 1. Tải dữ liệu
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [userRes, deptRes] = await Promise.all([
+      const [userRes, deptRes, empRes] = await Promise.all([
         fetch("/api/users"),
         fetch("/api/departments"),
+        fetch("/api/employees/list"),
       ]);
+
       if (userRes.ok) setUsers(await userRes.json());
       if (deptRes.ok) setDepartments(await deptRes.json());
+      if (empRes.ok) setEmployees(await empRes.json());
+
     } catch (error) {
       message.error("Lỗi tải dữ liệu");
     } finally {
@@ -66,15 +66,13 @@ export default function UserManagementPage() {
     fetchData();
   }, []);
 
-  // 2. Mở Modal ở chế độ THÊM MỚI
   const handleOpenAdd = () => {
     setEditingUser(null);
     form.resetFields();
-    form.setFieldValue("role", "STAFF"); // Mặc định role STAFF cho an toàn
+    form.setFieldValue("role", "STAFF");
     setIsModalOpen(true);
   };
 
-  // 3. Mở Modal ở chế độ SỬA
   const handleOpenEdit = (record: any) => {
     setEditingUser(record);
     form.setFieldsValue({
@@ -83,11 +81,12 @@ export default function UserManagementPage() {
       role: record.role,
       departmentIds: record.managedDepartments.map((d: any) => d.id),
       password: "",
+      employeeCode: record.employeeCode,
+      userDepartmentId: record.userDepartmentId,
     });
     setIsModalOpen(true);
   };
 
-  // 4. Xử lý Lưu
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
@@ -113,7 +112,17 @@ export default function UserManagementPage() {
     }
   };
 
-  // 5. Xử lý Xóa
+  const handleSelectEmployee = (value: string) => {
+    const selectedEmp = employees.find(e => e.code === value);
+    if (selectedEmp) {
+      form.setFieldsValue({
+        fullName: selectedEmp.fullName,
+        userDepartmentId: selectedEmp.departmentId,
+      });
+      message.info(`Đã chọn: ${selectedEmp.fullName}`);
+    }
+  };
+
   const handleDelete = async (id: number) => {
     const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
     if (res.ok) {
@@ -133,9 +142,21 @@ export default function UserManagementPage() {
       render: (text: string) => <b>{text}</b>,
     },
     {
+      title: "Mã NV",
+      dataIndex: "employeeCode",
+      key: "employeeCode",
+      render: (text: string) => text ? <Tag>{text}</Tag> : <span style={{ color: '#ccc' }}>-</span>,
+    },
+    {
       title: "Họ và tên",
       dataIndex: "fullName",
       key: "fullName",
+    },
+    {
+      title: "Phòng trực thuộc",
+      dataIndex: "userDepartment",
+      key: "userDepartment",
+      render: (dept: any) => dept ? <Tag color="cyan">{dept.name}</Tag> : <span style={{ color: '#ccc' }}>-</span>,
     },
     {
       title: "Vai trò",
@@ -199,7 +220,7 @@ export default function UserManagementPage() {
         <div>Bạn không có quyền truy cập trang này.</div>
       </AdminLayout>
     );
-  }
+  };
 
   return (
     <AdminLayout>
@@ -217,11 +238,73 @@ export default function UserManagementPage() {
         open={isModalOpen}
         onOk={handleSubmit}
         onCancel={() => setIsModalOpen(false)}
+        width={700}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="username" label="Tên đăng nhập" rules={[{ required: true }]}>
-            <Input placeholder="VD: nv_to1" disabled={!!editingUser} />
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Form.Item name="username" label="Tên đăng nhập" rules={[{ required: true }]} style={{ flex: 1 }}>
+              <Input placeholder="VD: nv_to1" disabled={!!editingUser} />
+            </Form.Item>
+
+            <Form.Item
+              name="employeeCode"
+              label="Liên kết Nhân Viên"
+              style={{ flex: 1.5 }}
+              help="Gõ tên hoặc mã để tìm kiếm"
+            >
+              <Select
+                placeholder="Chọn nhân viên..."
+                showSearch
+                allowClear
+                onChange={handleSelectEmployee}
+                options={employees.map((emp) => ({
+                  value: emp.code,
+                  label: `${emp.code} - ${emp.fullName}`,
+                  dept: emp.department?.name,
+                }))}
+                // @ts-ignore - filterOption is still fully supported in Ant Design
+                filterOption={(input, option) => {
+                  const label = option?.label?.toString().toLowerCase() || '';
+                  return label.includes(input.toLowerCase());
+                }}
+                optionRender={(option) => (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{option.label}</span>
+                    <span style={{ color: '#999', fontSize: 12 }}>
+                      {option.data.dept}
+                    </span>
+                  </div>
+                )}
+              />
+            </Form.Item>
+          </div>
+
+          <Form.Item name="fullName" label="Họ và tên hiển thị" rules={[{ required: true }]}>
+            <Input placeholder="VD: Nguyễn Văn A" />
           </Form.Item>
+
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Form.Item name="role" label="Vai trò" rules={[{ required: true }]} style={{ flex: 1 }}>
+              <Select options={ROLES} />
+            </Form.Item>
+
+            <Form.Item name="userDepartmentId" label="Phòng ban trực thuộc" style={{ flex: 1 }}>
+              <Select
+                placeholder="Chọn phòng ban..."
+                showSearch
+                allowClear
+                options={departments.map((d) => ({
+                  value: d.id,
+                  label: `${d.name} - ${d.factory?.name}`,
+                }))}
+                // @ts-ignore
+                filterOption={(input, option) => {
+                  const label = option?.label?.toString().toLowerCase() || '';
+                  return label.includes(input.toLowerCase());
+                }}
+              />
+            </Form.Item>
+          </div>
 
           <Form.Item
             name="password"
@@ -231,35 +314,29 @@ export default function UserManagementPage() {
             <Input.Password placeholder={editingUser ? "Nhập mật khẩu mới..." : "Nhập mật khẩu"} />
           </Form.Item>
 
-          <Form.Item name="fullName" label="Họ và tên hiển thị" rules={[{ required: true }]}>
-            <Input placeholder="VD: Nguyễn Văn A" />
-          </Form.Item>
-
-          <Form.Item name="role" label="Vai trò" rules={[{ required: true }]}>
-            <Select options={ROLES} />
-          </Form.Item>
-
-          {/* [QUAN TRỌNG] Logic hiển thị ô chọn phòng ban */}
-          {/* Hiện nếu là TIMEKEEPER (để chấm công) HOẶC STAFF (để xem dữ liệu/nhập OT) */}
           {["TIMEKEEPER", "STAFF"].includes(selectedRole) && (
             <Form.Item
               name="departmentIds"
-              label={selectedRole === "TIMEKEEPER" ? "Phân quyền chấm công" : "Phòng ban được xem dữ liệu"}
+              label={selectedRole === "TIMEKEEPER" ? "Được phân quyền chấm công tại:" : "Được xem dữ liệu tại:"}
               rules={[{ required: true, message: "Vui lòng chọn ít nhất 1 phòng ban" }]}
+              style={{ background: '#f5f5f5', padding: 10, borderRadius: 6 }}
             >
               <Select
                 mode="multiple"
-                placeholder="Chọn phòng ban..."
-                optionFilterProp="children"
+                placeholder="Chọn danh sách phòng..."
                 allowClear
+                showSearch
                 style={{ width: "100%" }}
-              >
-                {departments.map((d) => (
-                  <Select.Option key={d.id} value={d.id}>
-                    {d.name} ({d.factory?.name})
-                  </Select.Option>
-                ))}
-              </Select>
+                options={departments.map((d) => ({
+                  value: d.id,
+                  label: `${d.name} (${d.factory?.name})`,
+                }))}
+                //@ts-ignore
+                filterOption={(input, option) => {
+                  const label = option?.label?.toString().toLowerCase() || '';
+                  return label.includes(input.toLowerCase());
+                }}
+              />
             </Form.Item>
           )}
         </Form>

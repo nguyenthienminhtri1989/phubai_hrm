@@ -19,6 +19,7 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
       include: {
         managedDepartments: true, // Lấy danh sách phòng ban họ quản lý
+        userDepartment: true, // [MỚI] Phòng ban trực thuộc
       },
     });
 
@@ -46,7 +47,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { username, password, fullName, role, departmentIds } = body;
+
+    const {
+      username,
+      password,
+      fullName,
+      role,
+      departmentIds,
+      employeeCode,
+      userDepartmentId,
+    } = body;
 
     // 2. Validate cơ bản
     if (!username || !password || !role) {
@@ -68,19 +78,20 @@ export async function POST(request: Request) {
     // 4. Mã hóa mật khẩu
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 5. Tạo user và liên kết phòng ban (nếu có)
     const newUser = await prisma.user.create({
       data: {
         username,
         password: hashedPassword,
         fullName,
         role,
-        // Logic connect Many-to-Many
+        // [MỚI] Lưu thông tin bổ sung
+        employeeCode: employeeCode || null,
+        userDepartmentId: userDepartmentId ? Number(userDepartmentId) : null,
+
+        // Logic connect managedDepartments (Giữ nguyên)
         managedDepartments:
           departmentIds && departmentIds.length > 0
-            ? {
-                connect: departmentIds.map((id: number) => ({ id })),
-              }
+            ? { connect: departmentIds.map((id: number) => ({ id })) }
             : undefined,
       },
     });

@@ -49,8 +49,12 @@ model Department {
   factoryId Int      
   factory   Factory   @relation(fields: [factoryId], references: [id])
   employees Employee[] // Quan hệ ngược: 1 phòng có nhiều nhân viên
-  // Thêm dòng này: Những user nào quản lý phòng này?
-  managers User[]
+  // Quan hệ 1: Những user QUẢN LÝ phòng này (Many-to-Many)
+  // [SỬA LỖI] Bổ sung @relation("ManagedDepartments") vào đây để khớp với bên User
+  managers User[] @relation("ManagedDepartments")
+
+  // --- [BỔ SUNG] Quan hệ 2: Những user THUỘC VỀ phòng này (One-to-Many) ---
+  staffUsers User[] @relation("UserBelongsTo")
 }
 
 // 3. Bảng Nhân Viên
@@ -146,12 +150,20 @@ model User {
   password  String   // Mật khẩu đã mã hóa
   fullName  String?
   role      Role     @default(TIMEKEEPER)
+
+  // --- [BỔ SUNG CÁC TRƯỜNG MỚI] ---
+  employeeCode String?  // Mã nhân viên (Để liên kết với bảng lương/nhân sự sau này)
+
+  // Phòng ban trực thuộc (User này thuộc phòng nào?)
+  userDepartmentId Int? 
+  userDepartment   Department? @relation("UserBelongsTo", fields: [userDepartmentId], references: [id])
+  // -------------------------------
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Quan hệ Nhiều-Nhiều: Một User quản lý nhiều Phòng ban
-  managedDepartments Department[] 
+  // Quan hệ cũ: User quản lý những phòng nào (Cho Timekeeper/Manager)
+  managedDepartments Department[] @relation("ManagedDepartments")
 }
 
 // Bảng quản lý luật khóa sổ chấm công
