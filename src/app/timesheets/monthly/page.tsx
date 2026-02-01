@@ -462,7 +462,7 @@ export default function MonthlyTimesheetPage() {
 
       rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]) || "");
       rowData.push(count(["XD", "LD"]) || "");
-      rowData.push(count(["F", "R", "L", "ĐC"]) || "");
+      rowData.push(count(["F", "R", "L"]) || "");
       rowData.push(count(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
       rowData.push(count(["RO"]) || "");
       rowData.push(count(["O"]) || "");
