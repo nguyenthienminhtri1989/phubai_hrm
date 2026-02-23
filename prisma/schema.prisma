@@ -164,6 +164,7 @@ model User {
 
   // Quan hệ cũ: User quản lý những phòng nào (Cho Timekeeper/Manager)
   managedDepartments Department[] @relation("ManagedDepartments")
+
 }
 
 // Bảng quản lý luật khóa sổ chấm công

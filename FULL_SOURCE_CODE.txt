@@ -107,8 +107,12 @@ model Department {
   factoryId Int      
   factory   Factory   @relation(fields: [factoryId], references: [id])
   employees Employee[] // Quan hệ ngược: 1 phòng có nhiều nhân viên
-  // Thêm dòng này: Những user nào quản lý phòng này?
-  managers User[]
+  // Quan hệ 1: Những user QUẢN LÝ phòng này (Many-to-Many)
+  // [SỬA LỖI] Bổ sung @relation("ManagedDepartments") vào đây để khớp với bên User
+  managers User[] @relation("ManagedDepartments")
+
+  // --- [BỔ SUNG] Quan hệ 2: Những user THUỘC VỀ phòng này (One-to-Many) ---
+  staffUsers User[] @relation("UserBelongsTo")
 }
 
 // 3. Bảng Nhân Viên
@@ -204,12 +208,20 @@ model User {
   password  String   // Mật khẩu đã mã hóa
   fullName  String?
   role      Role     @default(TIMEKEEPER)
+
+  // --- [BỔ SUNG CÁC TRƯỜNG MỚI] ---
+  employeeCode String?  // Mã nhân viên (Để liên kết với bảng lương/nhân sự sau này)
+
+  // Phòng ban trực thuộc (User này thuộc phòng nào?)
+  userDepartmentId Int? 
+  userDepartment   Department? @relation("UserBelongsTo", fields: [userDepartmentId], references: [id])
+  // -------------------------------
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Quan hệ Nhiều-Nhiều: Một User quản lý nhiều Phòng ban
-  managedDepartments Department[] 
+  // Quan hệ cũ: User quản lý những phòng nào (Cho Timekeeper/Manager)
+  managedDepartments Department[] @relation("ManagedDepartments")
 }
 
 // Bảng quản lý luật khóa sổ chấm công
@@ -833,7 +845,7 @@ const ROLES = [
   { value: "HR_MANAGER", label: "Quản lý nhân sự", color: "blue" },
   { value: "LEADER", label: "Xem báo cáo", color: "purple" },
   { value: "TIMEKEEPER", label: "Người chấm công", color: "green" },
-  { value: "STAFF", label: "Nhân viên", color: "brown" }, // Role mới
+  { value: "STAFF", label: "Nhân viên", color: "brown" },
 ];
 
 export default function UserManagementPage() {
@@ -841,26 +853,26 @@ export default function UserManagementPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // State quản lý Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [employees, setEmployees] = useState<any[]>([]);
 
   const [form] = Form.useForm();
-
-  // Theo dõi giá trị Role đang chọn để hiện ẩn ô Phòng ban
   const selectedRole = Form.useWatch("role", form);
 
-  // 1. Tải dữ liệu
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [userRes, deptRes] = await Promise.all([
+      const [userRes, deptRes, empRes] = await Promise.all([
         fetch("/api/users"),
         fetch("/api/departments"),
+        fetch("/api/employees/list"),
       ]);
+
       if (userRes.ok) setUsers(await userRes.json());
       if (deptRes.ok) setDepartments(await deptRes.json());
+      if (empRes.ok) setEmployees(await empRes.json());
+
     } catch (error) {
       message.error("Lỗi tải dữ liệu");
     } finally {
@@ -872,15 +884,13 @@ export default function UserManagementPage() {
     fetchData();
   }, []);
 
-  // 2. Mở Modal ở chế độ THÊM MỚI
   const handleOpenAdd = () => {
     setEditingUser(null);
     form.resetFields();
-    form.setFieldValue("role", "STAFF"); // Mặc định role STAFF cho an toàn
+    form.setFieldValue("role", "STAFF");
     setIsModalOpen(true);
   };
 
-  // 3. Mở Modal ở chế độ SỬA
   const handleOpenEdit = (record: any) => {
     setEditingUser(record);
     form.setFieldsValue({
@@ -889,11 +899,12 @@ export default function UserManagementPage() {
       role: record.role,
       departmentIds: record.managedDepartments.map((d: any) => d.id),
       password: "",
+      employeeCode: record.employeeCode,
+      userDepartmentId: record.userDepartmentId,
     });
     setIsModalOpen(true);
   };
 
-  // 4. Xử lý Lưu
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
@@ -919,7 +930,17 @@ export default function UserManagementPage() {
     }
   };
 
-  // 5. Xử lý Xóa
+  const handleSelectEmployee = (value: string) => {
+    const selectedEmp = employees.find(e => e.code === value);
+    if (selectedEmp) {
+      form.setFieldsValue({
+        fullName: selectedEmp.fullName,
+        userDepartmentId: selectedEmp.departmentId,
+      });
+      message.info(`Đã chọn: ${selectedEmp.fullName}`);
+    }
+  };
+
   const handleDelete = async (id: number) => {
     const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
     if (res.ok) {
@@ -939,9 +960,21 @@ export default function UserManagementPage() {
       render: (text: string) => <b>{text}</b>,
     },
     {
+      title: "Mã NV",
+      dataIndex: "employeeCode",
+      key: "employeeCode",
+      render: (text: string) => text ? <Tag>{text}</Tag> : <span style={{ color: '#ccc' }}>-</span>,
+    },
+    {
       title: "Họ và tên",
       dataIndex: "fullName",
       key: "fullName",
+    },
+    {
+      title: "Phòng trực thuộc",
+      dataIndex: "userDepartment",
+      key: "userDepartment",
+      render: (dept: any) => dept ? <Tag color="cyan">{dept.name}</Tag> : <span style={{ color: '#ccc' }}>-</span>,
     },
     {
       title: "Vai trò",
@@ -1005,7 +1038,7 @@ export default function UserManagementPage() {
         <div>Bạn không có quyền truy cập trang này.</div>
       </AdminLayout>
     );
-  }
+  };
 
   return (
     <AdminLayout>
@@ -1023,11 +1056,73 @@ export default function UserManagementPage() {
         open={isModalOpen}
         onOk={handleSubmit}
         onCancel={() => setIsModalOpen(false)}
+        width={700}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="username" label="Tên đăng nhập" rules={[{ required: true }]}>
-            <Input placeholder="VD: nv_to1" disabled={!!editingUser} />
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Form.Item name="username" label="Tên đăng nhập" rules={[{ required: true }]} style={{ flex: 1 }}>
+              <Input placeholder="VD: nv_to1" disabled={!!editingUser} />
+            </Form.Item>
+
+            <Form.Item
+              name="employeeCode"
+              label="Liên kết Nhân Viên"
+              style={{ flex: 1.5 }}
+              help="Gõ tên hoặc mã để tìm kiếm"
+            >
+              <Select
+                placeholder="Chọn nhân viên..."
+                showSearch
+                allowClear
+                onChange={handleSelectEmployee}
+                options={employees.map((emp) => ({
+                  value: emp.code,
+                  label: `${emp.code} - ${emp.fullName}`,
+                  dept: emp.department?.name,
+                }))}
+                // @ts-ignore - filterOption is still fully supported in Ant Design
+                filterOption={(input, option) => {
+                  const label = option?.label?.toString().toLowerCase() || '';
+                  return label.includes(input.toLowerCase());
+                }}
+                optionRender={(option) => (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{option.label}</span>
+                    <span style={{ color: '#999', fontSize: 12 }}>
+                      {option.data.dept}
+                    </span>
+                  </div>
+                )}
+              />
+            </Form.Item>
+          </div>
+
+          <Form.Item name="fullName" label="Họ và tên hiển thị" rules={[{ required: true }]}>
+            <Input placeholder="VD: Nguyễn Văn A" />
           </Form.Item>
+
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Form.Item name="role" label="Vai trò" rules={[{ required: true }]} style={{ flex: 1 }}>
+              <Select options={ROLES} />
+            </Form.Item>
+
+            <Form.Item name="userDepartmentId" label="Phòng ban trực thuộc" style={{ flex: 1 }}>
+              <Select
+                placeholder="Chọn phòng ban..."
+                showSearch
+                allowClear
+                options={departments.map((d) => ({
+                  value: d.id,
+                  label: `${d.name} - ${d.factory?.name}`,
+                }))}
+                // @ts-ignore
+                filterOption={(input, option) => {
+                  const label = option?.label?.toString().toLowerCase() || '';
+                  return label.includes(input.toLowerCase());
+                }}
+              />
+            </Form.Item>
+          </div>
 
           <Form.Item
             name="password"
@@ -1037,35 +1132,29 @@ export default function UserManagementPage() {
             <Input.Password placeholder={editingUser ? "Nhập mật khẩu mới..." : "Nhập mật khẩu"} />
           </Form.Item>
 
-          <Form.Item name="fullName" label="Họ và tên hiển thị" rules={[{ required: true }]}>
-            <Input placeholder="VD: Nguyễn Văn A" />
-          </Form.Item>
-
-          <Form.Item name="role" label="Vai trò" rules={[{ required: true }]}>
-            <Select options={ROLES} />
-          </Form.Item>
-
-          {/* [QUAN TRỌNG] Logic hiển thị ô chọn phòng ban */}
-          {/* Hiện nếu là TIMEKEEPER (để chấm công) HOẶC STAFF (để xem dữ liệu/nhập OT) */}
           {["TIMEKEEPER", "STAFF"].includes(selectedRole) && (
             <Form.Item
               name="departmentIds"
-              label={selectedRole === "TIMEKEEPER" ? "Phân quyền chấm công" : "Phòng ban được xem dữ liệu"}
+              label={selectedRole === "TIMEKEEPER" ? "Được phân quyền chấm công tại:" : "Được xem dữ liệu tại:"}
               rules={[{ required: true, message: "Vui lòng chọn ít nhất 1 phòng ban" }]}
+              style={{ background: '#f5f5f5', padding: 10, borderRadius: 6 }}
             >
               <Select
                 mode="multiple"
-                placeholder="Chọn phòng ban..."
-                optionFilterProp="children"
+                placeholder="Chọn danh sách phòng..."
                 allowClear
+                showSearch
                 style={{ width: "100%" }}
-              >
-                {departments.map((d) => (
-                  <Select.Option key={d.id} value={d.id}>
-                    {d.name} ({d.factory?.name})
-                  </Select.Option>
-                ))}
-              </Select>
+                options={departments.map((d) => ({
+                  value: d.id,
+                  label: `${d.name} (${d.factory?.name})`,
+                }))}
+                //@ts-ignore
+                filterOption={(input, option) => {
+                  const label = option?.label?.toString().toLowerCase() || '';
+                  return label.includes(input.toLowerCase());
+                }}
+              />
             </Form.Item>
           )}
         </Form>
@@ -1713,6 +1802,44 @@ export async function POST(request: Request) {
 }
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\employees\import-info\route.ts ---
+
+
+================================================================================
+FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\employees\list\route.ts
+================================================================================
+// src/app/api/employees/list/route.ts
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
+
+export async function GET(request: Request) {
+  try {
+    const session = await auth();
+    if (!session)
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // Lấy danh sách nhân viên rút gọn để làm dropdown
+    const employees = await prisma.employee.findMany({
+      select: {
+        id: true,
+        code: true,
+        fullName: true,
+        departmentId: true, // Lấy ID phòng để tự động điền
+        department: {
+          select: { name: true, factory: { select: { name: true } } },
+        },
+      },
+      orderBy: { code: "asc" },
+    });
+
+    return NextResponse.json(employees);
+  } catch (error) {
+    return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
+  }
+}
+
+
+--- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\employees\list\route.ts ---
 
 
 ================================================================================
@@ -2994,6 +3121,9 @@ export async function GET(request: Request) {
         const month = searchParams.get("month");
         const year = searchParams.get("year");
 
+        // [MỚI] Lấy thêm tham số view
+        const viewMode = searchParams.get("view");
+
         // Validate thời gian
         if (!month || !year) {
             return NextResponse.json(
@@ -3005,17 +3135,16 @@ export async function GET(request: Request) {
         // Điều kiện validation bộ lọc
         const hasDeptFilter = !!departmentIdStr || !!kipIdsStr;
         const hasNameFilter = !!nameStr && nameStr.trim() !== "";
+        // [MỚI] Kiểm tra thêm điều kiện viewMode
+        const isViewAll = viewMode === "all";
 
-        // Nếu không có bộ lọc nào -> Chặn để tránh load quá nặng
-        if (!hasDeptFilter && !hasNameFilter) {
+        // Logic chặn tải nặng: Nếu KHÔNG lọc VÀ KHÔNG phải xem tất cả -> Chặn
+        if (!hasDeptFilter && !hasNameFilter && !isViewAll) {
             return NextResponse.json(
-                {
-                    error: "Vui lòng chọn Phòng ban hoặc nhập Tên nhân viên để tìm kiếm",
-                },
+                { error: "Vui lòng chọn Phòng ban hoặc nhấn nút 'Xem tất cả'" },
                 { status: 400 }
             );
         }
-
         const whereCondition: any = {};
 
         // 1. LỌC THEO TÊN
@@ -3054,6 +3183,17 @@ export async function GET(request: Request) {
                 .filter((n) => !isNaN(n));
             if (kipIds.length > 0) {
                 whereCondition.kipId = { in: kipIds };
+            }
+        }
+
+        if (!isViewAll) {
+            if (departmentIdStr && departmentIdStr !== "null") {
+                const deptIds = departmentIdStr.split(",").map(Number).filter((n) => !isNaN(n));
+                if (deptIds.length > 0) whereCondition.departmentId = { in: deptIds };
+            }
+            if (kipIdsStr) {
+                const kipIds = kipIdsStr.split(",").map(Number).filter((n) => !isNaN(n));
+                if (kipIds.length > 0) whereCondition.kipId = { in: kipIds };
             }
         }
 
@@ -3215,6 +3355,7 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
       include: {
         managedDepartments: true, // Lấy danh sách phòng ban họ quản lý
+        userDepartment: true, // [MỚI] Phòng ban trực thuộc
       },
     });
 
@@ -3242,7 +3383,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { username, password, fullName, role, departmentIds } = body;
+
+    const {
+      username,
+      password,
+      fullName,
+      role,
+      departmentIds,
+      employeeCode,
+      userDepartmentId,
+    } = body;
 
     // 2. Validate cơ bản
     if (!username || !password || !role) {
@@ -3264,19 +3414,20 @@ export async function POST(request: Request) {
     // 4. Mã hóa mật khẩu
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 5. Tạo user và liên kết phòng ban (nếu có)
     const newUser = await prisma.user.create({
       data: {
         username,
         password: hashedPassword,
         fullName,
         role,
-        // Logic connect Many-to-Many
+        // [MỚI] Lưu thông tin bổ sung
+        employeeCode: employeeCode || null,
+        userDepartmentId: userDepartmentId ? Number(userDepartmentId) : null,
+
+        // Logic connect managedDepartments (Giữ nguyên)
         managedDepartments:
           departmentIds && departmentIds.length > 0
-            ? {
-                connect: departmentIds.map((id: number) => ({ id })),
-              }
+            ? { connect: departmentIds.map((id: number) => ({ id })) }
             : undefined,
       },
     });
@@ -3302,7 +3453,7 @@ FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\users\[id]\route
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth"; // Hoặc đường dẫn auth của bạn
+import { auth } from "@/auth";
 import bcrypt from "bcryptjs";
 
 interface Props {
@@ -3324,11 +3475,24 @@ export async function PUT(request: Request, props: Props) {
     }
 
     const body = await request.json();
-    const { password, fullName, role, departmentIds } = body;
+    // [MỚI] Lấy thêm employeeCode và userDepartmentId từ body gửi lên
+    const {
+      password,
+      fullName,
+      role,
+      departmentIds,
+      employeeCode,
+      userDepartmentId,
+    } = body;
 
+    // Khởi tạo object dữ liệu cần update
     const updateData: any = {
       fullName,
       role,
+      // [MỚI] Cập nhật Mã NV (nếu rỗng thì set null)
+      employeeCode: employeeCode || null,
+      // [MỚI] Cập nhật Phòng trực thuộc (nếu có giá trị thì ép kiểu số, không thì null)
+      userDepartmentId: userDepartmentId ? Number(userDepartmentId) : null,
     };
 
     // 1. Logic cập nhật mật khẩu (Admin Reset)
@@ -3337,7 +3501,7 @@ export async function PUT(request: Request, props: Props) {
       updateData.password = await bcrypt.hash(password, 10);
     }
 
-    // 2. Logic cập nhật phòng ban [ĐÃ SỬA ĐỔI CHO STAFF]
+    // 2. Logic cập nhật phòng ban PHỤ TRÁCH (managedDepartments)
     if (Array.isArray(departmentIds)) {
       // Trường hợp có gửi danh sách phòng ban lên (dù là rỗng [])
       updateData.managedDepartments = {
@@ -3345,7 +3509,7 @@ export async function PUT(request: Request, props: Props) {
         set: departmentIds.map((deptId: any) => ({ id: Number(deptId) })),
       };
     } else {
-      // Trường hợp không gửi departmentIds lên (ví dụ chỉ sửa tên)
+      // Trường hợp không gửi departmentIds lên (ví dụ chỉ sửa tên/mã NV)
       // Ta kiểm tra: Nếu Role mới không cần phòng ban -> Xóa sạch liên kết cũ cho sạch DB
       // Các role cần phòng ban là: TIMEKEEPER và STAFF
       if (role !== "TIMEKEEPER" && role !== "STAFF") {
@@ -3370,6 +3534,31 @@ export async function PUT(request: Request, props: Props) {
     );
   }
 }
+
+// Bổ sung thêm hàm DELETE (nếu file cũ của bạn chưa có hoặc bạn muốn xóa User chuẩn)
+export async function DELETE(request: Request, props: Props) {
+  try {
+    const params = await props.params;
+    const id = parseInt(params.id);
+
+    const session = await auth();
+    if (session?.user?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
+    }
+
+    // Kiểm tra xem có xóa chính mình không
+    // (Tùy chọn: dùng session.user.id để so sánh nếu muốn chặn)
+
+    await prisma.user.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ message: "Đã xóa user thành công" });
+  } catch (error: any) {
+    return NextResponse.json({ error: "Lỗi xóa user" }, { status: 500 });
+  }
+}
+
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\users\[id]\route.ts ---
 
@@ -6894,13 +7083,20 @@ import {
   Typography,
   Tooltip,
 } from "antd";
-import { FileExcelOutlined } from "@ant-design/icons";
+import { FileExcelOutlined, AppstoreOutlined } from "@ant-design/icons"; // [MỚI] Thêm icon
 import dayjs from "dayjs";
 
 // [QUAN TRỌNG] Import Component lọc dùng chung
 import CommonFilter, { FilterResult } from "@/components/CommonFilter";
 
 const { Title } = Typography;
+
+// [MỚI] Mở rộng interface để hỗ trợ dòng tiêu đề nhóm
+interface TableRowData extends Partial<MonthlyEmployeeData> {
+  key: string | number;
+  isGroupHeader?: boolean;
+  groupTitle?: string;
+}
 
 // --- INTERFACES ---
 interface AttendanceCode {
@@ -6913,7 +7109,7 @@ interface MonthlyEmployeeData {
   id: number;
   code: string;
   fullName: string;
-  department?: { name: string };
+  department?: { name: string; factory?: { name: string } }; // [SỬA] Thêm factory để lấy tên hiển thị
   kip?: { name: string };
   timesheets: { date: string; attendanceCode: AttendanceCode }[];
   classification?: string | null;
@@ -6971,6 +7167,65 @@ export default function MonthlyTimesheetPage() {
     }
   };
 
+  // [MỚI] Hàm tải tất cả
+  const handleLoadAll = async () => {
+    if (!currentFilter) {
+      message.warning("Vui lòng chờ bộ lọc khởi tạo xong.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const month = currentFilter.date.month() + 1;
+      const year = currentFilter.date.year();
+      // Gọi API với tham số view=all (Cần đảm bảo Backend đã hỗ trợ tham số này)
+      const res = await fetch(`/api/timesheets/monthly?month=${month}&year=${year}&view=all`);
+      const data = await res.json();
+
+      if (data.error) {
+        message.error(data.error);
+        setEmployees([]);
+      } else {
+        setEmployees(data);
+        message.success(`Đã tải dữ liệu của ${data.length} nhân viên.`);
+      }
+    } catch (e) {
+      message.error("Lỗi kết nối server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // [QUAN TRỌNG] Xử lý dữ liệu để chèn dòng tiêu đề phân cách (Group Header)
+  const groupedDataSource = useMemo(() => {
+    const processed: TableRowData[] = [];
+    let currentGroupKey = "";
+
+    employees.forEach((emp) => {
+      // Tạo key định danh nhóm: Tên Nhà máy - Tên Phòng - Tên Kíp
+      // Logic này giúp gom nhóm các nhân viên cùng bộ phận lại với nhau
+      const factoryName = emp.department?.factory?.name || "Khác";
+      const deptName = emp.department?.name || "Chưa phân loại";
+      const kipName = emp.kip?.name ? ` - ${emp.kip.name}` : "";
+
+      const groupKey = `${factoryName} - ${deptName}${kipName}`;
+
+      // Nếu chuyển sang nhóm mới -> Chèn dòng Header
+      if (groupKey !== currentGroupKey) {
+        processed.push({
+          key: `group-${groupKey}-${emp.id}`, // Key unique
+          isGroupHeader: true,
+          groupTitle: groupKey.toUpperCase(), // VD: NHÀ MÁY SỢI 2 - SỢI CON - KÍP 1
+        });
+        currentGroupKey = groupKey;
+      }
+
+      // Push nhân viên vào
+      processed.push({ ...emp, key: emp.id });
+    });
+
+    return processed;
+  }, [employees]);
+
   // Callback nhận từ Component con
   const handleFilterChange = (result: FilterResult) => {
     setCurrentFilter(result); // Lưu lại để dùng cho Columns và Excel
@@ -6983,10 +7238,11 @@ export default function MonthlyTimesheetPage() {
     const viewDate = currentFilter?.date || dayjs();
     const daysInMonth = viewDate.daysInMonth();
 
+    // 2.1 Định nghĩa các cột cơ bản (như cũ)
     const fixedColumns: any[] = [
       {
         title: "STT",
-        key: "index",
+        key: "index", // Key này quan trọng để xử lý colSpan
         width: 50,
         fixed: "left",
         align: "center",
@@ -6997,6 +7253,7 @@ export default function MonthlyTimesheetPage() {
       {
         title: "Họ tên",
         dataIndex: "fullName",
+        key: "fullName",
         width: 160,
         fixed: "left",
         render: (text: string, record: MonthlyEmployeeData) => (
@@ -7027,8 +7284,10 @@ export default function MonthlyTimesheetPage() {
         ),
         width: 40,
         align: "center",
+        key: `day-${i}`,
         render: (_: any, record: MonthlyEmployeeData) => {
-          const log = record.timesheets.find((t) => t.date.startsWith(dateStr));
+          // [Fix] Kiểm tra record.timesheets tồn tại trước khi find
+          const log = record.timesheets?.find((t) => t.date.startsWith(dateStr));
           if (log) {
             return (
               <Tooltip title={log.attendanceCode.name}>
@@ -7054,7 +7313,8 @@ export default function MonthlyTimesheetPage() {
     }
 
     const countCodes = (record: MonthlyEmployeeData, fullCodes: string[], halfCodes: string[] = []) => {
-      return record.timesheets.reduce((total, t) => {
+      // [Fix] Kiểm tra mảng timesheets
+      return (record.timesheets || []).reduce((total, t) => {
         const code = t.attendanceCode.code;
         if (fullCodes.includes(code)) return total + 1;
         if (halfCodes.includes(code)) return total + 0.5;
@@ -7065,56 +7325,56 @@ export default function MonthlyTimesheetPage() {
     const summaryColumns = [
       {
         title: <span style={{ color: "#05FA46", fontSize: 12 }}>T.Công</span>,
-        width: 60, align: "center", fixed: "right", className: "bg-green-50",
+        width: 60, align: "center", fixed: "right", className: "bg-green-50", key: "sum_total",
         render: (_: any, r: MonthlyEmployeeData) => {
           const total = countCodes(r, ["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]);
           return total > 0 ? <b style={{ color: "#16a34a" }}>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ fontSize: 12 }}>Ca 3</span>, width: 50, align: "center", fixed: "right",
+        title: <span style={{ fontSize: 12 }}>Ca 3</span>, width: 50, align: "center", fixed: "right", key: "sum_ca3",
         render: (_: any, r: MonthlyEmployeeData) => {
           const total = countCodes(r, ["XD", "LD"]);
           return total > 0 ? <b>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ color: "#ff78cf", fontSize: 12 }}>100%</span>, width: 50, align: "center", fixed: "right",
+        title: <span style={{ color: "#ff78cf", fontSize: 12 }}>100%</span>, width: 50, align: "center", fixed: "right", key: "sum_100",
         render: (_: any, r: MonthlyEmployeeData) => {
           const total = countCodes(r, ["F", "R", "L"]);
           return total > 0 ? <b style={{ color: "#2563eb" }}>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ color: "#F8FF3B", fontSize: 12 }}>BHXH</span>, width: 50, align: "center", fixed: "right",
+        title: <span style={{ color: "#F8FF3B", fontSize: 12 }}>BHXH</span>, width: 50, align: "center", fixed: "right", key: "sum_bhxh",
         render: (_: any, r: MonthlyEmployeeData) => {
           const total = countCodes(r, ["Ô", "CÔ", "TS", "DS", "T", "CL"]);
           return total > 0 ? <b style={{ color: "#ca8a04" }}>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ color: "#FF4545", fontSize: 12 }}>K.Lương</span>, width: 60, align: "center", fixed: "right",
+        title: <span style={{ color: "#FF4545", fontSize: 12 }}>K.Lương</span>, width: 60, align: "center", fixed: "right", key: "sum_kl",
         render: (_: any, r: MonthlyEmployeeData) => {
           const total = countCodes(r, ["RO"]);
           return total > 0 ? <b style={{ color: "#dc2626" }}>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ fontSize: 12 }}>Vô LD</span>, width: 50, align: "center", fixed: "right",
+        title: <span style={{ fontSize: 12 }}>Vô LD</span>, width: 50, align: "center", fixed: "right", key: "sum_vld",
         render: (_: any, r: MonthlyEmployeeData) => {
           const total = countCodes(r, ["O"]);
           return total > 0 ? <b style={{ color: "red", textDecoration: "underline" }}>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ fontSize: 12 }}>Bão</span>, width: 50, align: "center", fixed: "right",
+        title: <span style={{ fontSize: 12 }}>Bão</span>, width: 50, align: "center", fixed: "right", key: "sum_bao",
         render: (_: any, r: MonthlyEmployeeData) => {
           const total = countCodes(r, ["B"]);
           return total > 0 ? <b>{total}</b> : "-";
         },
       },
       {
-        title: <span style={{ fontSize: 12 }}>X.Loại</span>, width: 60, align: "center", fixed: "right",
+        title: <span style={{ fontSize: 12 }}>X.Loại</span>, width: 60, align: "center", fixed: "right", key: "classification",
         render: (_: any, r: MonthlyEmployeeData) => {
           const grade = r.classification;
           let color = "#000";
@@ -7125,30 +7385,112 @@ export default function MonthlyTimesheetPage() {
         },
       },
     ];
-    return [...fixedColumns, ...dayColumns, ...summaryColumns];
-  }, [currentFilter, employees]); // Phụ thuộc vào currentFilter để vẽ lại cột ngày
 
-  // --- 3. EXPORT EXCEL ---
+    // 2.2 Gộp tất cả cột lại
+    const originalColumns = [...fixedColumns, ...dayColumns, ...summaryColumns];
+
+    // 2.3 [QUAN TRỌNG] Biến đổi cột để xử lý Row Span (Gộp ô) cho dòng tiêu đề
+    const processedColumns = originalColumns.map((col) => ({
+      ...col,
+      onCell: (record: TableRowData, index: number) => {
+        if (record.isGroupHeader) {
+          // Nếu là dòng tiêu đề:
+          // Cột 'index' (STT) sẽ chiếm trọn chiều ngang (colSpan = tổng số cột)
+          if (col.key === "index") {
+            return { colSpan: originalColumns.length };
+          }
+          // Các cột khác ẩn đi
+          return { colSpan: 0 };
+        }
+        return {};
+      },
+      render: (text: any, record: TableRowData, index: number) => {
+        // Render nội dung dòng tiêu đề
+        if (record.isGroupHeader) {
+          if (col.key === "index") {
+            return (
+              <div style={{
+                background: "#e6f7ff",
+                color: "#0050b3",
+                padding: "6px 16px",
+                fontWeight: "bold",
+                textAlign: "left",
+                borderTop: "2px solid #1890ff",
+                textTransform: "uppercase"
+              }}>
+                <AppstoreOutlined style={{ marginRight: 8 }} />
+                {record.groupTitle}
+              </div>
+            );
+          }
+          return null;
+        }
+        // Render bình thường cho dòng nhân viên
+        return col.render ? col.render(text, record, index) : text;
+      }
+    }));
+
+    return processedColumns;
+
+  }, [currentFilter, employees]);
+
+  // --- 3. EXPORT EXCEL (ĐÃ CẬP NHẬT ĐỘ RỘNG CỘT) ---
   const handleExportExcel = async () => {
     if (employees.length === 0 || !currentFilter) return;
     setLoading(true);
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("BangCong");
-    worksheet.pageSetup = { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
-    // --- Header ---
+    // Setup trang in
+    worksheet.pageSetup = {
+      paperSize: 9,
+      orientation: "landscape",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: {
+        left: 0.25, right: 0.25, top: 0.75, bottom: 0.75,
+        header: 0.3, footer: 0.3
+      }
+    };
+
+    // --- TÍNH TOÁN SỐ CỘT ---
+    const daysInMonth = currentFilter.date.daysInMonth();
+    // 2 cột đầu (STT, Tên) + Số ngày + 8 cột tổng hợp
+    const totalColumns = 2 + daysInMonth + 8;
+
+    // --- [MỚI] THIẾT LẬP ĐỘ RỘNG CỘT (QUAN TRỌNG) ---
+    // Cột 1: STT -> Hẹp
+    worksheet.getColumn(1).width = 5;
+    // Cột 2: Họ tên -> Rộng
+    worksheet.getColumn(2).width = 28;
+
+    // Các cột ngày: Từ cột 3 đến cột (2 + số ngày) -> Rất hẹp
+    for (let i = 1; i <= daysInMonth; i++) {
+      worksheet.getColumn(2 + i).width = 4.5;
+    }
+
+    // Các cột tổng hợp cuối cùng -> Vừa phải
+    for (let i = 2 + daysInMonth + 1; i <= totalColumns; i++) {
+      worksheet.getColumn(i).width = 7;
+    }
+    // -----------------------------------------------
+
+    // --- HEADER (CĂN GIỮA) ---
     const row1 = worksheet.getCell("A1");
     row1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
     row1.font = { name: "Times New Roman", size: 14, bold: true };
+    row1.alignment = { vertical: "middle", horizontal: "center" };
+    worksheet.mergeCells(1, 1, 1, totalColumns);
 
     const row2 = worksheet.getCell("A2");
     row2.value = `BẢNG CHẤM CÔNG THÁNG ${currentFilter.date.format("MM/YYYY")}`;
     row2.font = { name: "Times New Roman", size: 16, bold: true };
-    row2.alignment = { horizontal: "center" };
+    row2.alignment = { vertical: "middle", horizontal: "center" };
+    worksheet.mergeCells(2, 1, 2, totalColumns);
 
-    // Tên bộ phận (Lấy từ dữ liệu nhân viên đầu tiên để hiển thị đại diện)
-    // Hoặc hiển thị generic vì CommonFilter đã ẩn logic tên phòng
+    // Tên bộ phận
     const deptDisplayName = employees.length > 0
       ? (employees[0].kip ? `Kíp: ${employees[0].kip.name}` : `Bộ phận: ${employees[0].department?.name || 'Tổng hợp'}`)
       : "Tổng hợp";
@@ -7156,11 +7498,11 @@ export default function MonthlyTimesheetPage() {
     const row3 = worksheet.getCell("A3");
     row3.value = deptDisplayName.toUpperCase();
     row3.font = { name: "Times New Roman", size: 14, bold: true };
-    row3.alignment = { horizontal: "center" };
+    row3.alignment = { vertical: "middle", horizontal: "center" };
+    worksheet.mergeCells(3, 1, 3, totalColumns);
 
-    // --- Table Header ---
+    // --- TABLE HEADER ---
     const headerRow = ["STT", "Họ và tên"];
-    const daysInMonth = currentFilter.date.daysInMonth();
     for (let i = 1; i <= daysInMonth; i++) headerRow.push(`${i}`);
     headerRow.push("T.Công", "Ca 3", "100%", "BHXH", "K.Lương", "Vô LD", "L.Bão", "X.Loại");
 
@@ -7172,7 +7514,7 @@ export default function MonthlyTimesheetPage() {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0E0E0" } };
     });
 
-    // --- Table Data ---
+    // --- TABLE DATA ---
     employees.forEach((emp, index) => {
       const rowData: any[] = [index + 1, emp.fullName];
       for (let i = 1; i <= daysInMonth; i++) {
@@ -7182,7 +7524,6 @@ export default function MonthlyTimesheetPage() {
       }
 
       const count = (codes: string[]) => emp.timesheets.reduce((acc, t) => codes.includes(t.attendanceCode.code) ? acc + 1 : acc, 0);
-      // (Simplified count logic for brevity in this example, use full logic in prod)
       const countComplex = (full: string[], half: string[]) => emp.timesheets.reduce((acc, t) => {
         if (full.includes(t.attendanceCode.code)) return acc + 1;
         if (half.includes(t.attendanceCode.code)) return acc + 0.5;
@@ -7191,7 +7532,7 @@ export default function MonthlyTimesheetPage() {
 
       rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]) || "");
       rowData.push(count(["XD", "LD"]) || "");
-      rowData.push(count(["F", "R", "L", "ĐC"]) || "");
+      rowData.push(count(["F", "R", "L"]) || "");
       rowData.push(count(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
       rowData.push(count(["RO"]) || "");
       rowData.push(count(["O"]) || "");
@@ -7202,12 +7543,40 @@ export default function MonthlyTimesheetPage() {
       row.eachCell((cell, colNumber) => {
         cell.font = { name: "Times New Roman" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        // Canh trái cho Họ tên, còn lại canh giữa
         if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
         else cell.alignment = { horizontal: "center" };
       });
     });
 
-    // --- Footer ---
+    // --- FOOTER CHỮ KÝ (3 CỘT) ---
+    worksheet.addRow([]);
+    worksheet.addRow([]);
+
+    const signRowIndex = worksheet.lastRow!.number + 1;
+
+    // 1. NGƯỜI CHẤM CÔNG
+    worksheet.mergeCells(signRowIndex, 2, signRowIndex, 6);
+    const cellLeft = worksheet.getCell(signRowIndex, 2);
+    cellLeft.value = "Người chấm công";
+
+    // 2. PHỤ TRÁCH ĐƠN VỊ
+    const midCol = Math.floor(totalColumns / 2);
+    worksheet.mergeCells(signRowIndex, midCol - 2, signRowIndex, midCol + 2);
+    const cellMid = worksheet.getCell(signRowIndex, midCol - 2);
+    cellMid.value = "Phụ trách đơn vị";
+
+    // 3. CÁN BỘ KIỂM TRA
+    worksheet.mergeCells(signRowIndex, totalColumns - 4, signRowIndex, totalColumns);
+    const cellRight = worksheet.getCell(signRowIndex, totalColumns - 4);
+    cellRight.value = "Cán bộ kiểm tra";
+
+    [cellLeft, cellMid, cellRight].forEach(cell => {
+      cell.font = { name: "Times New Roman", bold: true, size: 11 };
+      cell.alignment = { horizontal: "center" };
+    });
+
+    // --- LƯU FILE ---
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     saveAs(blob, `BangCong_${currentFilter.date.format("MM-YYYY")}.xlsx`);
@@ -7218,16 +7587,28 @@ export default function MonthlyTimesheetPage() {
     <AdminLayout>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Title level={3} style={{ margin: 0 }}>Tổng hợp chấm công tháng</Title>
-        <Button
-          type="primary"
-          style={{ background: "#217346" }}
-          icon={<FileExcelOutlined />}
-          onClick={handleExportExcel}
-          disabled={employees.length === 0}
-          loading={loading}
-        >
-          Xuất Excel
-        </Button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {/* [MỚI] Nút Load Tất cả */}
+          <Button
+            style={{ background: "#F54F2F", color: "white" }}
+            onClick={handleLoadAll}
+            loading={loading}
+            icon={<AppstoreOutlined />}
+          >
+            Xem tất cả các phòng
+          </Button>
+
+          <Button
+            type="primary"
+            style={{ background: "#217346" }}
+            icon={<FileExcelOutlined />}
+            onClick={handleExportExcel}
+            disabled={employees.length === 0}
+            loading={loading}
+          >
+            Xuất Excel
+          </Button>
+        </div>
       </div>
 
       {/* --- SỬ DỤNG COMPONENT LỌC DÙNG CHUNG --- */}
@@ -7238,13 +7619,14 @@ export default function MonthlyTimesheetPage() {
 
       <Table
         bordered
-        dataSource={employees}
+        dataSource={groupedDataSource} // [QUAN TRỌNG] Dùng data đã group để hiển thị
         columns={columns}
-        rowKey="id"
+        rowKey="key"
         loading={loading}
         pagination={false}
         scroll={{ x: "max-content", y: 600 }}
         size="small"
+        sticky // Giữ tiêu đề khi cuộn
       />
     </AdminLayout>
   );
