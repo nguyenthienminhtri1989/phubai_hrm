@@ -220,9 +220,9 @@ export default function AdminLayout({
             },
             // [Xuất Excel để import vào BRAVO]
             {
-              key: "/export-bravo",
+              key: "/bravo-data",
               icon: <DownloadOutlined />,
-              label: <Link href="/export-bravo">Xuất Excel BRAVO</Link>,
+              label: <Link href="/bravo-data">Xuất Excel BRAVO</Link>,
             },
             {
               key: "/overtime",
