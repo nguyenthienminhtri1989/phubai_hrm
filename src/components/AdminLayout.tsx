@@ -37,6 +37,7 @@ import {
   FieldTimeOutlined,
   KeyOutlined,
   BarChartOutlined, // [MỚI] Icon đổi mật khẩu
+  DownloadOutlined,
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -216,6 +217,12 @@ export default function AdminLayout({
               key: "/timesheets/monthly",
               icon: <TableOutlined />,
               label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
+            },
+            // [Xuất Excel để import vào BRAVO]
+            {
+              key: "/export-bravo",
+              icon: <DownloadOutlined />,
+              label: <Link href="/export-bravo">Xuất Excel BRAVO</Link>,
             },
             {
               key: "/overtime",

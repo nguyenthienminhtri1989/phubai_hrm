@@ -32,7 +32,7 @@ interface AttendanceCode {
 
 // Định nghĩa các nhóm chế độ để hiển thị cho đẹp
 const CATEGORY_OPTIONS = [
-  { value: "TIME_WORK", label: "Lương thời gian (Đi làm)" },
+  { value: "TIME_WORK", label: "Lương thời gian" },
   { value: "PAID_LEAVE", label: "Nghỉ hưởng 100% lương" },
   { value: "SICK", label: "Chế độ Ốm / Tai nạn" },
   { value: "MATERNITY", label: "Chế độ Thai sản" },
