@@ -119,18 +119,17 @@ export default function DailyTimesheetPage() {
     const handleSave = async () => {
         if (!currentFilter || employees.length === 0) return;
 
-        const validRecords = employees.filter(
-            (e) => e.attendanceCodeId !== null && e.attendanceCodeId !== undefined
-        );
-
-        if (validRecords.length === 0) {
-            message.warning("Chưa có dữ liệu chấm công để lưu!");
-            return;
-        }
+        // [SỬA ĐỔI] KHÔNG dùng .filter loại bỏ null nữa. 
+        // Gửi toàn bộ danh sách hiển thị trên màn hình lên Server.
+        const recordsToSend = employees.map((e) => ({
+            employeeId: e.employeeId,
+            attendanceCodeId: e.attendanceCodeId || null, // Nếu bị xóa trắng thì gửi lên là null
+            note: e.note || "",
+        }));
 
         setSaving(true);
         try {
-            // Logic xác định ID phòng ban để check khóa sổ:
+            // Logic xác định ID phòng ban để check khóa sổ
             const payloadDeptId = currentFilter.realDepartmentIds.length === 1
                 ? currentFilter.realDepartmentIds[0]
                 : null;
@@ -138,11 +137,7 @@ export default function DailyTimesheetPage() {
             const payload = {
                 date: currentFilter.date.format("YYYY-MM-DD"),
                 departmentId: payloadDeptId,
-                records: validRecords.map((e) => ({
-                    employeeId: e.employeeId,
-                    attendanceCodeId: e.attendanceCodeId,
-                    note: e.note,
-                })),
+                records: recordsToSend,
             };
 
             const res = await fetch("/api/timesheets/daily", {
@@ -152,7 +147,10 @@ export default function DailyTimesheetPage() {
             });
 
             if (res.ok) {
-                message.success(`Lưu thành công ${validRecords.length} nhân viên!`);
+                // Đếm những người thực sự được chấm công để hiện thông báo cho đẹp
+                const validCount = recordsToSend.filter(r => r.attendanceCodeId !== null).length;
+                message.success(`Đã lưu bảng công! (Có ${validCount} người được chấm)`);
+
                 fetchTimesheetData(currentFilter); // Tải lại để cập nhật updatedAt
             } else {
                 const err = await res.json();

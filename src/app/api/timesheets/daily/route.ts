@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     if (!dateStr) {
       return NextResponse.json(
         { error: "Thiếu ngày chấm công" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
     if (!date || !records || records.length === 0) {
       return NextResponse.json(
         { error: "Dữ liệu không hợp lệ hoặc danh sách rỗng" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -142,21 +142,30 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error: `ĐÃ KHÓA SỔ! Dữ liệu bị khóa từ ${activeLock.fromDate.toLocaleDateString(
-              "vi-VN"
+              "vi-VN",
             )} đến ${activeLock.toDate.toLocaleDateString("vi-VN")} (${
               activeLock.reason || "Không có lý do"
             }).`,
           },
-          { status: 403 }
+          { status: 403 },
         );
       }
     }
     // --- [KẾT THÚC] LOGIC KIỂM TRA KHÓA SỔ ---
 
-    // Thực hiện lưu
-    await prisma.$transaction(
-      records.map((rec: any) =>
-        prisma.timesheet.upsert({
+    // Thực hiện lưu: Nhận toàn bộ danh sách, nếu có mã thì Upsert, nếu để trống thì Delete
+    const operations = records.map((rec: any) => {
+      // Nếu người dùng xóa trắng (null hoặc undefined)
+      if (!rec.attendanceCodeId) {
+        return prisma.timesheet.deleteMany({
+          where: {
+            employeeId: rec.employeeId,
+            date: targetDate,
+          },
+        });
+      } else {
+        // Nếu có mã chấm công thì Thêm mới hoặc Cập nhật (Upsert)
+        return prisma.timesheet.upsert({
           where: {
             employeeId_date: {
               employeeId: rec.employeeId,
@@ -173,9 +182,12 @@ export async function POST(request: Request) {
             attendanceCodeId: rec.attendanceCodeId,
             note: rec.note,
           },
-        })
-      )
-    );
+        });
+      }
+    });
+
+    // Chạy tất cả các thao tác (Thêm/Sửa/Xóa) trong 1 Transaction để đảm bảo an toàn
+    await prisma.$transaction(operations);
 
     return NextResponse.json({ message: "Đã lưu thành công!" });
   } catch (error) {
