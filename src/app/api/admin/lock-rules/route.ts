@@ -1,26 +1,24 @@
-// API này giúp Admin xem danh sách, thêm luật mới, và xóa luật (mở khóa).
-
-// src/app/api/admin/lock-rules/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth"; // Hoặc đường dẫn auth của bạn
+import { auth } from "@/auth";
 
 // 1. LẤY DANH SÁCH LUẬT
 export async function GET(request: Request) {
   try {
     const session = await auth();
-    // Chỉ Admin hoặc HR Manager mới được xem/sửa
+    // Đã có sẵn ADMIN và HR_MANAGER
     if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
     }
 
     const rules = await prisma.lockRule.findMany({
       orderBy: { createdAt: "desc" },
-      include: { factory: true }, // Lấy tên nhà máy để hiển thị
+      include: { factory: true },
     });
 
     return NextResponse.json(rules);
   } catch (error) {
+    console.error(error);
     return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }
@@ -29,11 +27,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await auth();
-    if (session?.user?.role !== "ADMIN") {
-      // Chỉ Admin mới được tạo khóa
+    // [ĐÃ SỬA] Cho phép cả HR_MANAGER
+    if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json(
-        { error: "Chỉ Admin mới được khóa sổ" },
-        { status: 403 }
+        { error: "Chỉ Admin hoặc HR Manager mới được khóa sổ" },
+        { status: 403 },
       );
     }
 
@@ -43,17 +41,16 @@ export async function POST(request: Request) {
     if (!fromDate || !toDate) {
       return NextResponse.json(
         { error: "Thiếu thời gian khóa" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // Convert sang Date object (lấy đầu ngày 00:00:00)
     const from = new Date(new Date(fromDate).setHours(0, 0, 0, 0));
-    const to = new Date(new Date(toDate).setHours(23, 59, 59, 999)); // Cuối ngày
+    const to = new Date(new Date(toDate).setHours(23, 59, 59, 999));
 
     await prisma.lockRule.create({
       data: {
-        factoryId: factoryId ? Number(factoryId) : null, // null = Toàn công ty
+        factoryId: factoryId ? Number(factoryId) : null,
         fromDate: from,
         toDate: to,
         reason: reason,
@@ -71,7 +68,8 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const session = await auth();
-    if (session?.user?.role !== "ADMIN") {
+    // [ĐÃ SỬA] Cho phép cả HR_MANAGER
+    if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
     }
 
@@ -86,28 +84,27 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ message: "Đã mở khóa (xóa luật) thành công!" });
   } catch (error) {
+    console.error(error);
     return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }
 
-// ... (Các hàm GET, POST, DELETE giữ nguyên)
-
-// 4. [MỚI] CẬP NHẬT LUẬT (SỬA)
+// 4. CẬP NHẬT LUẬT (SỬA)
 export async function PUT(request: Request) {
   try {
     const session = await auth();
-    if (session?.user?.role !== "ADMIN") {
+    // [ĐÃ SỬA] Cho phép cả HR_MANAGER
+    if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
     }
 
     const body = await request.json();
-    const { id, fromDate, toDate, reason } = body; // Không cho sửa factoryId để tránh phức tạp, hoặc cho sửa tùy bạn
+    const { id, fromDate, toDate, reason } = body;
 
     if (!id || !fromDate || !toDate) {
       return NextResponse.json({ error: "Thiếu thông tin" }, { status: 400 });
     }
 
-    // Chuẩn hóa thời gian (Đầu ngày - Cuối ngày)
     const from = new Date(new Date(fromDate).setHours(0, 0, 0, 0));
     const to = new Date(new Date(toDate).setHours(23, 59, 59, 999));
 

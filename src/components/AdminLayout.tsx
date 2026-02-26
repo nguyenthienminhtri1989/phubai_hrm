@@ -36,7 +36,7 @@ import {
   SettingOutlined,
   FieldTimeOutlined,
   KeyOutlined,
-  BarChartOutlined, // [MỚI] Icon đổi mật khẩu
+  BarChartOutlined,
   DownloadOutlined,
 } from "@ant-design/icons";
 import saveAs from "file-saver";
@@ -55,7 +55,7 @@ export default function AdminLayout({
   const pathname = usePathname();
   const { data: session } = useSession();
 
-  // --- [MỚI] STATE CHO ĐỔI MẬT KHẨU ---
+  // --- STATE CHO ĐỔI MẬT KHẨU ---
   const [isChangePassOpen, setIsChangePassOpen] = useState(false);
   const [passForm] = Form.useForm();
   const [passLoading, setPassLoading] = useState(false);
@@ -92,7 +92,7 @@ export default function AdminLayout({
     }
   };
 
-  // 3. [MỚI] Hàm xử lý Đổi mật khẩu
+  // 3. Hàm xử lý Đổi mật khẩu
   const handleChangePassword = async (values: any) => {
     setPassLoading(true);
     try {
@@ -118,7 +118,7 @@ export default function AdminLayout({
     }
   };
 
-  // 4. Menu User xổ xuống (Đã thêm nút Đổi mật khẩu)
+  // 4. Menu User xổ xuống
   const userMenuItems = [
     {
       key: "info",
@@ -139,7 +139,7 @@ export default function AdminLayout({
       key: "change-pass",
       icon: <KeyOutlined />,
       label: "Đổi mật khẩu",
-      onClick: () => setIsChangePassOpen(true), // Mở modal
+      onClick: () => setIsChangePassOpen(true),
     },
     { type: "divider" as const },
     {
@@ -154,28 +154,35 @@ export default function AdminLayout({
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <Sider trigger={null} collapsible collapsed={collapsed}>
-        <div
-          className="demo-logo-vertical"
-          style={{
-            height: 32,
-            margin: 16,
-            background: "rgba(255, 255, 255, 0.2)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            fontWeight: "bold",
-          }}
-        >
-          {collapsed ? "PB" : "PHU BAI HRM"}
-        </div>
+        {/* --- [SỬA ĐỔI] BỌC LINK QUANH LOGO ĐỂ VỀ TRANG CHỦ --- */}
+        <Link href="/">
+          <div
+            className="demo-logo-vertical"
+            style={{
+              height: 32,
+              margin: 16,
+              background: "rgba(255, 255, 255, 0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              fontWeight: "bold",
+              cursor: "pointer", // Hiển thị hình bàn tay khi rê chuột
+              borderRadius: "6px", // Bo góc nhẹ cho logo nhìn mượt hơn
+              transition: "background 0.3s", // Hiệu ứng chuyển màu mượt mà
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.3)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)")}
+          >
+            {collapsed ? "PB" : "PHU BAI HRM"}
+          </div>
+        </Link>
 
         <Menu
           theme="dark"
           mode="inline"
           defaultSelectedKeys={[pathname]}
           items={[
-            // ... (Các mục menu giữ nguyên như cũ)
             {
               key: "catalog-management",
               icon: <AppstoreOutlined />,
@@ -218,7 +225,6 @@ export default function AdminLayout({
               icon: <TableOutlined />,
               label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
             },
-            // [Xuất Excel để import vào BRAVO]
             {
               key: "/bravo-data",
               icon: <DownloadOutlined />,
@@ -248,33 +254,50 @@ export default function AdminLayout({
                 <Link href="/evaluations/yearly">Tổng hợp năm</Link>
               ),
             },
-            // Chỉ hiện Menu Quản trị nếu là ADMIN
-            ...(session?.user?.role === "ADMIN"
+
+            // --- [SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY] ---
+            // Hiện Menu Quản trị nếu là ADMIN HOẶC HR_MANAGER
+            ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
               ? [
                 {
                   key: "admin-management",
                   icon: <SettingOutlined />,
                   label: "Quản trị",
                   children: [
-                    {
-                      key: "/admin/users",
-                      icon: <UserOutlined />,
-                      label: <Link href="/admin/users">Người dùng</Link>,
-                    },
+                    // Người dùng: Chỉ hiển thị cho ADMIN
+                    ...(session?.user?.role === "ADMIN"
+                      ? [
+                        {
+                          key: "/admin/users",
+                          icon: <UserOutlined />,
+                          label: <Link href="/admin/users">Người dùng</Link>,
+                        },
+                      ]
+                      : []),
+
+                    // Khóa sổ: Cả ADMIN và HR_MANAGER đều thấy
                     {
                       key: "/admin/lock-rules",
                       icon: <LockOutlined />,
                       label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
                     },
-                    {
-                      key: "/admin/employees/import",
-                      icon: <ImportOutlined />,
-                      label: <Link href="/admin/employees/import">Import</Link>,
-                    },
+
+                    // Import: Chỉ hiển thị cho ADMIN
+                    ...(session?.user?.role === "ADMIN"
+                      ? [
+                        {
+                          key: "/admin/employees/import",
+                          icon: <ImportOutlined />,
+                          label: <Link href="/admin/employees/import">Import</Link>,
+                        },
+                      ]
+                      : []),
                   ],
                 },
               ]
               : []),
+            // ------------------------------------
+
             {
               key: "/help",
               icon: <QuestionCircleOutlined />,
@@ -310,7 +333,7 @@ export default function AdminLayout({
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
             {/* Nút Backup (Chỉ Admin) */}
             {session?.user?.role === "ADMIN" && (
               <Tooltip title="Sao lưu Dữ liệu">
@@ -367,7 +390,7 @@ export default function AdminLayout({
           Quản lý nhân sự ©2026 Thiết kế bởi Nguyễn Thiện Minh Trí
         </Footer>
 
-        {/* --- [MỚI] MODAL ĐỔI MẬT KHẨU --- */}
+        {/* --- MODAL ĐỔI MẬT KHẨU --- */}
         <Modal
           title="Đổi mật khẩu cá nhân"
           open={isChangePassOpen}
@@ -394,7 +417,7 @@ export default function AdminLayout({
               label="Mật khẩu mới"
               rules={[
                 { required: true, message: "Vui lòng nhập mật khẩu mới" },
-                { min: 6, message: "Mật khẩu phải từ 6 ký tự" }
+                { min: 6, message: "Mật khẩu phải từ 6 ký tự" },
               ]}
             >
               <Input.Password placeholder="Nhập mật khẩu mới..." />
@@ -403,15 +426,15 @@ export default function AdminLayout({
             <Form.Item
               name="confirmPassword"
               label="Nhập lại mật khẩu mới"
-              dependencies={['newPassword']}
+              dependencies={["newPassword"]}
               rules={[
                 { required: true, message: "Vui lòng nhập lại mật khẩu" },
                 ({ getFieldValue }) => ({
                   validator(_, value) {
-                    if (!value || getFieldValue('newPassword') === value) {
+                    if (!value || getFieldValue("newPassword") === value) {
                       return Promise.resolve();
                     }
-                    return Promise.reject(new Error('Mật khẩu nhập lại không khớp!'));
+                    return Promise.reject(new Error("Mật khẩu nhập lại không khớp!"));
                   },
                 }),
               ]}
@@ -420,7 +443,6 @@ export default function AdminLayout({
             </Form.Item>
           </Form>
         </Modal>
-
       </Layout>
     </Layout>
   );
