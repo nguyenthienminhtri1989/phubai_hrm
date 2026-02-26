@@ -27,7 +27,6 @@ export async function GET(request: Request) {
 
     const whereCondition: any = {};
 
-    // Xử lý bộ lọc: Nếu không có tham số -> Lấy toàn bộ công ty
     if (factoryIdStr && factoryIdStr !== "null") {
       whereCondition.department = { factoryId: Number(factoryIdStr) };
     }
@@ -44,12 +43,11 @@ export async function GET(request: Request) {
       if (ids.length > 0) whereCondition.kipId = { in: ids };
     }
 
-    // Thời gian quét
     const startDate = dayjs(`${year}-${month}-01`).startOf("month").toDate();
     const endDate = dayjs(`${year}-${month}-01`).endOf("month").toDate();
     const daysInMonth = dayjs(`${year}-${month}-01`).daysInMonth();
 
-    // Lấy nhân viên kèm phòng ban và dữ liệu chấm công
+    // 1. Lấy dữ liệu (Prisma sẽ tự động gom nhóm nhân viên theo bộ phận nhờ orderBy)
     const employees = await prisma.employee.findMany({
       where: whereCondition,
       include: {
@@ -60,24 +58,23 @@ export async function GET(request: Request) {
         },
       },
       orderBy: [
-        { department: { factoryId: "asc" } },
-        { department: { name: "asc" } },
-        { code: "asc" },
+        { department: { factoryId: "asc" } }, // Sắp xếp theo nhà máy trước
+        { departmentId: "asc" }, // Cùng nhà máy thì gom theo Bộ phận
+        { code: "asc" }, // Cùng bộ phận thì xếp theo Mã NV
       ],
     });
 
     const flatData = [];
 
-    // Duyệt qua từng nhân viên
-    for (const emp of employees) {
-      // Duyệt qua từng ngày trong tháng
-      for (let d = 1; d <= daysInMonth; d++) {
-        // Cột 1: Định dạng DD/MM/YY
-        const currentDay = dayjs(`${year}-${month}-${d}`);
-        const dateStrExport = currentDay.format("DD/MM/YY");
-        const dateStrQuery = currentDay.format("YYYY-MM-DD");
+    // 2. [THAY ĐỔI QUAN TRỌNG Ở ĐÂY] Vòng lặp Ngày nằm bên ngoài
+    for (let d = 1; d <= daysInMonth; d++) {
+      const currentDay = dayjs(`${year}-${month}-${d}`);
+      const dateStrExport = currentDay.format("DD/MM/YY");
+      const dateStrQuery = currentDay.format("YYYY-MM-DD");
 
-        // Tìm xem ngày này có chấm công không
+      // Vòng lặp Nhân viên nằm bên trong (Lúc này danh sách NV đã được gom theo Bộ phận ở trên)
+      for (const emp of employees) {
+        // Tìm xem ngày này nhân viên có chấm công không
         const log = emp.timesheets.find(
           (t) => dayjs(t.date).format("YYYY-MM-DD") === dateStrQuery,
         );
@@ -92,16 +89,16 @@ export async function GET(request: Request) {
             log.attendanceCode.category;
         }
 
-        // Tạo 1 dòng dữ liệu
+        // Đẩy dòng dữ liệu vào mảng
         flatData.push({
-          ngay: dateStrExport, // 1
-          nvNhap: "H0030", // 2
-          boPhan: emp.department?.code || "", // 3
-          maCongThoiGian: "+", // 4
-          maNv: emp.code, // 5
-          tenNv: emp.fullName, // 6
-          maCong: attCode, // 7 (Trống nếu chưa chấm)
-          loaiCong: attCategory, // 8 (Trống nếu chưa chấm)
+          ngay: dateStrExport,
+          nvNhap: "H0030",
+          boPhan: emp.department?.code || "",
+          maCongThoiGian: "+",
+          maNv: emp.code,
+          tenNv: emp.fullName,
+          maCong: attCode,
+          loaiCong: attCategory,
         });
       }
     }
