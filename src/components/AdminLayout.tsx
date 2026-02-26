@@ -14,6 +14,7 @@ import {
   Modal,
   Form,
   Input,
+  ConfigProvider,
 } from "antd";
 import {
   ApartmentOutlined,
@@ -178,133 +179,145 @@ export default function AdminLayout({
           </div>
         </Link>
 
-        <Menu
-          theme="dark"
-          mode="inline"
-          defaultSelectedKeys={[pathname]}
-          items={[
-            {
-              key: "catalog-management",
-              icon: <AppstoreOutlined />,
-              label: "Danh mục",
-              children: [
-                {
-                  key: "/factories",
-                  icon: <BankOutlined />,
-                  label: <Link href="/factories">Nhà máy</Link>,
-                },
-                {
-                  key: "/departments",
-                  icon: <ApartmentOutlined />,
-                  label: <Link href="/departments">Phòng ban</Link>,
-                },
-                {
-                  key: "/employees",
-                  icon: <TeamOutlined />,
-                  label: <Link href="/employees">Nhân viên</Link>,
-                },
-                {
-                  key: "/attendance-codes",
-                  icon: <UnorderedListOutlined />,
-                  label: <Link href="/attendance-codes">Ký hiệu</Link>,
-                },
-              ],
+        <ConfigProvider
+          theme={{
+            components: {
+              Menu: {
+                darkItemHoverBg: "#1677ff", // Màu nền xanh sáng khi rê chuột
+                darkItemHoverColor: "#ffffff", // Chữ màu trắng khi rê chuột
+                darkItemSelectedBg: "#003a8c", // Màu nền đậm hơn cho menu đang được chọn (Active)
+              },
             },
-            {
-              key: "/timesheets/daily",
-              icon: <FormOutlined />,
-              label: <Link href="/timesheets/daily">Chấm công</Link>,
-            },
-            {
-              key: "/evaluations/monthly",
-              icon: <FormOutlined />,
-              label: <Link href="/evaluations/monthly">Xếp loại A,B,C</Link>,
-            },
-            {
-              key: "/timesheets/monthly",
-              icon: <TableOutlined />,
-              label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
-            },
-            {
-              key: "/bravo-data",
-              icon: <DownloadOutlined />,
-              label: <Link href="/bravo-data">Xuất Excel BRAVO</Link>,
-            },
-            {
-              key: "/overtime",
-              icon: <FieldTimeOutlined />,
-              label: <Link href="/overtime">Làm thêm giờ</Link>,
-            },
-            {
-              key: "/dashboard",
-              icon: <DashboardOutlined />,
-              label: <Link href="/dashboard">Tổng quan</Link>,
-            },
-            {
-              key: "/dashboard/departments",
-              icon: <UnorderedListOutlined />,
-              label: (
-                <Link href="/dashboard/departments">Tình hình lao động</Link>
-              ),
-            },
-            {
-              key: "/evaluations/yearly",
-              icon: <BarChartOutlined />,
-              label: (
-                <Link href="/evaluations/yearly">Tổng hợp năm</Link>
-              ),
-            },
+          }}
+        >
+          <Menu
+            theme="dark"
+            mode="inline"
+            defaultSelectedKeys={[pathname]}
+            items={[
+              {
+                key: "catalog-management",
+                icon: <AppstoreOutlined />,
+                label: "Danh mục",
+                children: [
+                  {
+                    key: "/factories",
+                    icon: <BankOutlined />,
+                    label: <Link href="/factories">Nhà máy</Link>,
+                  },
+                  {
+                    key: "/departments",
+                    icon: <ApartmentOutlined />,
+                    label: <Link href="/departments">Phòng ban</Link>,
+                  },
+                  {
+                    key: "/employees",
+                    icon: <TeamOutlined />,
+                    label: <Link href="/employees">Nhân viên</Link>,
+                  },
+                  {
+                    key: "/attendance-codes",
+                    icon: <UnorderedListOutlined />,
+                    label: <Link href="/attendance-codes">Ký hiệu</Link>,
+                  },
+                ],
+              },
+              {
+                key: "/timesheets/daily",
+                icon: <FormOutlined />,
+                label: <Link href="/timesheets/daily">Chấm công</Link>,
+              },
+              {
+                key: "/evaluations/monthly",
+                icon: <FormOutlined />,
+                label: <Link href="/evaluations/monthly">Xếp loại A,B,C</Link>,
+              },
+              {
+                key: "/timesheets/monthly",
+                icon: <TableOutlined />,
+                label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
+              },
+              {
+                key: "/bravo-data",
+                icon: <DownloadOutlined />,
+                label: <Link href="/bravo-data">Xuất Excel BRAVO</Link>,
+              },
+              {
+                key: "/overtime",
+                icon: <FieldTimeOutlined />,
+                label: <Link href="/overtime">Làm thêm giờ</Link>,
+              },
+              {
+                key: "/dashboard",
+                icon: <DashboardOutlined />,
+                label: <Link href="/dashboard">Tổng quan</Link>,
+              },
+              {
+                key: "/dashboard/departments",
+                icon: <UnorderedListOutlined />,
+                label: (
+                  <Link href="/dashboard/departments">Tình hình lao động</Link>
+                ),
+              },
+              {
+                key: "/evaluations/yearly",
+                icon: <BarChartOutlined />,
+                label: (
+                  <Link href="/evaluations/yearly">Tổng hợp năm</Link>
+                ),
+              },
 
-            // --- [SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY] ---
-            // Hiện Menu Quản trị nếu là ADMIN HOẶC HR_MANAGER
-            ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
-              ? [
-                {
-                  key: "admin-management",
-                  icon: <SettingOutlined />,
-                  label: "Quản trị",
-                  children: [
-                    // Người dùng: Chỉ hiển thị cho ADMIN
-                    ...(session?.user?.role === "ADMIN"
-                      ? [
-                        {
-                          key: "/admin/users",
-                          icon: <UserOutlined />,
-                          label: <Link href="/admin/users">Người dùng</Link>,
-                        },
-                      ]
-                      : []),
+              // --- [SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY] ---
+              // Hiện Menu Quản trị nếu là ADMIN HOẶC HR_MANAGER
+              ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
+                ? [
+                  {
+                    key: "admin-management",
+                    icon: <SettingOutlined />,
+                    label: "Quản trị",
+                    children: [
+                      // Người dùng: Chỉ hiển thị cho ADMIN
+                      ...(session?.user?.role === "ADMIN"
+                        ? [
+                          {
+                            key: "/admin/users",
+                            icon: <UserOutlined />,
+                            label: <Link href="/admin/users">Người dùng</Link>,
+                          },
+                        ]
+                        : []),
 
-                    // Khóa sổ: Cả ADMIN và HR_MANAGER đều thấy
-                    {
-                      key: "/admin/lock-rules",
-                      icon: <LockOutlined />,
-                      label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
-                    },
+                      // Khóa sổ: Cả ADMIN và HR_MANAGER đều thấy
+                      {
+                        key: "/admin/lock-rules",
+                        icon: <LockOutlined />,
+                        label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
+                      },
 
-                    // Import: Chỉ hiển thị cho ADMIN
-                    ...(session?.user?.role === "ADMIN"
-                      ? [
-                        {
-                          key: "/admin/employees/import",
-                          icon: <ImportOutlined />,
-                          label: <Link href="/admin/employees/import">Import</Link>,
-                        },
-                      ]
-                      : []),
-                  ],
-                },
-              ]
-              : []),
-            // ------------------------------------
+                      // Import: Chỉ hiển thị cho ADMIN
+                      ...(session?.user?.role === "ADMIN"
+                        ? [
+                          {
+                            key: "/admin/employees/import",
+                            icon: <ImportOutlined />,
+                            label: <Link href="/admin/employees/import">Import</Link>,
+                          },
+                        ]
+                        : []),
+                    ],
+                  },
+                ]
+                : []),
+              // ------------------------------------
 
-            {
-              key: "/help",
-              icon: <QuestionCircleOutlined />,
-              label: <Link href="/help">Hướng dẫn</Link>,
-            },
-          ]}
-        />
+              {
+                key: "/help",
+                icon: <QuestionCircleOutlined />,
+                label: <Link href="/help">Hướng dẫn</Link>,
+              },
+            ]}
+          />
+        </ConfigProvider>
       </Sider>
 
       <Layout>
@@ -444,6 +457,6 @@ export default function AdminLayout({
           </Form>
         </Modal>
       </Layout>
-    </Layout>
+    </Layout >
   );
 }
