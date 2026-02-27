@@ -298,6 +298,7 @@ export default function DailyTimesheetPage() {
                                 <Button size="small" onClick={() => setAllStatus("+")}>Đi làm (+)</Button>
                                 <Button size="small" onClick={() => setAllStatus("XD")}>Làm ca đêm (XD)</Button>
                                 <Button size="small" onClick={() => setAllStatus("ĐC")}>Đảo ca (ĐC)</Button>
+                                <Button size="small" onClick={() => setAllStatus("CN")}>Nghỉ Chủ Nhật (CN)</Button>
                                 <Button size="small" onClick={() => setAllStatus("L")}>Nghỉ lễ (L)</Button>
                                 <Button size="small" onClick={() => setAllStatus("F")}>Nghỉ F (F)</Button>
                             </Space>

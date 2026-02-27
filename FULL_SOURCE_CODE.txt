@@ -1170,29 +1170,27 @@ export default function UserManagementPage() {
 ================================================================================
 FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\admin\lock-rules\route.ts
 ================================================================================
-// API này giúp Admin xem danh sách, thêm luật mới, và xóa luật (mở khóa).
-
-// src/app/api/admin/lock-rules/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth"; // Hoặc đường dẫn auth của bạn
+import { auth } from "@/auth";
 
 // 1. LẤY DANH SÁCH LUẬT
 export async function GET(request: Request) {
   try {
     const session = await auth();
-    // Chỉ Admin hoặc HR Manager mới được xem/sửa
+    // Đã có sẵn ADMIN và HR_MANAGER
     if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
     }
 
     const rules = await prisma.lockRule.findMany({
       orderBy: { createdAt: "desc" },
-      include: { factory: true }, // Lấy tên nhà máy để hiển thị
+      include: { factory: true },
     });
 
     return NextResponse.json(rules);
   } catch (error) {
+    console.error(error);
     return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }
@@ -1201,11 +1199,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await auth();
-    if (session?.user?.role !== "ADMIN") {
-      // Chỉ Admin mới được tạo khóa
+    // [ĐÃ SỬA] Cho phép cả HR_MANAGER
+    if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json(
-        { error: "Chỉ Admin mới được khóa sổ" },
-        { status: 403 }
+        { error: "Chỉ Admin hoặc HR Manager mới được khóa sổ" },
+        { status: 403 },
       );
     }
 
@@ -1215,17 +1213,16 @@ export async function POST(request: Request) {
     if (!fromDate || !toDate) {
       return NextResponse.json(
         { error: "Thiếu thời gian khóa" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // Convert sang Date object (lấy đầu ngày 00:00:00)
     const from = new Date(new Date(fromDate).setHours(0, 0, 0, 0));
-    const to = new Date(new Date(toDate).setHours(23, 59, 59, 999)); // Cuối ngày
+    const to = new Date(new Date(toDate).setHours(23, 59, 59, 999));
 
     await prisma.lockRule.create({
       data: {
-        factoryId: factoryId ? Number(factoryId) : null, // null = Toàn công ty
+        factoryId: factoryId ? Number(factoryId) : null,
         fromDate: from,
         toDate: to,
         reason: reason,
@@ -1243,7 +1240,8 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const session = await auth();
-    if (session?.user?.role !== "ADMIN") {
+    // [ĐÃ SỬA] Cho phép cả HR_MANAGER
+    if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
     }
 
@@ -1258,28 +1256,27 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ message: "Đã mở khóa (xóa luật) thành công!" });
   } catch (error) {
+    console.error(error);
     return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }
 
-// ... (Các hàm GET, POST, DELETE giữ nguyên)
-
-// 4. [MỚI] CẬP NHẬT LUẬT (SỬA)
+// 4. CẬP NHẬT LUẬT (SỬA)
 export async function PUT(request: Request) {
   try {
     const session = await auth();
-    if (session?.user?.role !== "ADMIN") {
+    // [ĐÃ SỬA] Cho phép cả HR_MANAGER
+    if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
     }
 
     const body = await request.json();
-    const { id, fromDate, toDate, reason } = body; // Không cho sửa factoryId để tránh phức tạp, hoặc cho sửa tùy bạn
+    const { id, fromDate, toDate, reason } = body;
 
     if (!id || !fromDate || !toDate) {
       return NextResponse.json({ error: "Thiếu thông tin" }, { status: 400 });
     }
 
-    // Chuẩn hóa thời gian (Đầu ngày - Cuối ngày)
     const from = new Date(new Date(fromDate).setHours(0, 0, 0, 0));
     const to = new Date(new Date(toDate).setHours(23, 59, 59, 999));
 
@@ -1432,6 +1429,125 @@ import { handlers } from "@/auth"; // Import từ file auth.ts ở bước 2
 export const { GET, POST } = handlers;
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\auth\[...nextauth]\route.ts ---
+
+
+================================================================================
+FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\bravo-data\bravo\route.ts
+================================================================================
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import dayjs from "dayjs";
+
+// Ánh xạ Category sang Tiếng Việt
+const CATEGORY_MAP: Record<string, string> = {
+  TIME_WORK: "Lương thời gian",
+  PAID_LEAVE: "Nghỉ hưởng 100% lương",
+  SICK: "Chế độ Ốm / Tai nạn",
+  MATERNITY: "Chế độ Thai sản",
+  UNPAID: "Nghỉ không lương",
+  AWOL: "Nghỉ vô lý do",
+};
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const month = parseInt(searchParams.get("month") || "");
+    const year = parseInt(searchParams.get("year") || "");
+    const factoryIdStr = searchParams.get("factoryId");
+    const departmentIdStr = searchParams.get("departmentId");
+    const kipIdsStr = searchParams.get("kipIds");
+
+    if (!month || !year) {
+      return NextResponse.json({ error: "Thiếu tháng/năm" }, { status: 400 });
+    }
+
+    const whereCondition: any = {};
+
+    if (factoryIdStr && factoryIdStr !== "null") {
+      whereCondition.department = { factoryId: Number(factoryIdStr) };
+    }
+    if (
+      departmentIdStr &&
+      departmentIdStr !== "null" &&
+      departmentIdStr !== ""
+    ) {
+      const ids = departmentIdStr.split(",").map(Number);
+      if (ids.length > 0) whereCondition.departmentId = { in: ids };
+    }
+    if (kipIdsStr && kipIdsStr !== "null" && kipIdsStr !== "") {
+      const ids = kipIdsStr.split(",").map(Number);
+      if (ids.length > 0) whereCondition.kipId = { in: ids };
+    }
+
+    const startDate = dayjs(`${year}-${month}-01`).startOf("month").toDate();
+    const endDate = dayjs(`${year}-${month}-01`).endOf("month").toDate();
+    const daysInMonth = dayjs(`${year}-${month}-01`).daysInMonth();
+
+    // 1. Lấy dữ liệu (Prisma sẽ tự động gom nhóm nhân viên theo bộ phận nhờ orderBy)
+    const employees = await prisma.employee.findMany({
+      where: whereCondition,
+      include: {
+        department: true,
+        timesheets: {
+          where: { date: { gte: startDate, lte: endDate } },
+          include: { attendanceCode: true },
+        },
+      },
+      orderBy: [
+        { department: { factoryId: "asc" } }, // Sắp xếp theo nhà máy trước
+        { departmentId: "asc" }, // Cùng nhà máy thì gom theo Bộ phận
+        { code: "asc" }, // Cùng bộ phận thì xếp theo Mã NV
+      ],
+    });
+
+    const flatData = [];
+
+    // 2. [THAY ĐỔI QUAN TRỌNG Ở ĐÂY] Vòng lặp Ngày nằm bên ngoài
+    for (let d = 1; d <= daysInMonth; d++) {
+      const currentDay = dayjs(`${year}-${month}-${d}`);
+      const dateStrExport = currentDay.format("DD/MM/YY");
+      const dateStrQuery = currentDay.format("YYYY-MM-DD");
+
+      // Vòng lặp Nhân viên nằm bên trong (Lúc này danh sách NV đã được gom theo Bộ phận ở trên)
+      for (const emp of employees) {
+        // Tìm xem ngày này nhân viên có chấm công không
+        const log = emp.timesheets.find(
+          (t) => dayjs(t.date).format("YYYY-MM-DD") === dateStrQuery,
+        );
+
+        let attCode = "";
+        let attCategory = "";
+
+        if (log && log.attendanceCode) {
+          attCode = log.attendanceCode.code;
+          attCategory =
+            CATEGORY_MAP[log.attendanceCode.category] ||
+            log.attendanceCode.category;
+        }
+
+        // Đẩy dòng dữ liệu vào mảng
+        flatData.push({
+          ngay: dateStrExport,
+          nvNhap: "H0030",
+          boPhan: emp.department?.code || "",
+          maCongThoiGian: "+",
+          maNv: emp.code,
+          tenNv: emp.fullName,
+          maCong: attCode,
+          loaiCong: attCategory,
+        });
+      }
+    }
+
+    return NextResponse.json(flatData);
+  } catch (error) {
+    console.error("Lỗi Export BRAVO:", error);
+    return NextResponse.json({ error: "Lỗi Server" }, { status: 500 });
+  }
+}
+
+
+--- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\bravo-data\bravo\route.ts ---
 
 
 ================================================================================
@@ -2930,7 +3046,7 @@ export async function GET(request: Request) {
     if (!dateStr) {
       return NextResponse.json(
         { error: "Thiếu ngày chấm công" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -3021,7 +3137,7 @@ export async function POST(request: Request) {
     if (!date || !records || records.length === 0) {
       return NextResponse.json(
         { error: "Dữ liệu không hợp lệ hoặc danh sách rỗng" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -3058,21 +3174,30 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error: `ĐÃ KHÓA SỔ! Dữ liệu bị khóa từ ${activeLock.fromDate.toLocaleDateString(
-              "vi-VN"
+              "vi-VN",
             )} đến ${activeLock.toDate.toLocaleDateString("vi-VN")} (${
               activeLock.reason || "Không có lý do"
             }).`,
           },
-          { status: 403 }
+          { status: 403 },
         );
       }
     }
     // --- [KẾT THÚC] LOGIC KIỂM TRA KHÓA SỔ ---
 
-    // Thực hiện lưu
-    await prisma.$transaction(
-      records.map((rec: any) =>
-        prisma.timesheet.upsert({
+    // Thực hiện lưu: Nhận toàn bộ danh sách, nếu có mã thì Upsert, nếu để trống thì Delete
+    const operations = records.map((rec: any) => {
+      // Nếu người dùng xóa trắng (null hoặc undefined)
+      if (!rec.attendanceCodeId) {
+        return prisma.timesheet.deleteMany({
+          where: {
+            employeeId: rec.employeeId,
+            date: targetDate,
+          },
+        });
+      } else {
+        // Nếu có mã chấm công thì Thêm mới hoặc Cập nhật (Upsert)
+        return prisma.timesheet.upsert({
           where: {
             employeeId_date: {
               employeeId: rec.employeeId,
@@ -3089,9 +3214,12 @@ export async function POST(request: Request) {
             attendanceCodeId: rec.attendanceCodeId,
             note: rec.note,
           },
-        })
-      )
-    );
+        });
+      }
+    });
+
+    // Chạy tất cả các thao tác (Thêm/Sửa/Xóa) trong 1 Transaction để đảm bảo an toàn
+    await prisma.$transaction(operations);
 
     return NextResponse.json({ message: "Đã lưu thành công!" });
   } catch (error) {
@@ -3872,6 +4000,173 @@ export default function AttendanceCodePage() {
 
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\attendance-codes\page.tsx ---
+
+
+================================================================================
+FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\bravo-data\page.tsx
+================================================================================
+"use client";
+
+import React, { useState } from "react";
+import AdminLayout from "@/components/AdminLayout";
+import CommonFilter, { FilterResult } from "@/components/CommonFilter";
+import { Button, Card, Typography, message, Table, Alert } from "antd";
+import { DownloadOutlined, SyncOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+
+const { Title, Text } = Typography;
+
+export default function ExportBravoPage() {
+    const [loading, setLoading] = useState(false);
+    const [currentFilter, setCurrentFilter] = useState<FilterResult | null>(null);
+
+    // Lưu preview data để user yên tâm là có dữ liệu
+    const [previewData, setPreviewData] = useState<any[]>([]);
+
+    // Bắt sự kiện khi đổi bộ lọc
+    const handleFilterChange = (result: FilterResult) => {
+        setCurrentFilter(result);
+        setPreviewData([]); // Clear preview khi đổi điều kiện
+    };
+
+    // Hàm gọi API và Tạo file Excel
+    const handleExport = async () => {
+        if (!currentFilter) return;
+
+        setLoading(true);
+        message.loading({ content: "Đang tổng hợp dữ liệu, vui lòng đợi...", key: "export" });
+
+        try {
+            const month = currentFilter.date.month() + 1;
+            const year = currentFilter.date.year();
+
+            let url = `/api/bravo-data/bravo?month=${month}&year=${year}`;
+
+            // Nếu có chọn phòng ban / nhà máy thì thêm vào URL (Không chọn = Xuất tất cả)
+            if (currentFilter.factoryId) url += `&factoryId=${currentFilter.factoryId}`;
+            if (currentFilter.realDepartmentIds.length > 0) {
+                url += `&departmentId=${currentFilter.realDepartmentIds.join(",")}`;
+            }
+            if (currentFilter.selectedKipIds.length > 0) {
+                url += `&kipIds=${currentFilter.selectedKipIds.join(",")}`;
+            }
+
+            // 1. Fetch Dữ liệu phẳng
+            const res = await fetch(url);
+            const data = await res.json();
+
+            if (data.error) throw new Error(data.error);
+            if (data.length === 0) {
+                message.warning({ content: "Không có dữ liệu trong khoảng thời gian này.", key: "export" });
+                setLoading(false);
+                return;
+            }
+
+            // Lưu 10 dòng đầu để Preview
+            setPreviewData(data.slice(0, 10));
+
+            // 2. Tạo File Excel
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet("DuLieuBravo");
+
+            // Khai báo cột Header chính xác
+            worksheet.columns = [
+                { header: "Ngày", key: "ngay", width: 12 },
+                { header: "Nhân viên nhập công", key: "nvNhap", width: 20 },
+                { header: "Bộ phận", key: "boPhan", width: 15 },
+                { header: "Mã công thời gian", key: "maCongThoiGian", width: 18 },
+                { header: "Mã nhân viên", key: "maNv", width: 15 },
+                { header: "Tên nhân viên", key: "tenNv", width: 25 },
+                { header: "Mã công", key: "maCong", width: 12 },
+                { header: "Loại công", key: "loaiCong", width: 25 },
+            ];
+
+            // Đẩy dữ liệu vào Sheet
+            worksheet.addRows(data);
+
+            // (Tùy chọn) Định dạng nhẹ cho Header (In đậm)
+            worksheet.getRow(1).font = { bold: true };
+
+            // 3. Tải file về
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            saveAs(blob, `DuLieu_BRAVO_T${month}_${year}.xlsx`);
+
+            message.success({ content: `Xuất thành công ${data.length} dòng dữ liệu!`, key: "export" });
+
+        } catch (error: any) {
+            console.error(error);
+            message.error({ content: "Lỗi kết xuất: " + error.message, key: "export" });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Cột cho bảng Preview UI
+    const columns = [
+        { title: "Ngày", dataIndex: "ngay" },
+        { title: "NV Nhập", dataIndex: "nvNhap" },
+        { title: "Mã Bộ phận", dataIndex: "boPhan" },
+        { title: "Mã công TG", dataIndex: "maCongThoiGian" },
+        { title: "Mã NV", dataIndex: "maNv" },
+        { title: "Tên NV", dataIndex: "tenNv" },
+        { title: "Mã công", dataIndex: "maCong" },
+        { title: "Loại công", dataIndex: "loaiCong" },
+    ];
+
+    return (
+        <AdminLayout>
+            <div style={{ marginBottom: 24 }}>
+                <Title level={3} style={{ margin: 0 }}>Kết xuất dữ liệu cho BRAVO</Title>
+                <Text type="secondary">Xuất dữ liệu chấm công theo định dạng chuẩn để Import vào phần mềm BRAVO.</Text>
+            </div>
+
+            <CommonFilter
+                dateMode="month"
+                onFilterChange={handleFilterChange}
+            />
+
+            <Card style={{ marginTop: 16 }}>
+                <Alert
+                    message="Lưu ý quan trọng"
+                    description="Nếu không chọn Nhà máy / Phòng ban ở bộ lọc trên, hệ thống sẽ tự động quét và kết xuất dữ liệu của TOÀN BỘ CÔNG TY. Quá trình này có thể mất vài giây do dữ liệu lớn."
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 20 }}
+                />
+
+                <Button
+                    type="primary"
+                    size="large"
+                    icon={loading ? <SyncOutlined spin /> : <DownloadOutlined />}
+                    onClick={handleExport}
+                    loading={loading}
+                    style={{ background: "#217346", width: 250, height: 50, fontSize: 16 }}
+                >
+                    BẮT ĐẦU KẾT XUẤT EXCEL
+                </Button>
+            </Card>
+
+            {/* Hiển thị bảng Preview nếu có */}
+            {previewData.length > 0 && (
+                <Card title="Dữ liệu xem trước (10 dòng đầu tiên)" size="small" style={{ marginTop: 16 }}>
+                    <Table
+                        dataSource={previewData}
+                        columns={columns}
+                        pagination={false}
+                        size="small"
+                        rowKey={(r) => r.maNv + r.ngay}
+                    />
+                </Card>
+            )}
+
+        </AdminLayout>
+    );
+}
+
+--- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\bravo-data\page.tsx ---
 
 
 ================================================================================
@@ -6639,83 +6934,108 @@ FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\page.tsx
 // src/app/page.tsx
 "use client";
 import AdminLayout from "@/components/AdminLayout";
-import Image from "next/image";
+import { useSession } from "next-auth/react";
+import { Typography, Space } from "antd";
+import {
+  CheckCircleTwoTone,
+  SafetyCertificateTwoTone,
+  DashboardTwoTone
+} from "@ant-design/icons";
+
+const { Title, Text } = Typography;
 
 export default function Home() {
+  const { data: session } = useSession();
+  const userName = session?.user?.fullName || session?.user?.name || session?.user?.username || "bạn";
+
   return (
     <AdminLayout>
-      {/* Container bao ngoài: Cần position relative để chứa ảnh fill */}
       <div
         style={{
-          position: "relative",
           width: "100%",
-          minHeight: "85vh", // Chiều cao tối thiểu (85% màn hình)
+          minHeight: "85vh",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          borderRadius: "8px",
-          overflow: "hidden", // Bo góc để ảnh không bị tràn ra ngoài
+          // Nền gradient xanh nhạt sang trắng (rất dịu mắt và chuyên nghiệp)
+          background: "linear-gradient(135deg, #f0f5ff 0%, #ffffff 100%)",
+          borderRadius: "16px",
+          padding: "20px",
+          border: "1px solid #e6f0ff",
         }}
       >
-        {/* --- 1. ẢNH NỀN --- */}
-        <Image
-          src="/images/phubai_company.jpg" // <-- Thay tên file ảnh của bạn ở đây
-          alt="Phu Bai Background"
-          fill // Tự động tràn đầy khung cha
-          style={{
-            objectFit: "cover", // Giữ tỷ lệ ảnh, cắt bớt phần thừa
-            zIndex: 0, // Nằm dưới cùng
-          }}
-          priority // Tải ngay lập tức
-          quality={100}
-        />
-
-        {/* --- 2. LỚP PHỦ MỜ (OVERLAY) --- */}
-        {/* Lớp này giúp làm mờ ảnh nền đi một chút để chữ dễ đọc hơn */}
+        {/* KHỐI NỘI DUNG CHÍNH (White Card) */}
         <div
           style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(255, 255, 255, 0.4)", // Màu trắng mờ 60% (đổi thành 0,0,0,0.6 nếu muốn nền tối)
-            zIndex: 1,
-          }}
-        ></div>
-
-        {/* --- 3. NỘI DUNG CHỮ --- */}
-        <div
-          style={{
-            position: "relative",
-            zIndex: 2,
+            background: "#ffffff",
+            padding: "50px 60px",
+            borderRadius: "24px",
+            boxShadow: "0 20px 40px rgba(0, 58, 140, 0.08)", // Đổ bóng xanh nhạt
             textAlign: "center",
-            padding: "20px",
+            maxWidth: "800px",
+            width: "100%",
+            border: "1px solid #f0f0f0",
           }}
         >
-          <h1
-            className="text-3xl font-bold"
+          {/* LỜI CHÀO CÁ NHÂN */}
+          <div
             style={{
-              marginBottom: "20px",
-              color: "#003a8c", // Màu xanh đậm cho nổi bật
-              textTransform: "uppercase",
-              textShadow: "1px 1px 2px rgba(255,255,255,0.8)", // Đổ bóng nhẹ cho chữ
+              display: "inline-block",
+              padding: "8px 24px",
+              background: "#e6f4ff", // Nền xanh ant design
+              color: "#1677ff",
+              borderRadius: "50px",
+              fontWeight: 600,
+              fontSize: "16px",
+              marginBottom: "24px",
+              border: "1px solid #91caff",
             }}
           >
-            Chào mừng đến với hệ thống quản lý nhân sự <br /> Công ty CP Sợi Phú
-            Bài
+            👋 Xin chào, <span style={{ color: "#d9363e", fontWeight: "bold" }}>{userName}</span>!
+          </div>
+
+          {/* TIÊU ĐỀ CHÍNH */}
+          <h1
+            style={{
+              fontSize: "32px",
+              fontWeight: 800,
+              color: "#003a8c",
+              marginBottom: "16px",
+              lineHeight: 1.4,
+              textTransform: "uppercase",
+            }}
+          >
+            Hệ thống Quản lý Nhân sự <br />
+            <span style={{ color: "#1677ff", fontSize: "38px" }}>Công ty CP Sợi Phú Bài</span>
           </h1>
 
-          <p style={{ fontSize: "20px", fontWeight: 500, color: "#333" }}>
-            Vui lòng chọn chức năng ở menu bên trái để bắt đầu làm việc.
+          {/* LỜI DẪN */}
+          <p style={{ fontSize: "18px", color: "#595959", marginBottom: "40px" }}>
+            Chúc bạn một ngày làm việc hiệu quả. Vui lòng chọn các chức năng trên thanh menu bên trái để bắt đầu.
           </p>
+
+          {/* CÁC ICON TRANG TRÍ (Hiển thị tính năng hệ thống) */}
+          <div style={{ display: "flex", justifyContent: "center", gap: "50px", marginTop: "20px" }}>
+            <div style={{ textAlign: "center" }}>
+              <DashboardTwoTone twoToneColor="#1677ff" style={{ fontSize: "36px", marginBottom: "12px" }} />
+              <div style={{ color: "#8c8c8c", fontSize: "14px", fontWeight: 500 }}>Trực quan</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <CheckCircleTwoTone twoToneColor="#52c41a" style={{ fontSize: "36px", marginBottom: "12px" }} />
+              <div style={{ color: "#8c8c8c", fontSize: "14px", fontWeight: 500 }}>Chính xác</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SafetyCertificateTwoTone twoToneColor="#faad14" style={{ fontSize: "36px", marginBottom: "12px" }} />
+              <div style={{ color: "#8c8c8c", fontSize: "14px", fontWeight: 500 }}>Bảo mật</div>
+            </div>
+          </div>
+
         </div>
       </div>
     </AdminLayout>
   );
 }
-
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\page.tsx ---
 
@@ -6844,18 +7164,17 @@ export default function DailyTimesheetPage() {
     const handleSave = async () => {
         if (!currentFilter || employees.length === 0) return;
 
-        const validRecords = employees.filter(
-            (e) => e.attendanceCodeId !== null && e.attendanceCodeId !== undefined
-        );
-
-        if (validRecords.length === 0) {
-            message.warning("Chưa có dữ liệu chấm công để lưu!");
-            return;
-        }
+        // [SỬA ĐỔI] KHÔNG dùng .filter loại bỏ null nữa. 
+        // Gửi toàn bộ danh sách hiển thị trên màn hình lên Server.
+        const recordsToSend = employees.map((e) => ({
+            employeeId: e.employeeId,
+            attendanceCodeId: e.attendanceCodeId || null, // Nếu bị xóa trắng thì gửi lên là null
+            note: e.note || "",
+        }));
 
         setSaving(true);
         try {
-            // Logic xác định ID phòng ban để check khóa sổ:
+            // Logic xác định ID phòng ban để check khóa sổ
             const payloadDeptId = currentFilter.realDepartmentIds.length === 1
                 ? currentFilter.realDepartmentIds[0]
                 : null;
@@ -6863,11 +7182,7 @@ export default function DailyTimesheetPage() {
             const payload = {
                 date: currentFilter.date.format("YYYY-MM-DD"),
                 departmentId: payloadDeptId,
-                records: validRecords.map((e) => ({
-                    employeeId: e.employeeId,
-                    attendanceCodeId: e.attendanceCodeId,
-                    note: e.note,
-                })),
+                records: recordsToSend,
             };
 
             const res = await fetch("/api/timesheets/daily", {
@@ -6877,7 +7192,10 @@ export default function DailyTimesheetPage() {
             });
 
             if (res.ok) {
-                message.success(`Lưu thành công ${validRecords.length} nhân viên!`);
+                // Đếm những người thực sự được chấm công để hiện thông báo cho đẹp
+                const validCount = recordsToSend.filter(r => r.attendanceCodeId !== null).length;
+                message.success(`Đã lưu bảng công! (Có ${validCount} người được chấm)`);
+
                 fetchTimesheetData(currentFilter); // Tải lại để cập nhật updatedAt
             } else {
                 const err = await res.json();
@@ -7807,6 +8125,7 @@ import {
   Modal,
   Form,
   Input,
+  ConfigProvider,
 } from "antd";
 import {
   ApartmentOutlined,
@@ -7829,7 +8148,8 @@ import {
   SettingOutlined,
   FieldTimeOutlined,
   KeyOutlined,
-  BarChartOutlined, // [MỚI] Icon đổi mật khẩu
+  BarChartOutlined,
+  DownloadOutlined,
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -7847,7 +8167,7 @@ export default function AdminLayout({
   const pathname = usePathname();
   const { data: session } = useSession();
 
-  // --- [MỚI] STATE CHO ĐỔI MẬT KHẨU ---
+  // --- STATE CHO ĐỔI MẬT KHẨU ---
   const [isChangePassOpen, setIsChangePassOpen] = useState(false);
   const [passForm] = Form.useForm();
   const [passLoading, setPassLoading] = useState(false);
@@ -7884,7 +8204,7 @@ export default function AdminLayout({
     }
   };
 
-  // 3. [MỚI] Hàm xử lý Đổi mật khẩu
+  // 3. Hàm xử lý Đổi mật khẩu
   const handleChangePassword = async (values: any) => {
     setPassLoading(true);
     try {
@@ -7910,7 +8230,7 @@ export default function AdminLayout({
     }
   };
 
-  // 4. Menu User xổ xuống (Đã thêm nút Đổi mật khẩu)
+  // 4. Menu User xổ xuống
   const userMenuItems = [
     {
       key: "info",
@@ -7931,7 +8251,7 @@ export default function AdminLayout({
       key: "change-pass",
       icon: <KeyOutlined />,
       label: "Đổi mật khẩu",
-      onClick: () => setIsChangePassOpen(true), // Mở modal
+      onClick: () => setIsChangePassOpen(true),
     },
     { type: "divider" as const },
     {
@@ -7946,128 +8266,169 @@ export default function AdminLayout({
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <Sider trigger={null} collapsible collapsed={collapsed}>
-        <div
-          className="demo-logo-vertical"
-          style={{
-            height: 32,
-            margin: 16,
-            background: "rgba(255, 255, 255, 0.2)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            fontWeight: "bold",
+        {/* --- [SỬA ĐỔI] BỌC LINK QUANH LOGO ĐỂ VỀ TRANG CHỦ --- */}
+        <Link href="/">
+          <div
+            className="demo-logo-vertical"
+            style={{
+              height: 32,
+              margin: 16,
+              background: "rgba(255, 255, 255, 0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              fontWeight: "bold",
+              cursor: "pointer", // Hiển thị hình bàn tay khi rê chuột
+              borderRadius: "6px", // Bo góc nhẹ cho logo nhìn mượt hơn
+              transition: "background 0.3s", // Hiệu ứng chuyển màu mượt mà
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.3)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)")}
+          >
+            {collapsed ? "PB" : "PHU BAI HRM"}
+          </div>
+        </Link>
+
+        <ConfigProvider
+          theme={{
+            components: {
+              Menu: {
+                darkItemHoverBg: "#1677ff", // Màu nền xanh sáng khi rê chuột
+                darkItemHoverColor: "#ffffff", // Chữ màu trắng khi rê chuột
+                darkItemSelectedBg: "#003a8c", // Màu nền đậm hơn cho menu đang được chọn (Active)
+              },
+            },
           }}
         >
-          {collapsed ? "PB" : "PHU BAI HRM"}
-        </div>
+          <Menu
+            theme="dark"
+            mode="inline"
+            defaultSelectedKeys={[pathname]}
+            items={[
+              {
+                key: "catalog-management",
+                icon: <AppstoreOutlined />,
+                label: "Danh mục",
+                children: [
+                  {
+                    key: "/factories",
+                    icon: <BankOutlined />,
+                    label: <Link href="/factories">Nhà máy</Link>,
+                  },
+                  {
+                    key: "/departments",
+                    icon: <ApartmentOutlined />,
+                    label: <Link href="/departments">Phòng ban</Link>,
+                  },
+                  {
+                    key: "/employees",
+                    icon: <TeamOutlined />,
+                    label: <Link href="/employees">Nhân viên</Link>,
+                  },
+                  {
+                    key: "/attendance-codes",
+                    icon: <UnorderedListOutlined />,
+                    label: <Link href="/attendance-codes">Ký hiệu</Link>,
+                  },
+                ],
+              },
+              {
+                key: "/timesheets/daily",
+                icon: <FormOutlined />,
+                label: <Link href="/timesheets/daily">Chấm công</Link>,
+              },
+              {
+                key: "/evaluations/monthly",
+                icon: <FormOutlined />,
+                label: <Link href="/evaluations/monthly">Xếp loại A,B,C</Link>,
+              },
+              {
+                key: "/timesheets/monthly",
+                icon: <TableOutlined />,
+                label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
+              },
+              {
+                key: "/bravo-data",
+                icon: <DownloadOutlined />,
+                label: <Link href="/bravo-data">Xuất Excel BRAVO</Link>,
+              },
+              {
+                key: "/overtime",
+                icon: <FieldTimeOutlined />,
+                label: <Link href="/overtime">Làm thêm giờ</Link>,
+              },
+              {
+                key: "/dashboard",
+                icon: <DashboardOutlined />,
+                label: <Link href="/dashboard">Tổng quan</Link>,
+              },
+              {
+                key: "/dashboard/departments",
+                icon: <UnorderedListOutlined />,
+                label: (
+                  <Link href="/dashboard/departments">Tình hình lao động</Link>
+                ),
+              },
+              {
+                key: "/evaluations/yearly",
+                icon: <BarChartOutlined />,
+                label: (
+                  <Link href="/evaluations/yearly">Tổng hợp năm</Link>
+                ),
+              },
 
-        <Menu
-          theme="dark"
-          mode="inline"
-          defaultSelectedKeys={[pathname]}
-          items={[
-            // ... (Các mục menu giữ nguyên như cũ)
-            {
-              key: "catalog-management",
-              icon: <AppstoreOutlined />,
-              label: "Danh mục",
-              children: [
-                {
-                  key: "/factories",
-                  icon: <BankOutlined />,
-                  label: <Link href="/factories">Nhà máy</Link>,
-                },
-                {
-                  key: "/departments",
-                  icon: <ApartmentOutlined />,
-                  label: <Link href="/departments">Phòng ban</Link>,
-                },
-                {
-                  key: "/employees",
-                  icon: <TeamOutlined />,
-                  label: <Link href="/employees">Nhân viên</Link>,
-                },
-                {
-                  key: "/attendance-codes",
-                  icon: <UnorderedListOutlined />,
-                  label: <Link href="/attendance-codes">Ký hiệu</Link>,
-                },
-              ],
-            },
-            {
-              key: "/timesheets/daily",
-              icon: <FormOutlined />,
-              label: <Link href="/timesheets/daily">Chấm công</Link>,
-            },
-            {
-              key: "/evaluations/monthly",
-              icon: <FormOutlined />,
-              label: <Link href="/evaluations/monthly">Xếp loại A,B,C</Link>,
-            },
-            {
-              key: "/timesheets/monthly",
-              icon: <TableOutlined />,
-              label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
-            },
-            {
-              key: "/overtime",
-              icon: <FieldTimeOutlined />,
-              label: <Link href="/overtime">Làm thêm giờ</Link>,
-            },
-            {
-              key: "/dashboard",
-              icon: <DashboardOutlined />,
-              label: <Link href="/dashboard">Tổng quan</Link>,
-            },
-            {
-              key: "/dashboard/departments",
-              icon: <UnorderedListOutlined />,
-              label: (
-                <Link href="/dashboard/departments">Tình hình lao động</Link>
-              ),
-            },
-            {
-              key: "/evaluations/yearly",
-              icon: <BarChartOutlined />,
-              label: (
-                <Link href="/evaluations/yearly">Tổng hợp năm</Link>
-              ),
-            },
-            // Chỉ hiện Menu Quản trị nếu là ADMIN
-            ...(session?.user?.role === "ADMIN"
-              ? [
-                {
-                  key: "admin-management",
-                  icon: <SettingOutlined />,
-                  label: "Quản trị",
-                  children: [
-                    {
-                      key: "/admin/users",
-                      icon: <UserOutlined />,
-                      label: <Link href="/admin/users">Người dùng</Link>,
-                    },
-                    {
-                      key: "/admin/lock-rules",
-                      icon: <LockOutlined />,
-                      label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
-                    },
-                    {
-                      key: "/admin/employees/import",
-                      icon: <ImportOutlined />,
-                      label: <Link href="/admin/employees/import">Import</Link>,
-                    },
-                  ],
-                },
-              ]
-              : []),
-            {
-              key: "/help",
-              icon: <QuestionCircleOutlined />,
-              label: <Link href="/help">Hướng dẫn</Link>,
-            },
-          ]}
-        />
+              // --- [SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY] ---
+              // Hiện Menu Quản trị nếu là ADMIN HOẶC HR_MANAGER
+              ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
+                ? [
+                  {
+                    key: "admin-management",
+                    icon: <SettingOutlined />,
+                    label: "Quản trị",
+                    children: [
+                      // Người dùng: Chỉ hiển thị cho ADMIN
+                      ...(session?.user?.role === "ADMIN"
+                        ? [
+                          {
+                            key: "/admin/users",
+                            icon: <UserOutlined />,
+                            label: <Link href="/admin/users">Người dùng</Link>,
+                          },
+                        ]
+                        : []),
+
+                      // Khóa sổ: Cả ADMIN và HR_MANAGER đều thấy
+                      {
+                        key: "/admin/lock-rules",
+                        icon: <LockOutlined />,
+                        label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
+                      },
+
+                      // Import: Chỉ hiển thị cho ADMIN
+                      ...(session?.user?.role === "ADMIN"
+                        ? [
+                          {
+                            key: "/admin/employees/import",
+                            icon: <ImportOutlined />,
+                            label: <Link href="/admin/employees/import">Import</Link>,
+                          },
+                        ]
+                        : []),
+                    ],
+                  },
+                ]
+                : []),
+              // ------------------------------------
+
+              {
+                key: "/help",
+                icon: <QuestionCircleOutlined />,
+                label: <Link href="/help">Hướng dẫn</Link>,
+              },
+            ]}
+          />
+        </ConfigProvider>
       </Sider>
 
       <Layout>
@@ -8096,7 +8457,7 @@ export default function AdminLayout({
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
             {/* Nút Backup (Chỉ Admin) */}
             {session?.user?.role === "ADMIN" && (
               <Tooltip title="Sao lưu Dữ liệu">
@@ -8153,7 +8514,7 @@ export default function AdminLayout({
           Quản lý nhân sự ©2026 Thiết kế bởi Nguyễn Thiện Minh Trí
         </Footer>
 
-        {/* --- [MỚI] MODAL ĐỔI MẬT KHẨU --- */}
+        {/* --- MODAL ĐỔI MẬT KHẨU --- */}
         <Modal
           title="Đổi mật khẩu cá nhân"
           open={isChangePassOpen}
@@ -8180,7 +8541,7 @@ export default function AdminLayout({
               label="Mật khẩu mới"
               rules={[
                 { required: true, message: "Vui lòng nhập mật khẩu mới" },
-                { min: 6, message: "Mật khẩu phải từ 6 ký tự" }
+                { min: 6, message: "Mật khẩu phải từ 6 ký tự" },
               ]}
             >
               <Input.Password placeholder="Nhập mật khẩu mới..." />
@@ -8189,15 +8550,15 @@ export default function AdminLayout({
             <Form.Item
               name="confirmPassword"
               label="Nhập lại mật khẩu mới"
-              dependencies={['newPassword']}
+              dependencies={["newPassword"]}
               rules={[
                 { required: true, message: "Vui lòng nhập lại mật khẩu" },
                 ({ getFieldValue }) => ({
                   validator(_, value) {
-                    if (!value || getFieldValue('newPassword') === value) {
+                    if (!value || getFieldValue("newPassword") === value) {
                       return Promise.resolve();
                     }
-                    return Promise.reject(new Error('Mật khẩu nhập lại không khớp!'));
+                    return Promise.reject(new Error("Mật khẩu nhập lại không khớp!"));
                   },
                 }),
               ]}
@@ -8206,9 +8567,8 @@ export default function AdminLayout({
             </Form.Item>
           </Form>
         </Modal>
-
       </Layout>
-    </Layout>
+    </Layout >
   );
 }
 
