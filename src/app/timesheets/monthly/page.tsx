@@ -90,6 +90,7 @@ export default function MonthlyTimesheetPage() {
         setEmployees(data);
       }
     } catch (error) {
+      console.error(error);
       message.error("Lỗi tải dữ liệu");
       setEmployees([]);
     } finally {
@@ -257,7 +258,7 @@ export default function MonthlyTimesheetPage() {
         title: <span style={{ color: "#05FA46", fontSize: 12 }}>T.Công</span>,
         width: 60, align: "center", fixed: "right", className: "bg-green-50", key: "sum_total",
         render: (_: any, r: MonthlyEmployeeData) => {
-          const total = countCodes(r, ["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]);
+          const total = countCodes(r, ["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["1/2X"]);
           return total > 0 ? <b style={{ color: "#16a34a" }}>{total}</b> : "-";
         },
       },
