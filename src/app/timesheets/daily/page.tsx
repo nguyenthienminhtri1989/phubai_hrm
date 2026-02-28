@@ -157,6 +157,7 @@ export default function DailyTimesheetPage() {
                 message.error(res.status === 403 ? `KHÓA SỔ: ${err.error}` : err.error || "Lỗi lưu");
             }
         } catch (error) {
+            console.error(error);
             message.error("Lỗi kết nối");
         } finally {
             setSaving(false);

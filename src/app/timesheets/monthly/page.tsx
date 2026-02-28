@@ -460,7 +460,7 @@ export default function MonthlyTimesheetPage() {
         return acc;
       }, 0);
 
-      rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]) || "");
+      rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["1/2X"]) || "");
       rowData.push(count(["XD", "LD"]) || "");
       rowData.push(count(["F", "R", "L"]) || "");
       rowData.push(count(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
