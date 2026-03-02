@@ -101,7 +101,7 @@ export default function EmployeePage() {
       const matchDept = selectedDeptId ? emp.department?.id === selectedDeptId : true;
       const matchName = searchText
         ? emp.fullName.toLowerCase().includes(searchText.toLowerCase()) ||
-          emp.code.toLowerCase().includes(searchText.toLowerCase())
+        emp.code.toLowerCase().includes(searchText.toLowerCase())
         : true;
       return matchFactory && matchDept && matchName;
     });
@@ -145,7 +145,7 @@ export default function EmployeePage() {
   const handleOK = async () => {
     try {
       const values = await form.validateFields();
-      
+
       // Helper format ngày
       const fmtDate = (d: any) => d ? d.format("YYYY-MM-DD") + "T00:00:00.000Z" : null;
 
@@ -206,7 +206,7 @@ export default function EmployeePage() {
       render: (_: any, record: any) => (
         <Space>
           <Button type="text" icon={<EditOutlined />} style={{ color: "blue" }} onClick={() => handleEdit(record)} />
-          <Popconfirm title="Xóa nhân viên này?" onConfirm={() => handleDelete(record.id)} okText="Xóa" cancelText="Hủy">
+          <Popconfirm title="Bạn có chắc chắn muốn chuyển nhân viên này sang trạng thái Nghỉ việc?" onConfirm={() => handleDelete(record.id)} okText="Chuyển" cancelText="Hủy">
             <Button type="text" icon={<DeleteOutlined />} danger />
           </Popconfirm>
         </Space>
@@ -255,7 +255,7 @@ export default function EmployeePage() {
         <Form form={form} layout="vertical">
           {/* --- PHẦN 1: THÔNG TIN CƠ BẢN --- */}
           <Divider style={{ marginTop: 0 }}>Thông tin cơ bản</Divider>
-          
+
           <div style={{ display: "flex", gap: 16 }}>
             <Form.Item name="code" label="Mã NV" style={{ flex: 1 }} rules={[{ required: true, message: "Bắt buộc" }]}>
               <Input placeholder="NV..." />
@@ -287,8 +287,8 @@ export default function EmployeePage() {
               <Input />
             </Form.Item>
             <Form.Item name="startDate" label="Ngày vào làm" style={{ flex: 1 }}>
-               {/* [MỚI] Ngày vào làm */}
-               <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày" />
+              {/* [MỚI] Ngày vào làm */}
+              <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày" />
             </Form.Item>
           </div>
 
@@ -302,12 +302,12 @@ export default function EmployeePage() {
                 <Select.Option value="Nữ">Nữ</Select.Option>
               </Select>
             </Form.Item>
-             <Form.Item name="birthday" label="Ngày sinh" style={{ flex: 1 }}>
+            <Form.Item name="birthday" label="Ngày sinh" style={{ flex: 1 }}>
               <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày" />
             </Form.Item>
           </div>
 
-           <Form.Item name="address" label="Địa chỉ thường trú">
+          <Form.Item name="address" label="Địa chỉ thường trú">
             <Input.TextArea rows={1} />
           </Form.Item>
 
@@ -315,24 +315,24 @@ export default function EmployeePage() {
           <Divider>Thông tin định danh & Ngân hàng</Divider>
 
           <div style={{ display: "flex", gap: 16 }}>
-             <Form.Item name="idCardNumber" label="Số CCCD" style={{ flex: 1 }}>
-               <Input placeholder="Số căn cước..." />
-             </Form.Item>
-             <Form.Item name="idCardDate" label="Ngày cấp" style={{ flex: 1 }}>
-               <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày cấp" />
-             </Form.Item>
-              <Form.Item name="idCardPlace" label="Nơi cấp" style={{ flex: 1 }}>
-               <Input placeholder="Cục CS..." />
-             </Form.Item>
+            <Form.Item name="idCardNumber" label="Số CCCD" style={{ flex: 1 }}>
+              <Input placeholder="Số căn cước..." />
+            </Form.Item>
+            <Form.Item name="idCardDate" label="Ngày cấp" style={{ flex: 1 }}>
+              <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày cấp" />
+            </Form.Item>
+            <Form.Item name="idCardPlace" label="Nơi cấp" style={{ flex: 1 }}>
+              <Input placeholder="Cục CS..." />
+            </Form.Item>
           </div>
 
           <div style={{ display: "flex", gap: 16 }}>
-             <Form.Item name="bankAccount" label="Số tài khoản" style={{ flex: 1 }}>
-               <Input placeholder="STK ngân hàng..." />
-             </Form.Item>
-             <Form.Item name="taxCode" label="Mã số thuế" style={{ flex: 1 }}>
-               <Input placeholder="MST cá nhân..." />
-             </Form.Item>
+            <Form.Item name="bankAccount" label="Số tài khoản" style={{ flex: 1 }}>
+              <Input placeholder="STK ngân hàng..." />
+            </Form.Item>
+            <Form.Item name="taxCode" label="Mã số thuế" style={{ flex: 1 }}>
+              <Input placeholder="MST cá nhân..." />
+            </Form.Item>
           </div>
 
         </Form>

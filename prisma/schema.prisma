@@ -57,7 +57,7 @@ model Department {
   staffUsers User[] @relation("UserBelongsTo")
 }
 
-// 3. Bảng Nhân Viên
+//============ 3. Bảng Nhân Viên ================
 model Employee {
   id         Int        @id @default(autoincrement())
   code       String     @unique // Mã NV nhập tay/import
@@ -75,6 +75,8 @@ model Employee {
   idCardPlace   String?   // Nơi cấp
   bankAccount   String?   // Số tài khoản
   taxCode       String?   // Mã số thuế
+  // true = Đang làm việc, false = Đã nghỉ việc
+  isActive     Boolean   @default(true)
   // -------------------------------
   
   // Khóa ngoại liên kết phòng ban

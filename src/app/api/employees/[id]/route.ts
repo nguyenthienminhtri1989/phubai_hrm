@@ -10,24 +10,28 @@ import { prisma } from "@/lib/prisma";
 export async function DELETE(
   request: Request,
   // params phải là promise
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     // Bước đầu tiên, await params trước
     const { id } = await params;
     const employeeId = parseInt(id);
 
-    // Xóa trong cơ sở dữ liệu
-    await prisma.employee.delete({
+    // [SỬA ĐỔI TẠI ĐÂY] Dùng update để chuyển trạng thái thành Nghỉ việc (isActive = false)
+    await prisma.employee.update({
       where: { id: employeeId },
+      data: { isActive: false },
     });
 
     // Xóa xong thì tạo chuỗi JSON báo về client
-    return NextResponse.json({ message: "Xóa thành công!" });
+    return NextResponse.json({
+      message: "Đã chuyển nhân viên sang trạng thái Nghỉ việc!",
+    });
   } catch (error) {
+    console.log("Lỗi khi xóa mềm nhân viên: ", error);
     return NextResponse.json(
       { error: "Lỗi khi xóa: " + error },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -35,7 +39,7 @@ export async function DELETE(
 // --- API CẬP NHẬT THÔNG TIN NHÂN VIÊN ---
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     // Gọi await params
@@ -53,13 +57,18 @@ export async function PATCH(
       position,
       departmentId,
       kipId,
-      startDate, idCardNumber, idCardDate, idCardPlace, bankAccount, taxCode
+      startDate,
+      idCardNumber,
+      idCardDate,
+      idCardPlace,
+      bankAccount,
+      taxCode,
     } = body; // Lấy những thứ cần thiết từ cục hàng body ra để dùng (cập nhật)
 
     // FIX: Xử lý ngày sinh an toàn hơn
     // Nếu birthday hợp lệ thì new Date, nếu không thì undefined
     const formatBirthday = birthday ? new Date(birthday) : undefined;
-    const formatStartDate = startDate ? new Date(startDate) : null;     // [MỚI]
+    const formatStartDate = startDate ? new Date(startDate) : null; // [MỚI]
     const formatIdCardDate = idCardDate ? new Date(idCardDate) : null; // [MỚI]
 
     // Cập nhật vào cơ sở dữ liệu
@@ -81,7 +90,7 @@ export async function PATCH(
         idCardDate: formatIdCardDate,
         idCardPlace,
         bankAccount,
-        taxCode
+        taxCode,
       },
     });
 

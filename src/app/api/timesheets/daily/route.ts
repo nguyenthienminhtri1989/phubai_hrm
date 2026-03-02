@@ -48,9 +48,15 @@ export async function GET(request: Request) {
       }
     }
 
+    // Nếu người dùng chưa chọn bộ phận nào thì không trả về gì cả
     if (Object.keys(whereCondition).length === 0) {
       return NextResponse.json([]);
     }
+
+    // --- [SỬA ĐỔI TẠI ĐÂY] ---
+    // Chỉ lấy những nhân viên có trạng thái đang hoạt động (isActive = true)
+    whereCondition.isActive = true;
+    // -------------------------
 
     const employees = await prisma.employee.findMany({
       where: whereCondition,

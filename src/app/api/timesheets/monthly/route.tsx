@@ -13,7 +13,7 @@ export async function GET(request: Request) {
         const month = searchParams.get("month");
         const year = searchParams.get("year");
 
-        // [MỚI] Lấy thêm tham số view
+        // Lấy thêm tham số view
         const viewMode = searchParams.get("view");
 
         // Validate thời gian
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
         // Điều kiện validation bộ lọc
         const hasDeptFilter = !!departmentIdStr || !!kipIdsStr;
         const hasNameFilter = !!nameStr && nameStr.trim() !== "";
-        // [MỚI] Kiểm tra thêm điều kiện viewMode
+        // Kiểm tra thêm điều kiện viewMode
         const isViewAll = viewMode === "all";
 
         // Logic chặn tải nặng: Nếu KHÔNG lọc VÀ KHÔNG phải xem tất cả -> Chặn
@@ -89,6 +89,11 @@ export async function GET(request: Request) {
             }
         }
 
+        // --- [SỬA ĐỔI TẠI ĐÂY] ---
+        // Chỉ lấy những nhân viên đang hoạt động
+        whereCondition.isActive = true;
+        // -------------------------
+
         // Thời gian cho query Timesheet
         const startDate = dayjs(`${year}-${month}-01`).startOf("month").toDate();
         const endDate = dayjs(`${year}-${month}-01`).endOf("month").toDate();
@@ -113,7 +118,7 @@ export async function GET(request: Request) {
                 // Lấy thông tin Kíp
                 kip: true,
 
-                // [QUAN TRỌNG] Lấy dữ liệu Xếp loại (MonthlyEvaluation)
+                // Lấy dữ liệu Xếp loại (MonthlyEvaluation)
                 evaluations: {
                     where: {
                         month: Number(month),
