@@ -168,7 +168,6 @@ export default function EmployeePage() {
   };
 
   // --- COLUMNS ---
-  // --- COLUMNS ---
   const columns: TableProps<Employee>["columns"] = [
     {
       title: "Mã NV", dataIndex: "code", key: "code", width: 90,
