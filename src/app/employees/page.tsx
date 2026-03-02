@@ -5,10 +5,10 @@ import AdminLayout from "@/components/AdminLayout";
 import { useSession } from "next-auth/react";
 import {
   Table, Button, Modal, Form, Input, message, Select, DatePicker, Tag,
-  Popconfirm, Card, Space, type TableProps, Divider // <-- Thêm Divider
+  Card, Space, type TableProps, Divider, Radio
 } from "antd";
 import {
-  PlusOutlined, DeleteOutlined, EditOutlined, FilterOutlined, PhoneOutlined, SearchOutlined
+  PlusOutlined, EditOutlined, FilterOutlined, PhoneOutlined, SearchOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -23,7 +23,6 @@ interface Kip {
   id: number; name: string; factoryId: number; factory?: Factory;
 }
 
-// [MỚI] Cập nhật Interface Employee
 interface Employee {
   id: number;
   code: string;
@@ -35,13 +34,13 @@ interface Employee {
   kip?: Kip;
   position?: string;
   address?: string;
-  // Các trường mới
   startDate?: string;
   idCardNumber?: string;
   idCardDate?: string;
   idCardPlace?: string;
   bankAccount?: string;
   taxCode?: string;
+  isActive?: boolean; // [MỚI] Trạng thái làm việc
 }
 
 export default function EmployeePage() {
@@ -63,6 +62,7 @@ export default function EmployeePage() {
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
   const [searchText, setSearchText] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<boolean | null>(null); // Lọc theo trạng thái
 
   // --- FETCH DATA ---
   const fetchEmployees = async () => {
@@ -99,29 +99,16 @@ export default function EmployeePage() {
     return employees.filter((emp) => {
       const matchFactory = selectedFactoryId ? emp.department?.factory?.id === selectedFactoryId : true;
       const matchDept = selectedDeptId ? emp.department?.id === selectedDeptId : true;
+      const matchStatus = selectedStatus !== null ? emp.isActive === selectedStatus : true;
       const matchName = searchText
         ? emp.fullName.toLowerCase().includes(searchText.toLowerCase()) ||
         emp.code.toLowerCase().includes(searchText.toLowerCase())
         : true;
-      return matchFactory && matchDept && matchName;
+      return matchFactory && matchDept && matchName && matchStatus;
     });
-  }, [employees, selectedFactoryId, selectedDeptId, searchText]);
+  }, [employees, selectedFactoryId, selectedDeptId, searchText, selectedStatus]);
 
   // --- ACTIONS ---
-  const handleDelete = async (id: number) => {
-    try {
-      const res = await fetch(`/api/employees/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        message.success("Đã xóa!");
-        fetchEmployees();
-      } else {
-        message.error("Lỗi khi xóa");
-      }
-    } catch (error) {
-      message.error("Lỗi kết nối");
-    }
-  };
-
   const handleEdit = (record: Employee) => {
     setEditingId(record.id);
     form.setFieldsValue({
@@ -129,9 +116,9 @@ export default function EmployeePage() {
       birthday: record.birthday ? dayjs(record.birthday) : null,
       departmentId: record.department?.id,
       kipId: record.kip?.id,
-      // [MỚI] Map dữ liệu ngày tháng mới sang dayjs
       startDate: record.startDate ? dayjs(record.startDate) : null,
       idCardDate: record.idCardDate ? dayjs(record.idCardDate) : null,
+      isActive: record.isActive !== undefined ? record.isActive : true, // Set trạng thái vào form
     });
     setIsModalOpen(true);
   };
@@ -139,6 +126,7 @@ export default function EmployeePage() {
   const openAddModal = () => {
     setEditingId(null);
     form.resetFields();
+    form.setFieldsValue({ isActive: true }); // Mặc định là Đang làm việc khi thêm mới
     setIsModalOpen(true);
   };
 
@@ -152,7 +140,6 @@ export default function EmployeePage() {
       const payload = {
         ...values,
         birthday: fmtDate(values.birthday),
-        // [MỚI] Format các ngày mới
         startDate: fmtDate(values.startDate),
         idCardDate: fmtDate(values.idCardDate),
       };
@@ -200,16 +187,19 @@ export default function EmployeePage() {
         </div>
       ),
     },
-    { title: "Chức vụ", dataIndex: "position", key: "position" },
+    { title: "Chức vụ", dataIndex: "position", key: "position", width: 120 },
     {
-      title: "Hành động", key: "action", width: 100,
+      title: "Trạng thái", dataIndex: "isActive", key: "isActive", width: 130, align: "center",
+      render: (isActive: boolean) => (
+        <Tag color={isActive ? "success" : "error"}>
+          {isActive ? "Đang làm việc" : "Đã nghỉ việc"}
+        </Tag>
+      ),
+    },
+    {
+      title: "Hành động", key: "action", width: 90, align: "center",
       render: (_: any, record: any) => (
-        <Space>
-          <Button type="text" icon={<EditOutlined />} style={{ color: "blue" }} onClick={() => handleEdit(record)} />
-          <Popconfirm title="Bạn có chắc chắn muốn chuyển nhân viên này sang trạng thái Nghỉ việc?" onConfirm={() => handleDelete(record.id)} okText="Chuyển" cancelText="Hủy">
-            <Button type="text" icon={<DeleteOutlined />} danger />
-          </Popconfirm>
-        </Space>
+        <Button type="text" icon={<EditOutlined />} style={{ color: "blue" }} onClick={() => handleEdit(record)} />
       ),
     },
   ].filter((col) => !isViewOnly || col.key !== "action");
@@ -217,7 +207,6 @@ export default function EmployeePage() {
   // --- RENDER UI ---
   return (
     <AdminLayout>
-      {/* Header & Filter UI (Giữ nguyên như cũ) */}
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2 className="text-2xl font-bold">Quản lý nhân sự ({filteredEmployees.length})</h2>
         {!isViewOnly && (
@@ -229,19 +218,23 @@ export default function EmployeePage() {
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600 }}><FilterOutlined /> Bộ lọc:</span>
           <Input placeholder="Tìm tên hoặc mã NV..." prefix={<SearchOutlined style={{ color: "#bfbfbf" }} />} style={{ width: 200 }} value={searchText} onChange={(e) => setSearchText(e.target.value)} allowClear />
-          <Select style={{ width: 220 }} placeholder="Tất cả Nhà máy" allowClear value={selectedFactoryId} onChange={(val) => { setSelectedFactoryId(val); setSelectedDeptId(null); }}>
+          <Select style={{ width: 180 }} placeholder="Tất cả Nhà máy" allowClear value={selectedFactoryId} onChange={(val) => { setSelectedFactoryId(val); setSelectedDeptId(null); }}>
             {factories.map((f) => <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>)}
           </Select>
-          <Select style={{ width: 220 }} placeholder="Tất cả Phòng ban" allowClear value={selectedDeptId} onChange={(val) => setSelectedDeptId(val)} disabled={!selectedFactoryId && departments.length > 50}>
+          <Select style={{ width: 180 }} placeholder="Tất cả Phòng ban" allowClear value={selectedDeptId} onChange={(val) => setSelectedDeptId(val)} disabled={!selectedFactoryId && departments.length > 50}>
             {availableDepartments.map((d) => <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>)}
           </Select>
-          {(selectedFactoryId || selectedDeptId || searchText) && (
-            <Button type="link" onClick={() => { setSelectedFactoryId(null); setSelectedDeptId(null); setSearchText(""); }}>Xóa lọc</Button>
+          <Select style={{ width: 160 }} placeholder="Trạng thái làm việc" allowClear value={selectedStatus} onChange={(val) => setSelectedStatus(val)}>
+            <Select.Option value={true}>Đang làm việc</Select.Option>
+            <Select.Option value={false}>Đã nghỉ việc</Select.Option>
+          </Select>
+          {(selectedFactoryId || selectedDeptId || searchText || selectedStatus !== null) && (
+            <Button type="link" onClick={() => { setSelectedFactoryId(null); setSelectedDeptId(null); setSearchText(""); setSelectedStatus(null); }}>Xóa lọc</Button>
           )}
         </div>
       </Card>
 
-      <Table columns={columns} dataSource={filteredEmployees} rowKey="id" loading={loading} bordered scroll={{ x: 900 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
+      <Table columns={columns} dataSource={filteredEmployees} rowKey="id" loading={loading} bordered scroll={{ x: 1000 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
 
       {/* --- MODAL FORM --- */}
       <Modal
@@ -249,12 +242,21 @@ export default function EmployeePage() {
         open={isModalOpen}
         onOk={handleOK}
         onCancel={() => setIsModalOpen(false)}
-        width={800} // Tăng chiều rộng Modal một chút cho đẹp
+        width={800}
         confirmLoading={loading}
       >
         <Form form={form} layout="vertical">
-          {/* --- PHẦN 1: THÔNG TIN CƠ BẢN --- */}
           <Divider style={{ marginTop: 0 }}>Thông tin cơ bản</Divider>
+
+          {/* Dòng trạng thái nổi bật lên trên cùng */}
+          <div style={{ display: "flex", gap: 16 }}>
+            <Form.Item name="isActive" label="Trạng thái làm việc" rules={[{ required: true }]}>
+              <Radio.Group buttonStyle="solid">
+                <Radio.Button value={true}>Đang làm việc</Radio.Button>
+                <Radio.Button value={false}>Đã nghỉ việc</Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+          </div>
 
           <div style={{ display: "flex", gap: 16 }}>
             <Form.Item name="code" label="Mã NV" style={{ flex: 1 }} rules={[{ required: true, message: "Bắt buộc" }]}>
@@ -287,7 +289,6 @@ export default function EmployeePage() {
               <Input />
             </Form.Item>
             <Form.Item name="startDate" label="Ngày vào làm" style={{ flex: 1 }}>
-              {/* [MỚI] Ngày vào làm */}
               <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày" />
             </Form.Item>
           </div>
@@ -311,7 +312,6 @@ export default function EmployeePage() {
             <Input.TextArea rows={1} />
           </Form.Item>
 
-          {/* --- PHẦN 2: THÔNG TIN BỔ SUNG --- */}
           <Divider>Thông tin định danh & Ngân hàng</Divider>
 
           <div style={{ display: "flex", gap: 16 }}>

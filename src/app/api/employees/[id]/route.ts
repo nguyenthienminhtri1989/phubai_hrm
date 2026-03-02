@@ -42,61 +42,68 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    // Gọi await params
     const { id } = await params;
     const employeeId = parseInt(id);
+    const body = await request.json();
 
-    const body = await request.json(); // Chuyển gói hàng JSON từ client gửi lên thành Object
+    // 1. Lấy tất cả các dữ liệu gửi lên từ form (Bổ sung isActive)
     const {
       code,
       fullName,
-      birthday,
-      gender,
-      address,
-      phone,
-      position,
       departmentId,
       kipId,
+      position,
       startDate,
+      phone,
+      gender,
+      birthday,
+      address,
       idCardNumber,
       idCardDate,
       idCardPlace,
       bankAccount,
       taxCode,
-    } = body; // Lấy những thứ cần thiết từ cục hàng body ra để dùng (cập nhật)
+      isActive, // <-- [QUAN TRỌNG TẠI ĐÂY]
+    } = body;
 
-    // FIX: Xử lý ngày sinh an toàn hơn
-    // Nếu birthday hợp lệ thì new Date, nếu không thì undefined
-    const formatBirthday = birthday ? new Date(birthday) : undefined;
-    const formatStartDate = startDate ? new Date(startDate) : null; // [MỚI]
-    const formatIdCardDate = idCardDate ? new Date(idCardDate) : null; // [MỚI]
-
-    // Cập nhật vào cơ sở dữ liệu
+    // 2. Cập nhật vào Database
     const updatedEmployee = await prisma.employee.update({
       where: { id: employeeId },
       data: {
-        code: code,
-        fullName: fullName,
-        birthday: formatBirthday,
-        gender: gender,
-        address: address,
-        phone: phone,
-        position: position,
-        // FIX: Thêm kiểm tra departmentId trước khi parse để tránh NaN nếu lỡ null
-        departmentId: departmentId ? parseInt(departmentId) : undefined,
-        kipId: kipId ? Number(kipId) : null,
-        startDate: formatStartDate,
+        code,
+        fullName,
+        position,
+        phone,
+        gender,
+        address,
         idCardNumber,
-        idCardDate: formatIdCardDate,
         idCardPlace,
         bankAccount,
         taxCode,
+
+        // [SỬA LỖI Ở ĐÂY] Thay null thành undefined cho trường bắt buộc
+        departmentId: departmentId ? Number(departmentId) : undefined,
+
+        // kipId có thể rỗng (tùy chọn) nên nếu schema của bạn cho phép rỗng (Int?), để null là đúng
+        kipId: kipId ? Number(kipId) : null,
+
+        birthday: birthday ? new Date(birthday) : null,
+        startDate: startDate ? new Date(startDate) : null,
+        idCardDate: idCardDate ? new Date(idCardDate) : null,
+
+        isActive: isActive !== undefined ? isActive : true,
       },
     });
 
-    return NextResponse.json(updatedEmployee);
+    return NextResponse.json({
+      message: "Cập nhật thành công!",
+      data: updatedEmployee,
+    });
   } catch (error) {
-    console.log(error); // In lỗi ra terminal server để xem chi tiết
-    return NextResponse.json({ error: "Lỗi khi cập nhật, " }, { status: 500 });
+    console.error("Lỗi cập nhật nhân viên:", error);
+    return NextResponse.json(
+      { error: "Lỗi server khi cập nhật" },
+      { status: 500 },
+    );
   }
 }
