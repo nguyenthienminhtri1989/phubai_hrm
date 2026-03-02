@@ -168,6 +168,7 @@ export default function EmployeePage() {
   };
 
   // --- COLUMNS ---
+  // --- COLUMNS ---
   const columns: TableProps<Employee>["columns"] = [
     {
       title: "Mã NV", dataIndex: "code", key: "code", width: 90,
@@ -189,7 +190,8 @@ export default function EmployeePage() {
     },
     { title: "Chức vụ", dataIndex: "position", key: "position", width: 120 },
     {
-      title: "Trạng thái", dataIndex: "isActive", key: "isActive", width: 130, align: "center",
+      title: "Trạng thái", dataIndex: "isActive", key: "isActive", width: 130,
+      align: "center" as const, // <-- [SỬA Ở ĐÂY] Thêm as const
       render: (isActive: boolean) => (
         <Tag color={isActive ? "success" : "error"}>
           {isActive ? "Đang làm việc" : "Đã nghỉ việc"}
@@ -197,7 +199,8 @@ export default function EmployeePage() {
       ),
     },
     {
-      title: "Hành động", key: "action", width: 90, align: "center",
+      title: "Hành động", key: "action", width: 90,
+      align: "center" as const, // <-- [SỬA Ở ĐÂY] Thêm as const
       render: (_: any, record: any) => (
         <Button type="text" icon={<EditOutlined />} style={{ color: "blue" }} onClick={() => handleEdit(record)} />
       ),
