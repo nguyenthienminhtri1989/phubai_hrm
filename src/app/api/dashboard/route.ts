@@ -28,6 +28,10 @@ export async function GET(request: Request) {
       include: {
         factory: true,
         employees: {
+          // --- [SỬA TẠI ĐÂY] ---
+          // Chỉ lấy những nhân viên đang đi làm để đếm tổng số sự (totalStaff)
+          where: { isActive: true },
+          // ---------------------
           select: {
             id: true,
             // Lấy timesheet của nhân viên trong ngày đó
@@ -86,7 +90,7 @@ export async function GET(request: Request) {
         }
       });
 
-      // --- [LOGIC MỚI] XÁC ĐỊNH TRẠNG THÁI ---
+      // --- LOGIC XÁC ĐỊNH TRẠNG THÁI ---
       let status = "PENDING"; // Mặc định: Chưa chấm (Xám)
       if (timekeepingCount > 0) {
         if (timekeepingCount >= totalStaff && totalStaff > 0) {
