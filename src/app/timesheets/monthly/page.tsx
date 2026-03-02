@@ -366,8 +366,10 @@ export default function MonthlyTimesheetPage() {
   }, [currentFilter, employees]);
 
   // --- 3. EXPORT EXCEL (ĐÃ CẬP NHẬT ĐỘ RỘNG CỘT) ---
+  // --- 3. EXPORT EXCEL (ĐÃ TÍCH HỢP GROUP THEO PHÒNG BAN) ---
   const handleExportExcel = async () => {
-    if (employees.length === 0 || !currentFilter) return;
+    // Đổi điều kiện check: Dùng groupedDataSource thay vì employees
+    if (groupedDataSource.length === 0 || !currentFilter) return;
     setLoading(true);
 
     const workbook = new ExcelJS.Workbook();
@@ -388,51 +390,36 @@ export default function MonthlyTimesheetPage() {
 
     // --- TÍNH TOÁN SỐ CỘT ---
     const daysInMonth = currentFilter.date.daysInMonth();
-    // 2 cột đầu (STT, Tên) + Số ngày + 8 cột tổng hợp
     const totalColumns = 2 + daysInMonth + 8;
 
-    // --- [MỚI] THIẾT LẬP ĐỘ RỘNG CỘT (QUAN TRỌNG) ---
-    // Cột 1: STT -> Hẹp
-    worksheet.getColumn(1).width = 5;
-    // Cột 2: Họ tên -> Rộng
-    worksheet.getColumn(2).width = 28;
-
-    // Các cột ngày: Từ cột 3 đến cột (2 + số ngày) -> Rất hẹp
+    // --- THIẾT LẬP ĐỘ RỘNG CỘT ---
+    worksheet.getColumn(1).width = 5; // STT
+    worksheet.getColumn(2).width = 28; // Họ tên
     for (let i = 1; i <= daysInMonth; i++) {
       worksheet.getColumn(2 + i).width = 4.5;
     }
-
-    // Các cột tổng hợp cuối cùng -> Vừa phải
     for (let i = 2 + daysInMonth + 1; i <= totalColumns; i++) {
       worksheet.getColumn(i).width = 7;
     }
-    // -----------------------------------------------
 
-    // --- HEADER (CĂN GIỮA) ---
+    // --- HEADER ---
+    // Dòng 1: Tên Công ty
     const row1 = worksheet.getCell("A1");
     row1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
     row1.font = { name: "Times New Roman", size: 14, bold: true };
     row1.alignment = { vertical: "middle", horizontal: "center" };
     worksheet.mergeCells(1, 1, 1, totalColumns);
 
+    // Dòng 2: Tiêu đề Bảng
     const row2 = worksheet.getCell("A2");
     row2.value = `BẢNG CHẤM CÔNG THÁNG ${currentFilter.date.format("MM/YYYY")}`;
     row2.font = { name: "Times New Roman", size: 16, bold: true };
     row2.alignment = { vertical: "middle", horizontal: "center" };
     worksheet.mergeCells(2, 1, 2, totalColumns);
 
-    // Tên bộ phận
-    const deptDisplayName = employees.length > 0
-      ? (employees[0].kip ? `Kíp: ${employees[0].kip.name}` : `Bộ phận: ${employees[0].department?.name || 'Tổng hợp'}`)
-      : "Tổng hợp";
+    // [ĐÃ BỎ] Dòng 3 cũ (Tiêu đề Bộ phận chung) đã được gỡ bỏ theo yêu cầu
 
-    const row3 = worksheet.getCell("A3");
-    row3.value = deptDisplayName.toUpperCase();
-    row3.font = { name: "Times New Roman", size: 14, bold: true };
-    row3.alignment = { vertical: "middle", horizontal: "center" };
-    worksheet.mergeCells(3, 1, 3, totalColumns);
-
-    // --- TABLE HEADER ---
+    // --- TABLE HEADER (Giờ đẩy lên dòng 3) ---
     const headerRow = ["STT", "Họ và tên"];
     for (let i = 1; i <= daysInMonth; i++) headerRow.push(`${i}`);
     headerRow.push("T.Công", "Ca 3", "100%", "BHXH", "K.Lương", "Vô LD", "L.Bão", "X.Loại");
@@ -446,58 +433,83 @@ export default function MonthlyTimesheetPage() {
     });
 
     // --- TABLE DATA ---
-    employees.forEach((emp, index) => {
-      const rowData: any[] = [index + 1, emp.fullName];
-      for (let i = 1; i <= daysInMonth; i++) {
-        const dateStr = dayjs(`${currentFilter.date.year()}-${currentFilter.date.month() + 1}-${i}`).format("YYYY-MM-DD");
-        const log = emp.timesheets.find((t) => t.date.startsWith(dateStr));
-        rowData.push(log ? log.attendanceCode.code : "");
+    let stt = 1; // Biến đếm số thứ tự
+
+    // [THAY ĐỔI QUAN TRỌNG] Duyệt qua mảng đã được group
+    groupedDataSource.forEach((record: any) => {
+
+      if (record.isGroupHeader) {
+        // 1. NẾU LÀ DÒNG TIÊU ĐỀ NHÓM (TÊN BỘ PHẬN)
+        const groupRow = worksheet.addRow([record.groupTitle]);
+        worksheet.mergeCells(groupRow.number, 1, groupRow.number, totalColumns);
+
+        // Định dạng làm nổi bật dòng tên phòng ban
+        for (let i = 1; i <= totalColumns; i++) {
+          const cell = groupRow.getCell(i);
+          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+          if (i === 1) {
+            cell.font = { name: "Times New Roman", bold: true, color: { argb: "FF0050B3" } }; // Màu xanh dương đậm
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE6F7FF" } }; // Nền xanh nhạt
+            cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+          }
+        }
+
+        // Reset lại STT = 1 mỗi khi sang phòng ban mới
+        stt = 1;
       }
+      else {
+        // 2. NẾU LÀ DÒNG NHÂN VIÊN BÌNH THƯỜNG
+        const emp = record as MonthlyEmployeeData;
+        const rowData: any[] = [stt++, emp.fullName];
 
-      const count = (codes: string[]) => emp.timesheets.reduce((acc, t) => codes.includes(t.attendanceCode.code) ? acc + 1 : acc, 0);
-      const countComplex = (full: string[], half: string[]) => emp.timesheets.reduce((acc, t) => {
-        if (full.includes(t.attendanceCode.code)) return acc + 1;
-        if (half.includes(t.attendanceCode.code)) return acc + 0.5;
-        return acc;
-      }, 0);
+        for (let i = 1; i <= daysInMonth; i++) {
+          const dateStr = dayjs(`${currentFilter.date.year()}-${currentFilter.date.month() + 1}-${i}`).format("YYYY-MM-DD");
+          const log = (emp.timesheets || []).find((t) => t.date.startsWith(dateStr));
+          rowData.push(log ? log.attendanceCode.code : "");
+        }
 
-      rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["1/2X"]) || "");
-      rowData.push(count(["XD", "LD"]) || "");
-      rowData.push(count(["F", "R", "L"]) || "");
-      rowData.push(count(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
-      rowData.push(count(["RO"]) || "");
-      rowData.push(count(["O"]) || "");
-      rowData.push(count(["B"]) || "");
-      rowData.push(emp.classification || "");
+        const count = (codes: string[]) => (emp.timesheets || []).reduce((acc, t) => codes.includes(t.attendanceCode.code) ? acc + 1 : acc, 0);
+        const countComplex = (full: string[], half: string[]) => (emp.timesheets || []).reduce((acc, t) => {
+          if (full.includes(t.attendanceCode.code)) return acc + 1;
+          if (half.includes(t.attendanceCode.code)) return acc + 0.5;
+          return acc;
+        }, 0);
 
-      const row = worksheet.addRow(rowData);
-      row.eachCell((cell, colNumber) => {
-        cell.font = { name: "Times New Roman" };
-        cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-        // Canh trái cho Họ tên, còn lại canh giữa
-        if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
-        else cell.alignment = { horizontal: "center" };
-      });
+        // Đã cập nhật lại mảng nửa công ["1/2X", "X/2"] như lỗi bạn phát hiện trước đó
+        rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["1/2X", "X/2"]) || "");
+        rowData.push(count(["XD", "LD"]) || "");
+        rowData.push(count(["F", "R", "L"]) || "");
+        rowData.push(count(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
+        rowData.push(count(["RO"]) || "");
+        rowData.push(count(["O"]) || "");
+        rowData.push(count(["B"]) || "");
+        rowData.push(emp.classification || "");
+
+        const row = worksheet.addRow(rowData);
+        row.eachCell((cell, colNumber) => {
+          cell.font = { name: "Times New Roman" };
+          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+          if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
+          else cell.alignment = { horizontal: "center", vertical: "middle" };
+        });
+      }
     });
 
-    // --- FOOTER CHỮ KÝ (3 CỘT) ---
+    // --- FOOTER CHỮ KÝ ---
     worksheet.addRow([]);
     worksheet.addRow([]);
 
     const signRowIndex = worksheet.lastRow!.number + 1;
 
-    // 1. NGƯỜI CHẤM CÔNG
     worksheet.mergeCells(signRowIndex, 2, signRowIndex, 6);
     const cellLeft = worksheet.getCell(signRowIndex, 2);
     cellLeft.value = "Người chấm công";
 
-    // 2. PHỤ TRÁCH ĐƠN VỊ
     const midCol = Math.floor(totalColumns / 2);
     worksheet.mergeCells(signRowIndex, midCol - 2, signRowIndex, midCol + 2);
     const cellMid = worksheet.getCell(signRowIndex, midCol - 2);
     cellMid.value = "Phụ trách đơn vị";
 
-    // 3. CÁN BỘ KIỂM TRA
     worksheet.mergeCells(signRowIndex, totalColumns - 4, signRowIndex, totalColumns);
     const cellRight = worksheet.getCell(signRowIndex, totalColumns - 4);
     cellRight.value = "Cán bộ kiểm tra";
