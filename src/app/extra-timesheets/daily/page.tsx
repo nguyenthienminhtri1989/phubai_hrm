@@ -1,0 +1,338 @@
+"use client";
+
+import React, { useEffect, useState, useMemo } from "react";
+import AdminLayout from "@/components/AdminLayout";
+import { useSession } from "next-auth/react";
+import {
+    Table,
+    Select,
+    Button,
+    message,
+    Input,
+    Tag,
+    Space,
+    Typography,
+    Alert,
+} from "antd";
+import { SaveOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
+
+// [QUAN TRỌNG] Import Component lọc dùng chung
+import CommonFilter, { FilterResult } from "@/components/CommonFilter";
+
+const { Title } = Typography;
+
+// --- INTERFACES ---
+interface AttendanceCode {
+    id: number;
+    code: string;
+    name: string;
+    color: string;
+}
+
+interface TimesheetRow {
+    employeeId: number;
+    employeeCode: string;
+    fullName: string;
+    attendanceCodeId: number | null;
+    note: string;
+    updatedAt?: string;
+    departmentName?: string;
+    kipName?: string;
+}
+
+export default function DailyTimesheetPage() {
+    const { data: session } = useSession();
+
+    // 1. [SỬA ĐỔI QUAN TRỌNG] Logic xác định chế độ "Chỉ xem"
+    // Nếu là LEADER hoặc STAFF thì bật chế độ Chỉ xem (Ẩn nút Lưu, Khóa nhập liệu)
+    const isViewOnly = ["LEADER", "STAFF"].includes(session?.user?.role as string);
+
+    // --- STATE ---
+    const [employees, setEmployees] = useState<TimesheetRow[]>([]);
+    const [attendanceCodes, setAttendanceCodes] = useState<AttendanceCode[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    // Lưu trữ kết quả lọc hiện tại để dùng cho hàm Save và Reload
+    const [currentFilter, setCurrentFilter] = useState<FilterResult | null>(null);
+
+    // 1. Chỉ cần tải danh sách Mã công (Danh mục Phòng/Kíp đã do CommonFilter lo)
+    useEffect(() => {
+        const fetchCodes = async () => {
+            try {
+                const res = await fetch("/api/attendance-codes");
+                const codes: AttendanceCode[] = await res.json();
+
+                // Sắp xếp mã công theo ưu tiên
+                const PRIORITY = ["+", "XD", "ĐC", "X/2", "F", "NB", "Ô", "XL", "L", "TS"];
+                codes.sort((a, b) => {
+                    const iA = PRIORITY.indexOf(a.code), iB = PRIORITY.indexOf(b.code);
+                    if (iA !== -1 && iB !== -1) return iA - iB;
+                    if (iA !== -1) return -1;
+                    if (iB !== -1) return 1;
+                    return a.code.localeCompare(b.code);
+                });
+                setAttendanceCodes(codes);
+            } catch (error) {
+                message.error("Lỗi tải mã chấm công");
+            }
+        };
+        fetchCodes();
+    }, []);
+
+    // --- HÀM TẢI DỮ LIỆU (Gọi mỗi khi bộ lọc thay đổi) ---
+    const fetchTimesheetData = async (filter: FilterResult) => {
+        // Nếu chưa chọn phòng ban nào -> Xóa bảng
+        if (!filter.realDepartmentIds || filter.realDepartmentIds.length === 0) {
+            setEmployees([]);
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const dateStr = filter.date.format("YYYY-MM-DD");
+            // Gửi danh sách ID phòng ban đã được CommonFilter giải mã (VD: 15,16,17)
+            const deptParam = filter.realDepartmentIds.join(",");
+
+            const url = `/api/extra-timesheets/daily?date=${dateStr}&departmentId=${deptParam}`;
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("Lỗi tải");
+            const data = await res.json();
+            setEmployees(data);
+        } catch (error) {
+            message.error("Lỗi tải dữ liệu");
+            setEmployees([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // --- CALLBACK TỪ COMPONENT LỌC ---
+    const handleFilterChange = (result: FilterResult) => {
+        setCurrentFilter(result); // Lưu state để dùng khi Save
+        fetchTimesheetData(result); // Gọi API
+    };
+
+    // --- HÀM LƯU DỮ LIỆU ---
+    const handleSave = async () => {
+        if (!currentFilter || employees.length === 0) return;
+
+        // [SỬA ĐỔI] KHÔNG dùng .filter loại bỏ null nữa. 
+        // Gửi toàn bộ danh sách hiển thị trên màn hình lên Server.
+        const recordsToSend = employees.map((e) => ({
+            employeeId: e.employeeId,
+            attendanceCodeId: e.attendanceCodeId || null, // Nếu bị xóa trắng thì gửi lên là null
+            note: e.note || "",
+        }));
+
+        setSaving(true);
+        try {
+            // Logic xác định ID phòng ban để check khóa sổ
+            const payloadDeptId = currentFilter.realDepartmentIds.length === 1
+                ? currentFilter.realDepartmentIds[0]
+                : null;
+
+            const payload = {
+                date: currentFilter.date.format("YYYY-MM-DD"),
+                departmentId: payloadDeptId,
+                records: recordsToSend,
+            };
+
+            const res = await fetch("/api/extra-timesheets/daily", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+
+            if (res.ok) {
+                // Đếm những người thực sự được chấm công để hiện thông báo cho đẹp
+                const validCount = recordsToSend.filter(r => r.attendanceCodeId !== null).length;
+                message.success(`Đã lưu bảng công! (Có ${validCount} người được chấm)`);
+
+                fetchTimesheetData(currentFilter); // Tải lại để cập nhật updatedAt
+            } else {
+                const err = await res.json();
+                message.error(res.status === 403 ? `KHÓA SỔ: ${err.error}` : err.error || "Lỗi lưu");
+            }
+        } catch (error) {
+            console.error(error);
+            message.error("Lỗi kết nối");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // --- HELPERS (Logic UI nội bộ) ---
+    const handleRowChange = (empId: number, field: string, value: any) => {
+        const newData = [...employees];
+        const index = newData.findIndex((i) => i.employeeId === empId);
+        if (index > -1) {
+            newData[index] = { ...newData[index], [field]: value };
+            setEmployees(newData);
+        }
+    };
+
+    const setAllStatus = (codeStr: string) => {
+        const targetCode = attendanceCodes.find((c) => c.code === codeStr);
+        if (!targetCode) return;
+        setEmployees(employees.map((e) => ({ ...e, attendanceCodeId: targetCode.id })));
+    };
+
+    const timesheetStatus = useMemo(() => {
+        if (employees.length === 0) return null;
+        const hasData = employees.some((e) => e.attendanceCodeId !== null);
+        const lastUpdate = employees.find((e) => e.updatedAt)?.updatedAt;
+        return {
+            isSubmitted: hasData,
+            lastUpdate: lastUpdate ? dayjs(lastUpdate).format("HH:mm - DD/MM/YYYY") : null,
+        };
+    }, [employees]);
+
+    // --- COLUMNS ---
+    const columns = [
+        {
+            title: "STT",
+            key: "index",
+            width: 50,
+            align: "center" as const,
+            render: (_: any, __: any, index: number) => <span style={{ color: "#888" }}>{index + 1}</span>,
+        },
+        { title: "Họ và tên", dataIndex: "fullName", width: 220 },
+        {
+            title: "Bộ phận",
+            key: "deptInfo",
+            width: 150,
+            render: (_: any, record: TimesheetRow) => (
+                <div style={{ fontSize: 12 }}>
+                    {record.kipName ? (
+                        <Tag color="blue">{record.kipName}</Tag>
+                    ) : (
+                        <Tag>{record.departmentName}</Tag>
+                    )}
+                </div>
+            ),
+        },
+        {
+            title: "Trạng thái",
+            dataIndex: "attendanceCodeId",
+            width: 200,
+            render: (value: number, record: TimesheetRow) => (
+                <Select
+                    value={value}
+                    allowClear
+                    style={{ width: "100%" }}
+                    placeholder="Chọn"
+                    disabled={isViewOnly} // KHÓA NHẬP LIỆU NẾU LÀ STAFF/LEADER
+                    onChange={(val) => handleRowChange(record.employeeId, "attendanceCodeId", val)}
+                    options={attendanceCodes.map((c) => ({
+                        value: c.id,
+                        label: `${c.code} - ${c.name}`,
+                        item: c,
+                    }))}
+                    optionRender={(opt) => (
+                        <Space>
+                            <Tag color={opt.data.item.color} style={{ fontWeight: "bold", minWidth: 40, textAlign: "center" }}>
+                                {opt.data.item.code}
+                            </Tag>
+                            {opt.data.item.name}
+                        </Space>
+                    )}
+                    labelRender={(props) => {
+                        const c = attendanceCodes.find((x) => x.id === props.value);
+                        return c ? (
+                            <Tag color={c.color} style={{ fontWeight: "bold", width: "100%", textAlign: "center" }}>
+                                {c.code} - {c.name}
+                            </Tag>
+                        ) : (props.label);
+                    }}
+                />
+            ),
+        },
+        {
+            title: "Ghi chú",
+            dataIndex: "note",
+            render: (txt: string, rec: TimesheetRow) => (
+                <Input
+                    value={txt}
+                    disabled={isViewOnly} // KHÓA NHẬP LIỆU
+                    onChange={(e) => handleRowChange(rec.employeeId, "note", e.target.value)}
+                    placeholder="..."
+                />
+            ),
+        },
+    ];
+
+    return (
+        <AdminLayout>
+            <Title level={3} style={{ marginBottom: 24 }}>Chấm công TĂNG CƯỜNG hàng ngày</Title>
+
+            {/* --- SỬ DỤNG COMPONENT LỌC DÙNG CHUNG --- */}
+            <CommonFilter
+                dateMode="date"
+                onFilterChange={handleFilterChange}
+            />
+
+            {/* --- PHẦN HIỂN THỊ TRẠNG THÁI --- */}
+            {employees.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                    {timesheetStatus?.isSubmitted ? (
+                        <Alert
+                            message={`Đã chấm công (Cập nhật: ${timesheetStatus.lastUpdate})`}
+                            type="success"
+                            showIcon
+                        />
+                    ) : (
+                        <Alert message="Chưa có dữ liệu." type="info" showIcon />
+                    )}
+                </div>
+            )}
+
+            {employees.length > 0 ? (
+                <>
+                    {/* Thanh công cụ: Chỉ hiện nếu KHÔNG PHẢI là ViewOnly */}
+                    {!isViewOnly ? (
+                        <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
+                            <Space>
+                                <span style={{ fontWeight: 600 }}>Thao tác nhanh:</span>
+                                <Button size="small" onClick={() => setAllStatus("+")}>Đi làm (+)</Button>
+                                <Button size="small" onClick={() => setAllStatus("1/2X")}>Nửa công (1/2X)</Button>
+                                <Button size="small" onClick={() => setAllStatus("XD")}>Làm ca đêm (XD)</Button>
+                            </Space>
+
+                            <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving}>
+                                LƯU DỮ LIỆU
+                            </Button>
+                        </div>
+                    ) : (
+                        <div style={{ marginBottom: 16, fontStyle: "italic", color: "#888" }}>
+                            * Bạn đang ở chế độ xem, không có quyền chỉnh sửa bảng công.
+                        </div>
+                    )}
+
+                    <Table
+                        bordered
+                        dataSource={employees}
+                        columns={columns}
+                        rowKey="employeeId"
+                        loading={loading}
+                        pagination={false}
+                        scroll={{ y: 600 }}
+                        size="middle"
+                    />
+                </>
+            ) : (
+                <div style={{ textAlign: "left", padding: "50px", color: "#999", background: "#fff", border: "1px dashed #ddd" }}>
+                    <b>Hướng dẫn:</b> <br />
+                    <b>Bước 1:</b> Chọn ngày cần chấm <br />
+                    <b>Bước 2:</b> Chọn nhà máy có phòng ban hay tổ mình cần chấm. <br />
+                    <b>Bước 3:</b> Chọn Phòng ban hoặc Tổ, nếu là ca kíp thì chọn tổ của kíp cần chấm (ví dụ tổ bông chải, tổ ghép thô, tổ sợi con, vv...) <br />
+                    <b>Bước 4:</b> Sau khi chọn tổ thì tất cả nhân viên của 7 kíp hoặc 10 kíp sẽ hiện ra cùng lúc, lúc này chọn vào ô kíp để lọc lại những kíp cần chấm (ví dụ kíp 2, kíp 3,...) <br />
+                    <b>Bước 5:</b> Lọc kíp xong tiến hành chấm và lưu bình thường. <br />
+                    Đối với phòng ban không phải ca kíp thì không cần chọn ô kíp
+                </div>
+            )}
+        </AdminLayout>
+    );
+}

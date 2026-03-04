@@ -243,6 +243,23 @@ export default function AdminLayout({
                 label: <Link href="/bravo-data">Xuất Excel BRAVO</Link>,
               },
               {
+                key: "cong-tang-cuong",
+                icon: <AppstoreOutlined />,
+                label: "Công tăng cường",
+                children: [
+                  {
+                    key: "/extra-timesheets/daily",
+                    icon: <TeamOutlined />,
+                    label: <Link href="/extra-timesheets/daily">Chấm công tăng cường</Link>,
+                  },
+                  {
+                    key: "/extra-timesheets/monthly",
+                    icon: <UnorderedListOutlined />,
+                    label: <Link href="/extra-timesheets/monthly">Tổng hợp công tăng cường</Link>,
+                  },
+                ],
+              },
+              {
                 key: "/overtime",
                 icon: <FieldTimeOutlined />,
                 label: <Link href="/overtime">Làm thêm giờ</Link>,

@@ -90,6 +90,8 @@ model Employee {
   timesheets Timesheet[]
 
   evaluations MonthlyEvaluation[] // Truy vấn xếp loại
+
+  extraTimesheets ExtraTimesheet[] // <-- Kết nối với bảng công tăng cường
   
   // --- Liên kết đến bảng làm thêm ---
   overtimeRecords OvertimeRecord[]
@@ -112,6 +114,9 @@ model AttendanceCode {
   
   // Mối quan hệ ngược: Một loại công link tới NHIỀU dòng chấm công
   timesheets  Timesheet[]
+
+  // Liên kết với bảng chấm công tăng cường
+  extraTimesheets ExtraTimesheet[]
 }
 
 // 2. Bảng chấm công hàng ngày
@@ -219,4 +224,24 @@ model OvertimeRecord {
 
   // [MỚI] Lưu username người tạo (Ví dụ: "admin", "to1", "bao_tri")
   createdBy    String?
+}
+
+// Bảng Chấm công Tăng cường (Quản lý nội bộ, không xuất BRAVO)
+model ExtraTimesheet {
+  id               Int            @id @default(autoincrement())
+  date             DateTime       // Ngày chấm công
+  
+  employeeId       Int
+  employee         Employee       @relation(fields: [employeeId], references: [id])
+  
+  attendanceCodeId Int
+  attendanceCode   AttendanceCode @relation(fields: [attendanceCodeId], references: [id])
+  
+  note             String?        // Ghi chú (VD: Tăng cường xưởng 2)
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Đảm bảo 1 ngày 1 người chỉ có 1 dòng công TĂNG CƯỜNG
+  @@unique([employeeId, date], name: "employeeId_date")
 }
