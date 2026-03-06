@@ -115,7 +115,7 @@ model Department {
   staffUsers User[] @relation("UserBelongsTo")
 }
 
-// 3. Bảng Nhân Viên
+//============ 3. Bảng Nhân Viên ================
 model Employee {
   id         Int        @id @default(autoincrement())
   code       String     @unique // Mã NV nhập tay/import
@@ -133,6 +133,8 @@ model Employee {
   idCardPlace   String?   // Nơi cấp
   bankAccount   String?   // Số tài khoản
   taxCode       String?   // Mã số thuế
+  // true = Đang làm việc, false = Đã nghỉ việc
+  isActive     Boolean   @default(true)
   // -------------------------------
   
   // Khóa ngoại liên kết phòng ban
@@ -146,6 +148,8 @@ model Employee {
   timesheets Timesheet[]
 
   evaluations MonthlyEvaluation[] // Truy vấn xếp loại
+
+  extraTimesheets ExtraTimesheet[] // <-- Kết nối với bảng công tăng cường
   
   // --- Liên kết đến bảng làm thêm ---
   overtimeRecords OvertimeRecord[]
@@ -168,6 +172,9 @@ model AttendanceCode {
   
   // Mối quan hệ ngược: Một loại công link tới NHIỀU dòng chấm công
   timesheets  Timesheet[]
+
+  // Liên kết với bảng chấm công tăng cường
+  extraTimesheets ExtraTimesheet[]
 }
 
 // 2. Bảng chấm công hàng ngày
@@ -275,6 +282,26 @@ model OvertimeRecord {
 
   // [MỚI] Lưu username người tạo (Ví dụ: "admin", "to1", "bao_tri")
   createdBy    String?
+}
+
+// Bảng Chấm công Tăng cường (Quản lý nội bộ, không xuất BRAVO)
+model ExtraTimesheet {
+  id               Int            @id @default(autoincrement())
+  date             DateTime       // Ngày chấm công
+  
+  employeeId       Int
+  employee         Employee       @relation(fields: [employeeId], references: [id])
+  
+  attendanceCodeId Int
+  attendanceCode   AttendanceCode @relation(fields: [attendanceCodeId], references: [id])
+  
+  note             String?        // Ghi chú (VD: Tăng cường xưởng 2)
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Đảm bảo 1 ngày 1 người chỉ có 1 dòng công TĂNG CƯỜNG
+  @@unique([employeeId, date], name: "employeeId_date")
 }
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\prisma\schema.prisma ---
@@ -1583,6 +1610,10 @@ export async function GET(request: Request) {
       include: {
         factory: true,
         employees: {
+          // --- [SỬA TẠI ĐÂY] ---
+          // Chỉ lấy những nhân viên đang đi làm để đếm tổng số sự (totalStaff)
+          where: { isActive: true },
+          // ---------------------
           select: {
             id: true,
             // Lấy timesheet của nhân viên trong ngày đó
@@ -1641,7 +1672,7 @@ export async function GET(request: Request) {
         }
       });
 
-      // --- [LOGIC MỚI] XÁC ĐỊNH TRẠNG THÁI ---
+      // --- LOGIC XÁC ĐỊNH TRẠNG THÁI ---
       let status = "PENDING"; // Mặc định: Chưa chấm (Xám)
       if (timekeepingCount > 0) {
         if (timekeepingCount >= totalStaff && totalStaff > 0) {
@@ -2097,24 +2128,28 @@ import { prisma } from "@/lib/prisma";
 export async function DELETE(
   request: Request,
   // params phải là promise
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     // Bước đầu tiên, await params trước
     const { id } = await params;
     const employeeId = parseInt(id);
 
-    // Xóa trong cơ sở dữ liệu
-    await prisma.employee.delete({
+    // [SỬA ĐỔI TẠI ĐÂY] Dùng update để chuyển trạng thái thành Nghỉ việc (isActive = false)
+    await prisma.employee.update({
       where: { id: employeeId },
+      data: { isActive: false },
     });
 
     // Xóa xong thì tạo chuỗi JSON báo về client
-    return NextResponse.json({ message: "Xóa thành công!" });
+    return NextResponse.json({
+      message: "Đã chuyển nhân viên sang trạng thái Nghỉ việc!",
+    });
   } catch (error) {
+    console.log("Lỗi khi xóa mềm nhân viên: ", error);
     return NextResponse.json(
       { error: "Lỗi khi xóa: " + error },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -2122,60 +2157,72 @@ export async function DELETE(
 // --- API CẬP NHẬT THÔNG TIN NHÂN VIÊN ---
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    // Gọi await params
     const { id } = await params;
     const employeeId = parseInt(id);
+    const body = await request.json();
 
-    const body = await request.json(); // Chuyển gói hàng JSON từ client gửi lên thành Object
+    // 1. Lấy tất cả các dữ liệu gửi lên từ form (Bổ sung isActive)
     const {
       code,
       fullName,
-      birthday,
-      gender,
-      address,
-      phone,
-      position,
       departmentId,
       kipId,
-      startDate, idCardNumber, idCardDate, idCardPlace, bankAccount, taxCode
-    } = body; // Lấy những thứ cần thiết từ cục hàng body ra để dùng (cập nhật)
+      position,
+      startDate,
+      phone,
+      gender,
+      birthday,
+      address,
+      idCardNumber,
+      idCardDate,
+      idCardPlace,
+      bankAccount,
+      taxCode,
+      isActive, // <-- [QUAN TRỌNG TẠI ĐÂY]
+    } = body;
 
-    // FIX: Xử lý ngày sinh an toàn hơn
-    // Nếu birthday hợp lệ thì new Date, nếu không thì undefined
-    const formatBirthday = birthday ? new Date(birthday) : undefined;
-    const formatStartDate = startDate ? new Date(startDate) : null;     // [MỚI]
-    const formatIdCardDate = idCardDate ? new Date(idCardDate) : null; // [MỚI]
-
-    // Cập nhật vào cơ sở dữ liệu
+    // 2. Cập nhật vào Database
     const updatedEmployee = await prisma.employee.update({
       where: { id: employeeId },
       data: {
-        code: code,
-        fullName: fullName,
-        birthday: formatBirthday,
-        gender: gender,
-        address: address,
-        phone: phone,
-        position: position,
-        // FIX: Thêm kiểm tra departmentId trước khi parse để tránh NaN nếu lỡ null
-        departmentId: departmentId ? parseInt(departmentId) : undefined,
-        kipId: kipId ? Number(kipId) : null,
-        startDate: formatStartDate,
+        code,
+        fullName,
+        position,
+        phone,
+        gender,
+        address,
         idCardNumber,
-        idCardDate: formatIdCardDate,
         idCardPlace,
         bankAccount,
-        taxCode
+        taxCode,
+
+        // [SỬA LỖI Ở ĐÂY] Thay null thành undefined cho trường bắt buộc
+        departmentId: departmentId ? Number(departmentId) : undefined,
+
+        // kipId có thể rỗng (tùy chọn) nên nếu schema của bạn cho phép rỗng (Int?), để null là đúng
+        kipId: kipId ? Number(kipId) : null,
+
+        birthday: birthday ? new Date(birthday) : null,
+        startDate: startDate ? new Date(startDate) : null,
+        idCardDate: idCardDate ? new Date(idCardDate) : null,
+
+        isActive: isActive !== undefined ? isActive : true,
       },
     });
 
-    return NextResponse.json(updatedEmployee);
+    return NextResponse.json({
+      message: "Cập nhật thành công!",
+      data: updatedEmployee,
+    });
   } catch (error) {
-    console.log(error); // In lỗi ra terminal server để xem chi tiết
-    return NextResponse.json({ error: "Lỗi khi cập nhật, " }, { status: 500 });
+    console.error("Lỗi cập nhật nhân viên:", error);
+    return NextResponse.json(
+      { error: "Lỗi server khi cập nhật" },
+      { status: 500 },
+    );
   }
 }
 
@@ -2426,6 +2473,319 @@ export async function GET(request: Request) {
 }
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\evaluations\yearly\route.ts ---
+
+
+================================================================================
+FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\extra-timesheets\daily\route.ts
+================================================================================
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const departmentIdStr = searchParams.get("departmentId");
+    const dateStr = searchParams.get("date");
+    const kipIdsStr = searchParams.get("kipIds");
+
+    if (!dateStr)
+      return NextResponse.json(
+        { error: "Thiếu ngày chấm công" },
+        { status: 400 },
+      );
+
+    const targetDate = new Date(`${dateStr}T00:00:00.000Z`);
+    const whereCondition: any = {};
+
+    if (
+      departmentIdStr &&
+      departmentIdStr !== "null" &&
+      departmentIdStr !== ""
+    ) {
+      const deptIds = departmentIdStr
+        .split(",")
+        .map(Number)
+        .filter((n) => !isNaN(n));
+      if (deptIds.length > 0) whereCondition.departmentId = { in: deptIds };
+    }
+    if (kipIdsStr && kipIdsStr !== "") {
+      const kipIds = kipIdsStr
+        .split(",")
+        .map(Number)
+        .filter((n) => !isNaN(n));
+      if (kipIds.length > 0) whereCondition.kipId = { in: kipIds };
+    }
+
+    if (Object.keys(whereCondition).length === 0) return NextResponse.json([]);
+
+    whereCondition.isActive = true; // Bỏ qua người đã nghỉ việc
+
+    const employees = await prisma.employee.findMany({
+      where: whereCondition,
+      orderBy: [
+        { kip: { name: "asc" } },
+        { department: { name: "asc" } },
+        { fullName: "asc" },
+      ],
+      include: {
+        extraTimesheets: {
+          // [SỬA LẠI THÀNH BẢNG MỚI]
+          where: { date: targetDate },
+          include: { attendanceCode: true },
+        },
+        kip: true,
+        department: true,
+      },
+    });
+
+    const data = employees.map((emp) => {
+      const timesheet = emp.extraTimesheets[0];
+      return {
+        employeeId: emp.id,
+        employeeCode: emp.code,
+        fullName: emp.fullName,
+        departmentName: emp.department?.name,
+        departmentCode: emp.department?.code,
+        kipName: emp.kip?.name,
+        attendanceCodeId: timesheet ? timesheet.attendanceCodeId : null,
+        note: timesheet ? timesheet.note : "",
+        updatedAt: timesheet ? timesheet.updatedAt : null,
+      };
+    });
+
+    return NextResponse.json(data);
+  } catch (error) {
+    return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await auth();
+    if (!session || !session.user)
+      return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+    const body = await request.json();
+    const { date, records } = body;
+
+    if (!date || !records || records.length === 0)
+      return NextResponse.json(
+        { error: "Dữ liệu không hợp lệ" },
+        { status: 400 },
+      );
+
+    const targetDate = new Date(`${date}T00:00:00.000Z`);
+
+    // (Bạn có thể copy logic kiểm tra khóa sổ của bảng cũ vào đây nếu cần, hiện tại mình giữ ngắn gọn)
+
+    const operations = records.map((rec: any) => {
+      if (!rec.attendanceCodeId) {
+        return prisma.extraTimesheet.deleteMany({
+          // [SỬA] Dùng extraTimesheet
+          where: { employeeId: rec.employeeId, date: targetDate },
+        });
+      } else {
+        return prisma.extraTimesheet.upsert({
+          // [SỬA] Dùng extraTimesheet
+          where: {
+            employeeId_date: { employeeId: rec.employeeId, date: targetDate },
+          },
+          update: { attendanceCodeId: rec.attendanceCodeId, note: rec.note },
+          create: {
+            date: targetDate,
+            employeeId: rec.employeeId,
+            attendanceCodeId: rec.attendanceCodeId,
+            note: rec.note,
+          },
+        });
+      }
+    });
+
+    await prisma.$transaction(operations);
+    return NextResponse.json({ message: "Đã lưu thành công!" });
+  } catch (error) {
+    return NextResponse.json({ error: "Lỗi khi lưu dữ liệu" }, { status: 500 });
+  }
+}
+
+
+--- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\extra-timesheets\daily\route.ts ---
+
+
+================================================================================
+FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\extra-timesheets\monthly\route.ts
+================================================================================
+// src/app/api/timesheets/monthly/route.ts
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import dayjs from "dayjs";
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const departmentIdStr = searchParams.get("departmentId");
+    const kipIdsStr = searchParams.get("kipIds");
+    const factoryIdStr = searchParams.get("factoryId");
+    const nameStr = searchParams.get("name");
+    const month = searchParams.get("month");
+    const year = searchParams.get("year");
+
+    // Lấy thêm tham số view
+    const viewMode = searchParams.get("view");
+
+    // Validate thời gian
+    if (!month || !year) {
+      return NextResponse.json(
+        { error: "Thiếu thông tin thời gian (tháng/năm)" },
+        { status: 400 },
+      );
+    }
+
+    // Điều kiện validation bộ lọc
+    const hasDeptFilter = !!departmentIdStr || !!kipIdsStr;
+    const hasNameFilter = !!nameStr && nameStr.trim() !== "";
+    // Kiểm tra thêm điều kiện viewMode
+    const isViewAll = viewMode === "all";
+
+    // Logic chặn tải nặng: Nếu KHÔNG lọc VÀ KHÔNG phải xem tất cả -> Chặn
+    if (!hasDeptFilter && !hasNameFilter && !isViewAll) {
+      return NextResponse.json(
+        { error: "Vui lòng chọn Phòng ban hoặc nhấn nút 'Xem tất cả'" },
+        { status: 400 },
+      );
+    }
+    const whereCondition: any = {};
+
+    // 1. LỌC THEO TÊN
+    if (nameStr && nameStr.trim() !== "") {
+      const keyword = nameStr.trim();
+      whereCondition.OR = [
+        { fullName: { contains: keyword, mode: "insensitive" } },
+        { code: { contains: keyword, mode: "insensitive" } },
+      ];
+    }
+
+    // 2. LỌC THEO NHÀ MÁY
+    if (factoryIdStr && factoryIdStr !== "null") {
+      whereCondition.department = {
+        ...(whereCondition.department || {}),
+        factoryId: Number(factoryIdStr),
+      };
+    }
+
+    // 3. LỌC THEO PHÒNG BAN
+    if (departmentIdStr && departmentIdStr !== "null") {
+      const deptIds = departmentIdStr
+        .split(",")
+        .map(Number)
+        .filter((n) => !isNaN(n));
+      if (deptIds.length > 0) {
+        whereCondition.departmentId = { in: deptIds };
+      }
+    }
+
+    // 4. LỌC THEO KÍP
+    if (kipIdsStr) {
+      const kipIds = kipIdsStr
+        .split(",")
+        .map(Number)
+        .filter((n) => !isNaN(n));
+      if (kipIds.length > 0) {
+        whereCondition.kipId = { in: kipIds };
+      }
+    }
+
+    if (!isViewAll) {
+      if (departmentIdStr && departmentIdStr !== "null") {
+        const deptIds = departmentIdStr
+          .split(",")
+          .map(Number)
+          .filter((n) => !isNaN(n));
+        if (deptIds.length > 0) whereCondition.departmentId = { in: deptIds };
+      }
+      if (kipIdsStr) {
+        const kipIds = kipIdsStr
+          .split(",")
+          .map(Number)
+          .filter((n) => !isNaN(n));
+        if (kipIds.length > 0) whereCondition.kipId = { in: kipIds };
+      }
+    }
+
+    // --- [SỬA ĐỔI TẠI ĐÂY] ---
+    // Chỉ lấy những nhân viên đang hoạt động
+    whereCondition.isActive = true;
+    // -------------------------
+
+    // Thời gian cho query Timesheet
+    const startDate = dayjs(`${year}-${month}-01`).startOf("month").toDate();
+    const endDate = dayjs(`${year}-${month}-01`).endOf("month").toDate();
+
+    // === TRUY VẤN DATABASE ===
+    const employees = await prisma.employee.findMany({
+      where: whereCondition,
+      orderBy: [
+        { department: { factoryId: "asc" } },
+        { department: { name: "asc" } },
+        { kip: { name: "asc" } },
+        { code: "asc" },
+      ],
+      include: {
+        // Lấy dữ liệu chấm công trong tháng
+        extraTimesheets: {
+          where: { date: { gte: startDate, lte: endDate } },
+          include: { attendanceCode: true },
+        },
+        // Lấy thông tin phòng ban & nhà máy
+        department: { include: { factory: true } },
+        // Lấy thông tin Kíp
+        kip: true,
+
+        // Lấy dữ liệu Xếp loại (MonthlyEvaluation)
+        evaluations: {
+          where: {
+            month: Number(month),
+            year: Number(year),
+          },
+          take: 1, // Lấy 1 bản ghi duy nhất khớp tháng/năm
+        },
+      },
+    });
+
+    // === MAP DỮ LIỆU TRẢ VỀ ===
+    const data = employees.map((emp) => {
+      // Lấy bản ghi xếp loại (nếu có)
+      const evaluationRecord = emp.evaluations[0];
+
+      return {
+        id: emp.id,
+        code: emp.code,
+        fullName: emp.fullName,
+        department: emp.department,
+        kip: emp.kip,
+
+        // Trả về giá trị grade (A, B, C) cho Frontend
+        // Nếu chưa có xếp loại thì trả về null hoặc chuỗi rỗng
+        classification: evaluationRecord ? evaluationRecord.grade : null,
+
+        timesheets: emp.extraTimesheets.map((t) => ({
+          // Đổi emp.timesheets thành emp.extraTimesheets
+          date: dayjs(t.date).format("YYYY-MM-DD"),
+          attendanceCode: t.attendanceCode,
+        })),
+      };
+    });
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Lỗi server API Monthly Timesheet: ", error);
+    return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
+  }
+}
+
+
+--- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\api\extra-timesheets\monthly\route.ts ---
 
 
 ================================================================================
@@ -3080,9 +3440,15 @@ export async function GET(request: Request) {
       }
     }
 
+    // Nếu người dùng chưa chọn bộ phận nào thì không trả về gì cả
     if (Object.keys(whereCondition).length === 0) {
       return NextResponse.json([]);
     }
+
+    // --- [SỬA ĐỔI TẠI ĐÂY] ---
+    // Chỉ lấy những nhân viên có trạng thái đang hoạt động (isActive = true)
+    whereCondition.isActive = true;
+    // -------------------------
 
     const employees = await prisma.employee.findMany({
       where: whereCondition,
@@ -3250,7 +3616,7 @@ export async function GET(request: Request) {
         const month = searchParams.get("month");
         const year = searchParams.get("year");
 
-        // [MỚI] Lấy thêm tham số view
+        // Lấy thêm tham số view
         const viewMode = searchParams.get("view");
 
         // Validate thời gian
@@ -3264,7 +3630,7 @@ export async function GET(request: Request) {
         // Điều kiện validation bộ lọc
         const hasDeptFilter = !!departmentIdStr || !!kipIdsStr;
         const hasNameFilter = !!nameStr && nameStr.trim() !== "";
-        // [MỚI] Kiểm tra thêm điều kiện viewMode
+        // Kiểm tra thêm điều kiện viewMode
         const isViewAll = viewMode === "all";
 
         // Logic chặn tải nặng: Nếu KHÔNG lọc VÀ KHÔNG phải xem tất cả -> Chặn
@@ -3326,6 +3692,11 @@ export async function GET(request: Request) {
             }
         }
 
+        // --- [SỬA ĐỔI TẠI ĐÂY] ---
+        // Chỉ lấy những nhân viên đang hoạt động
+        whereCondition.isActive = true;
+        // -------------------------
+
         // Thời gian cho query Timesheet
         const startDate = dayjs(`${year}-${month}-01`).startOf("month").toDate();
         const endDate = dayjs(`${year}-${month}-01`).endOf("month").toDate();
@@ -3350,7 +3721,7 @@ export async function GET(request: Request) {
                 // Lấy thông tin Kíp
                 kip: true,
 
-                // [QUAN TRỌNG] Lấy dữ liệu Xếp loại (MonthlyEvaluation)
+                // Lấy dữ liệu Xếp loại (MonthlyEvaluation)
                 evaluations: {
                     where: {
                         month: Number(month),
@@ -5072,10 +5443,10 @@ import AdminLayout from "@/components/AdminLayout";
 import { useSession } from "next-auth/react";
 import {
   Table, Button, Modal, Form, Input, message, Select, DatePicker, Tag,
-  Popconfirm, Card, Space, type TableProps, Divider // <-- Thêm Divider
+  Card, Space, type TableProps, Divider, Radio
 } from "antd";
 import {
-  PlusOutlined, DeleteOutlined, EditOutlined, FilterOutlined, PhoneOutlined, SearchOutlined
+  PlusOutlined, EditOutlined, FilterOutlined, PhoneOutlined, SearchOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -5090,7 +5461,6 @@ interface Kip {
   id: number; name: string; factoryId: number; factory?: Factory;
 }
 
-// [MỚI] Cập nhật Interface Employee
 interface Employee {
   id: number;
   code: string;
@@ -5102,13 +5472,13 @@ interface Employee {
   kip?: Kip;
   position?: string;
   address?: string;
-  // Các trường mới
   startDate?: string;
   idCardNumber?: string;
   idCardDate?: string;
   idCardPlace?: string;
   bankAccount?: string;
   taxCode?: string;
+  isActive?: boolean; // [MỚI] Trạng thái làm việc
 }
 
 export default function EmployeePage() {
@@ -5130,6 +5500,7 @@ export default function EmployeePage() {
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
   const [searchText, setSearchText] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<boolean | null>(null); // Lọc theo trạng thái
 
   // --- FETCH DATA ---
   const fetchEmployees = async () => {
@@ -5166,29 +5537,16 @@ export default function EmployeePage() {
     return employees.filter((emp) => {
       const matchFactory = selectedFactoryId ? emp.department?.factory?.id === selectedFactoryId : true;
       const matchDept = selectedDeptId ? emp.department?.id === selectedDeptId : true;
+      const matchStatus = selectedStatus !== null ? emp.isActive === selectedStatus : true;
       const matchName = searchText
         ? emp.fullName.toLowerCase().includes(searchText.toLowerCase()) ||
-          emp.code.toLowerCase().includes(searchText.toLowerCase())
+        emp.code.toLowerCase().includes(searchText.toLowerCase())
         : true;
-      return matchFactory && matchDept && matchName;
+      return matchFactory && matchDept && matchName && matchStatus;
     });
-  }, [employees, selectedFactoryId, selectedDeptId, searchText]);
+  }, [employees, selectedFactoryId, selectedDeptId, searchText, selectedStatus]);
 
   // --- ACTIONS ---
-  const handleDelete = async (id: number) => {
-    try {
-      const res = await fetch(`/api/employees/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        message.success("Đã xóa!");
-        fetchEmployees();
-      } else {
-        message.error("Lỗi khi xóa");
-      }
-    } catch (error) {
-      message.error("Lỗi kết nối");
-    }
-  };
-
   const handleEdit = (record: Employee) => {
     setEditingId(record.id);
     form.setFieldsValue({
@@ -5196,9 +5554,9 @@ export default function EmployeePage() {
       birthday: record.birthday ? dayjs(record.birthday) : null,
       departmentId: record.department?.id,
       kipId: record.kip?.id,
-      // [MỚI] Map dữ liệu ngày tháng mới sang dayjs
       startDate: record.startDate ? dayjs(record.startDate) : null,
       idCardDate: record.idCardDate ? dayjs(record.idCardDate) : null,
+      isActive: record.isActive !== undefined ? record.isActive : true, // Set trạng thái vào form
     });
     setIsModalOpen(true);
   };
@@ -5206,20 +5564,20 @@ export default function EmployeePage() {
   const openAddModal = () => {
     setEditingId(null);
     form.resetFields();
+    form.setFieldsValue({ isActive: true }); // Mặc định là Đang làm việc khi thêm mới
     setIsModalOpen(true);
   };
 
   const handleOK = async () => {
     try {
       const values = await form.validateFields();
-      
+
       // Helper format ngày
       const fmtDate = (d: any) => d ? d.format("YYYY-MM-DD") + "T00:00:00.000Z" : null;
 
       const payload = {
         ...values,
         birthday: fmtDate(values.birthday),
-        // [MỚI] Format các ngày mới
         startDate: fmtDate(values.startDate),
         idCardDate: fmtDate(values.idCardDate),
       };
@@ -5267,16 +5625,21 @@ export default function EmployeePage() {
         </div>
       ),
     },
-    { title: "Chức vụ", dataIndex: "position", key: "position" },
+    { title: "Chức vụ", dataIndex: "position", key: "position", width: 120 },
     {
-      title: "Hành động", key: "action", width: 100,
+      title: "Trạng thái", dataIndex: "isActive", key: "isActive", width: 130,
+      align: "center" as const, // <-- [SỬA Ở ĐÂY] Thêm as const
+      render: (isActive: boolean) => (
+        <Tag color={isActive ? "success" : "error"}>
+          {isActive ? "Đang làm việc" : "Đã nghỉ việc"}
+        </Tag>
+      ),
+    },
+    {
+      title: "Hành động", key: "action", width: 90,
+      align: "center" as const, // <-- [SỬA Ở ĐÂY] Thêm as const
       render: (_: any, record: any) => (
-        <Space>
-          <Button type="text" icon={<EditOutlined />} style={{ color: "blue" }} onClick={() => handleEdit(record)} />
-          <Popconfirm title="Xóa nhân viên này?" onConfirm={() => handleDelete(record.id)} okText="Xóa" cancelText="Hủy">
-            <Button type="text" icon={<DeleteOutlined />} danger />
-          </Popconfirm>
-        </Space>
+        <Button type="text" icon={<EditOutlined />} style={{ color: "blue" }} onClick={() => handleEdit(record)} />
       ),
     },
   ].filter((col) => !isViewOnly || col.key !== "action");
@@ -5284,7 +5647,6 @@ export default function EmployeePage() {
   // --- RENDER UI ---
   return (
     <AdminLayout>
-      {/* Header & Filter UI (Giữ nguyên như cũ) */}
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2 className="text-2xl font-bold">Quản lý nhân sự ({filteredEmployees.length})</h2>
         {!isViewOnly && (
@@ -5296,19 +5658,23 @@ export default function EmployeePage() {
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600 }}><FilterOutlined /> Bộ lọc:</span>
           <Input placeholder="Tìm tên hoặc mã NV..." prefix={<SearchOutlined style={{ color: "#bfbfbf" }} />} style={{ width: 200 }} value={searchText} onChange={(e) => setSearchText(e.target.value)} allowClear />
-          <Select style={{ width: 220 }} placeholder="Tất cả Nhà máy" allowClear value={selectedFactoryId} onChange={(val) => { setSelectedFactoryId(val); setSelectedDeptId(null); }}>
+          <Select style={{ width: 180 }} placeholder="Tất cả Nhà máy" allowClear value={selectedFactoryId} onChange={(val) => { setSelectedFactoryId(val); setSelectedDeptId(null); }}>
             {factories.map((f) => <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>)}
           </Select>
-          <Select style={{ width: 220 }} placeholder="Tất cả Phòng ban" allowClear value={selectedDeptId} onChange={(val) => setSelectedDeptId(val)} disabled={!selectedFactoryId && departments.length > 50}>
+          <Select style={{ width: 180 }} placeholder="Tất cả Phòng ban" allowClear value={selectedDeptId} onChange={(val) => setSelectedDeptId(val)} disabled={!selectedFactoryId && departments.length > 50}>
             {availableDepartments.map((d) => <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>)}
           </Select>
-          {(selectedFactoryId || selectedDeptId || searchText) && (
-            <Button type="link" onClick={() => { setSelectedFactoryId(null); setSelectedDeptId(null); setSearchText(""); }}>Xóa lọc</Button>
+          <Select style={{ width: 160 }} placeholder="Trạng thái làm việc" allowClear value={selectedStatus} onChange={(val) => setSelectedStatus(val)}>
+            <Select.Option value={true}>Đang làm việc</Select.Option>
+            <Select.Option value={false}>Đã nghỉ việc</Select.Option>
+          </Select>
+          {(selectedFactoryId || selectedDeptId || searchText || selectedStatus !== null) && (
+            <Button type="link" onClick={() => { setSelectedFactoryId(null); setSelectedDeptId(null); setSearchText(""); setSelectedStatus(null); }}>Xóa lọc</Button>
           )}
         </div>
       </Card>
 
-      <Table columns={columns} dataSource={filteredEmployees} rowKey="id" loading={loading} bordered scroll={{ x: 900 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
+      <Table columns={columns} dataSource={filteredEmployees} rowKey="id" loading={loading} bordered scroll={{ x: 1000 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
 
       {/* --- MODAL FORM --- */}
       <Modal
@@ -5316,13 +5682,22 @@ export default function EmployeePage() {
         open={isModalOpen}
         onOk={handleOK}
         onCancel={() => setIsModalOpen(false)}
-        width={800} // Tăng chiều rộng Modal một chút cho đẹp
+        width={800}
         confirmLoading={loading}
       >
         <Form form={form} layout="vertical">
-          {/* --- PHẦN 1: THÔNG TIN CƠ BẢN --- */}
           <Divider style={{ marginTop: 0 }}>Thông tin cơ bản</Divider>
-          
+
+          {/* Dòng trạng thái nổi bật lên trên cùng */}
+          <div style={{ display: "flex", gap: 16 }}>
+            <Form.Item name="isActive" label="Trạng thái làm việc" rules={[{ required: true }]}>
+              <Radio.Group buttonStyle="solid">
+                <Radio.Button value={true}>Đang làm việc</Radio.Button>
+                <Radio.Button value={false}>Đã nghỉ việc</Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+          </div>
+
           <div style={{ display: "flex", gap: 16 }}>
             <Form.Item name="code" label="Mã NV" style={{ flex: 1 }} rules={[{ required: true, message: "Bắt buộc" }]}>
               <Input placeholder="NV..." />
@@ -5354,8 +5729,7 @@ export default function EmployeePage() {
               <Input />
             </Form.Item>
             <Form.Item name="startDate" label="Ngày vào làm" style={{ flex: 1 }}>
-               {/* [MỚI] Ngày vào làm */}
-               <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày" />
+              <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày" />
             </Form.Item>
           </div>
 
@@ -5369,37 +5743,36 @@ export default function EmployeePage() {
                 <Select.Option value="Nữ">Nữ</Select.Option>
               </Select>
             </Form.Item>
-             <Form.Item name="birthday" label="Ngày sinh" style={{ flex: 1 }}>
+            <Form.Item name="birthday" label="Ngày sinh" style={{ flex: 1 }}>
               <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày" />
             </Form.Item>
           </div>
 
-           <Form.Item name="address" label="Địa chỉ thường trú">
+          <Form.Item name="address" label="Địa chỉ thường trú">
             <Input.TextArea rows={1} />
           </Form.Item>
 
-          {/* --- PHẦN 2: THÔNG TIN BỔ SUNG --- */}
           <Divider>Thông tin định danh & Ngân hàng</Divider>
 
           <div style={{ display: "flex", gap: 16 }}>
-             <Form.Item name="idCardNumber" label="Số CCCD" style={{ flex: 1 }}>
-               <Input placeholder="Số căn cước..." />
-             </Form.Item>
-             <Form.Item name="idCardDate" label="Ngày cấp" style={{ flex: 1 }}>
-               <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày cấp" />
-             </Form.Item>
-              <Form.Item name="idCardPlace" label="Nơi cấp" style={{ flex: 1 }}>
-               <Input placeholder="Cục CS..." />
-             </Form.Item>
+            <Form.Item name="idCardNumber" label="Số CCCD" style={{ flex: 1 }}>
+              <Input placeholder="Số căn cước..." />
+            </Form.Item>
+            <Form.Item name="idCardDate" label="Ngày cấp" style={{ flex: 1 }}>
+              <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="Chọn ngày cấp" />
+            </Form.Item>
+            <Form.Item name="idCardPlace" label="Nơi cấp" style={{ flex: 1 }}>
+              <Input placeholder="Cục CS..." />
+            </Form.Item>
           </div>
 
           <div style={{ display: "flex", gap: 16 }}>
-             <Form.Item name="bankAccount" label="Số tài khoản" style={{ flex: 1 }}>
-               <Input placeholder="STK ngân hàng..." />
-             </Form.Item>
-             <Form.Item name="taxCode" label="Mã số thuế" style={{ flex: 1 }}>
-               <Input placeholder="MST cá nhân..." />
-             </Form.Item>
+            <Form.Item name="bankAccount" label="Số tài khoản" style={{ flex: 1 }}>
+              <Input placeholder="STK ngân hàng..." />
+            </Form.Item>
+            <Form.Item name="taxCode" label="Mã số thuế" style={{ flex: 1 }}>
+              <Input placeholder="MST cá nhân..." />
+            </Form.Item>
           </div>
 
         </Form>
@@ -5918,6 +6291,934 @@ export default function YearlyEvaluationPage() {
 }
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\evaluations\yearly\page.tsx ---
+
+
+================================================================================
+FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\extra-timesheets\daily\page.tsx
+================================================================================
+"use client";
+
+import React, { useEffect, useState, useMemo } from "react";
+import AdminLayout from "@/components/AdminLayout";
+import { useSession } from "next-auth/react";
+import {
+    Table,
+    Select,
+    Button,
+    message,
+    Input,
+    Tag,
+    Space,
+    Typography,
+    Alert,
+} from "antd";
+import { SaveOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
+
+// [QUAN TRỌNG] Import Component lọc dùng chung
+import CommonFilter, { FilterResult } from "@/components/CommonFilter";
+
+const { Title } = Typography;
+
+// --- INTERFACES ---
+interface AttendanceCode {
+    id: number;
+    code: string;
+    name: string;
+    color: string;
+}
+
+interface TimesheetRow {
+    employeeId: number;
+    employeeCode: string;
+    fullName: string;
+    attendanceCodeId: number | null;
+    note: string;
+    updatedAt?: string;
+    departmentName?: string;
+    kipName?: string;
+}
+
+export default function DailyTimesheetPage() {
+    const { data: session } = useSession();
+
+    // 1. [SỬA ĐỔI QUAN TRỌNG] Logic xác định chế độ "Chỉ xem"
+    // Nếu là LEADER hoặc STAFF thì bật chế độ Chỉ xem (Ẩn nút Lưu, Khóa nhập liệu)
+    const isViewOnly = ["LEADER", "STAFF"].includes(session?.user?.role as string);
+
+    // --- STATE ---
+    const [employees, setEmployees] = useState<TimesheetRow[]>([]);
+    const [attendanceCodes, setAttendanceCodes] = useState<AttendanceCode[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    // Lưu trữ kết quả lọc hiện tại để dùng cho hàm Save và Reload
+    const [currentFilter, setCurrentFilter] = useState<FilterResult | null>(null);
+
+    // 1. Chỉ cần tải danh sách Mã công (Danh mục Phòng/Kíp đã do CommonFilter lo)
+    useEffect(() => {
+        const fetchCodes = async () => {
+            try {
+                const res = await fetch("/api/attendance-codes");
+                const codes: AttendanceCode[] = await res.json();
+
+                // Sắp xếp mã công theo ưu tiên
+                const PRIORITY = ["+", "XD", "ĐC", "X/2", "F", "NB", "Ô", "XL", "L", "TS"];
+                codes.sort((a, b) => {
+                    const iA = PRIORITY.indexOf(a.code), iB = PRIORITY.indexOf(b.code);
+                    if (iA !== -1 && iB !== -1) return iA - iB;
+                    if (iA !== -1) return -1;
+                    if (iB !== -1) return 1;
+                    return a.code.localeCompare(b.code);
+                });
+                setAttendanceCodes(codes);
+            } catch (error) {
+                message.error("Lỗi tải mã chấm công");
+            }
+        };
+        fetchCodes();
+    }, []);
+
+    // --- HÀM TẢI DỮ LIỆU (Gọi mỗi khi bộ lọc thay đổi) ---
+    const fetchTimesheetData = async (filter: FilterResult) => {
+        // Nếu chưa chọn phòng ban nào -> Xóa bảng
+        if (!filter.realDepartmentIds || filter.realDepartmentIds.length === 0) {
+            setEmployees([]);
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const dateStr = filter.date.format("YYYY-MM-DD");
+            // Gửi danh sách ID phòng ban đã được CommonFilter giải mã (VD: 15,16,17)
+            const deptParam = filter.realDepartmentIds.join(",");
+
+            const url = `/api/extra-timesheets/daily?date=${dateStr}&departmentId=${deptParam}`;
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("Lỗi tải");
+            const data = await res.json();
+            setEmployees(data);
+        } catch (error) {
+            message.error("Lỗi tải dữ liệu");
+            setEmployees([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // --- CALLBACK TỪ COMPONENT LỌC ---
+    const handleFilterChange = (result: FilterResult) => {
+        setCurrentFilter(result); // Lưu state để dùng khi Save
+        fetchTimesheetData(result); // Gọi API
+    };
+
+    // --- HÀM LƯU DỮ LIỆU ---
+    const handleSave = async () => {
+        if (!currentFilter || employees.length === 0) return;
+
+        // [SỬA ĐỔI] KHÔNG dùng .filter loại bỏ null nữa. 
+        // Gửi toàn bộ danh sách hiển thị trên màn hình lên Server.
+        const recordsToSend = employees.map((e) => ({
+            employeeId: e.employeeId,
+            attendanceCodeId: e.attendanceCodeId || null, // Nếu bị xóa trắng thì gửi lên là null
+            note: e.note || "",
+        }));
+
+        setSaving(true);
+        try {
+            // Logic xác định ID phòng ban để check khóa sổ
+            const payloadDeptId = currentFilter.realDepartmentIds.length === 1
+                ? currentFilter.realDepartmentIds[0]
+                : null;
+
+            const payload = {
+                date: currentFilter.date.format("YYYY-MM-DD"),
+                departmentId: payloadDeptId,
+                records: recordsToSend,
+            };
+
+            const res = await fetch("/api/extra-timesheets/daily", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+
+            if (res.ok) {
+                // Đếm những người thực sự được chấm công để hiện thông báo cho đẹp
+                const validCount = recordsToSend.filter(r => r.attendanceCodeId !== null).length;
+                message.success(`Đã lưu bảng công! (Có ${validCount} người được chấm)`);
+
+                fetchTimesheetData(currentFilter); // Tải lại để cập nhật updatedAt
+            } else {
+                const err = await res.json();
+                message.error(res.status === 403 ? `KHÓA SỔ: ${err.error}` : err.error || "Lỗi lưu");
+            }
+        } catch (error) {
+            console.error(error);
+            message.error("Lỗi kết nối");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // --- HELPERS (Logic UI nội bộ) ---
+    const handleRowChange = (empId: number, field: string, value: any) => {
+        const newData = [...employees];
+        const index = newData.findIndex((i) => i.employeeId === empId);
+        if (index > -1) {
+            newData[index] = { ...newData[index], [field]: value };
+            setEmployees(newData);
+        }
+    };
+
+    const setAllStatus = (codeStr: string) => {
+        const targetCode = attendanceCodes.find((c) => c.code === codeStr);
+        if (!targetCode) return;
+        setEmployees(employees.map((e) => ({ ...e, attendanceCodeId: targetCode.id })));
+    };
+
+    const timesheetStatus = useMemo(() => {
+        if (employees.length === 0) return null;
+        const hasData = employees.some((e) => e.attendanceCodeId !== null);
+        const lastUpdate = employees.find((e) => e.updatedAt)?.updatedAt;
+        return {
+            isSubmitted: hasData,
+            lastUpdate: lastUpdate ? dayjs(lastUpdate).format("HH:mm - DD/MM/YYYY") : null,
+        };
+    }, [employees]);
+
+    // --- COLUMNS ---
+    const columns = [
+        {
+            title: "STT",
+            key: "index",
+            width: 50,
+            align: "center" as const,
+            render: (_: any, __: any, index: number) => <span style={{ color: "#888" }}>{index + 1}</span>,
+        },
+        { title: "Họ và tên", dataIndex: "fullName", width: 220 },
+        {
+            title: "Bộ phận",
+            key: "deptInfo",
+            width: 150,
+            render: (_: any, record: TimesheetRow) => (
+                <div style={{ fontSize: 12 }}>
+                    {record.kipName ? (
+                        <Tag color="blue">{record.kipName}</Tag>
+                    ) : (
+                        <Tag>{record.departmentName}</Tag>
+                    )}
+                </div>
+            ),
+        },
+        {
+            title: "Trạng thái",
+            dataIndex: "attendanceCodeId",
+            width: 200,
+            render: (value: number, record: TimesheetRow) => (
+                <Select
+                    value={value}
+                    allowClear
+                    style={{ width: "100%" }}
+                    placeholder="Chọn"
+                    disabled={isViewOnly} // KHÓA NHẬP LIỆU NẾU LÀ STAFF/LEADER
+                    onChange={(val) => handleRowChange(record.employeeId, "attendanceCodeId", val)}
+                    options={attendanceCodes.map((c) => ({
+                        value: c.id,
+                        label: `${c.code} - ${c.name}`,
+                        item: c,
+                    }))}
+                    optionRender={(opt) => (
+                        <Space>
+                            <Tag color={opt.data.item.color} style={{ fontWeight: "bold", minWidth: 40, textAlign: "center" }}>
+                                {opt.data.item.code}
+                            </Tag>
+                            {opt.data.item.name}
+                        </Space>
+                    )}
+                    labelRender={(props) => {
+                        const c = attendanceCodes.find((x) => x.id === props.value);
+                        return c ? (
+                            <Tag color={c.color} style={{ fontWeight: "bold", width: "100%", textAlign: "center" }}>
+                                {c.code} - {c.name}
+                            </Tag>
+                        ) : (props.label);
+                    }}
+                />
+            ),
+        },
+        {
+            title: "Ghi chú",
+            dataIndex: "note",
+            render: (txt: string, rec: TimesheetRow) => (
+                <Input
+                    value={txt}
+                    disabled={isViewOnly} // KHÓA NHẬP LIỆU
+                    onChange={(e) => handleRowChange(rec.employeeId, "note", e.target.value)}
+                    placeholder="..."
+                />
+            ),
+        },
+    ];
+
+    return (
+        <AdminLayout>
+            <Title level={3} style={{ marginBottom: 24 }}>Chấm công TĂNG CƯỜNG hàng ngày</Title>
+
+            {/* --- SỬ DỤNG COMPONENT LỌC DÙNG CHUNG --- */}
+            <CommonFilter
+                dateMode="date"
+                onFilterChange={handleFilterChange}
+            />
+
+            {/* --- PHẦN HIỂN THỊ TRẠNG THÁI --- */}
+            {employees.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                    {timesheetStatus?.isSubmitted ? (
+                        <Alert
+                            message={`Đã chấm công (Cập nhật: ${timesheetStatus.lastUpdate})`}
+                            type="success"
+                            showIcon
+                        />
+                    ) : (
+                        <Alert message="Chưa có dữ liệu." type="info" showIcon />
+                    )}
+                </div>
+            )}
+
+            {employees.length > 0 ? (
+                <>
+                    {/* Thanh công cụ: Chỉ hiện nếu KHÔNG PHẢI là ViewOnly */}
+                    {!isViewOnly ? (
+                        <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
+                            <Space>
+                                <span style={{ fontWeight: 600 }}>Thao tác nhanh:</span>
+                                <Button size="small" onClick={() => setAllStatus("+")}>Đi làm (+)</Button>
+                                <Button size="small" onClick={() => setAllStatus("1/2X")}>Nửa công (1/2X)</Button>
+                                <Button size="small" onClick={() => setAllStatus("XD")}>Làm ca đêm (XD)</Button>
+                            </Space>
+
+                            <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving}>
+                                LƯU DỮ LIỆU
+                            </Button>
+                        </div>
+                    ) : (
+                        <div style={{ marginBottom: 16, fontStyle: "italic", color: "#888" }}>
+                            * Bạn đang ở chế độ xem, không có quyền chỉnh sửa bảng công.
+                        </div>
+                    )}
+
+                    <Table
+                        bordered
+                        dataSource={employees}
+                        columns={columns}
+                        rowKey="employeeId"
+                        loading={loading}
+                        pagination={false}
+                        scroll={{ y: 600 }}
+                        size="middle"
+                    />
+                </>
+            ) : (
+                <div style={{ textAlign: "left", padding: "50px", color: "#999", background: "#fff", border: "1px dashed #ddd" }}>
+                    <b>Hướng dẫn:</b> <br />
+                    <b>Bước 1:</b> Chọn ngày cần chấm <br />
+                    <b>Bước 2:</b> Chọn nhà máy có phòng ban hay tổ mình cần chấm. <br />
+                    <b>Bước 3:</b> Chọn Phòng ban hoặc Tổ, nếu là ca kíp thì chọn tổ của kíp cần chấm (ví dụ tổ bông chải, tổ ghép thô, tổ sợi con, vv...) <br />
+                    <b>Bước 4:</b> Sau khi chọn tổ thì tất cả nhân viên của 7 kíp hoặc 10 kíp sẽ hiện ra cùng lúc, lúc này chọn vào ô kíp để lọc lại những kíp cần chấm (ví dụ kíp 2, kíp 3,...) <br />
+                    <b>Bước 5:</b> Lọc kíp xong tiến hành chấm và lưu bình thường. <br />
+                    Đối với phòng ban không phải ca kíp thì không cần chọn ô kíp
+                </div>
+            )}
+        </AdminLayout>
+    );
+}
+
+--- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\extra-timesheets\daily\page.tsx ---
+
+
+================================================================================
+FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\extra-timesheets\monthly\page.tsx
+================================================================================
+// src/app/timesheets/monthly/page.tsx
+
+"use client";
+
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+import React, { useState, useMemo } from "react";
+import AdminLayout from "@/components/AdminLayout";
+import {
+  Table,
+  Button,
+  message,
+  Typography,
+  Tooltip,
+} from "antd";
+import { FileExcelOutlined, AppstoreOutlined } from "@ant-design/icons"; // [MỚI] Thêm icon
+import dayjs from "dayjs";
+
+// [QUAN TRỌNG] Import Component lọc dùng chung
+import CommonFilter, { FilterResult } from "@/components/CommonFilter";
+
+const { Title } = Typography;
+
+// [MỚI] Mở rộng interface để hỗ trợ dòng tiêu đề nhóm
+interface TableRowData extends Partial<MonthlyEmployeeData> {
+  key: string | number;
+  isGroupHeader?: boolean;
+  groupTitle?: string;
+}
+
+// --- INTERFACES ---
+interface AttendanceCode {
+  id: number;
+  code: string;
+  name: string;
+  color: string;
+}
+interface MonthlyEmployeeData {
+  id: number;
+  code: string;
+  fullName: string;
+  department?: { name: string; factory?: { name: string } }; // [SỬA] Thêm factory để lấy tên hiển thị
+  kip?: { name: string };
+  timesheets: { date: string; attendanceCode: AttendanceCode }[];
+  classification?: string | null;
+}
+
+export default function MonthlyTimesheetPage() {
+  // --- STATE ---
+  const [employees, setEmployees] = useState<MonthlyEmployeeData[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // State lưu bộ lọc hiện tại (để dùng cho Excel và render cột ngày)
+  const [currentFilter, setCurrentFilter] = useState<FilterResult | null>(null);
+
+  // --- 1. FETCH DATA (Gọi khi CommonFilter thay đổi) ---
+  const fetchMonthlyData = async (filter: FilterResult) => {
+    // Nếu chưa chọn phòng ban -> Xóa bảng
+    if (!filter.realDepartmentIds || filter.realDepartmentIds.length === 0) {
+      setEmployees([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const month = filter.date.month() + 1;
+      const year = filter.date.year();
+
+      let url = `/api/extra-timesheets/monthly?month=${month}&year=${year}`;
+
+      if (filter.factoryId) {
+        url += `&factoryId=${filter.factoryId}`;
+      }
+
+      // Gửi danh sách ID phòng đã giải mã từ CommonFilter
+      url += `&departmentId=${filter.realDepartmentIds.join(",")}`;
+
+      // Gửi danh sách Kíp (nếu có)
+      if (filter.selectedKipIds.length > 0) {
+        url += `&kipIds=${filter.selectedKipIds.join(",")}`;
+      }
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.error) {
+        message.error(data.error);
+        setEmployees([]);
+      } else {
+        setEmployees(data);
+      }
+    } catch (error) {
+      console.error(error);
+      message.error("Lỗi tải dữ liệu");
+      setEmployees([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // [MỚI] Hàm tải tất cả
+  const handleLoadAll = async () => {
+    if (!currentFilter) {
+      message.warning("Vui lòng chờ bộ lọc khởi tạo xong.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const month = currentFilter.date.month() + 1;
+      const year = currentFilter.date.year();
+      // Gọi API với tham số view=all (Cần đảm bảo Backend đã hỗ trợ tham số này)
+      const res = await fetch(`/api/extra-timesheets/monthly?month=${month}&year=${year}&view=all`);
+      const data = await res.json();
+
+      if (data.error) {
+        message.error(data.error);
+        setEmployees([]);
+      } else {
+        setEmployees(data);
+        message.success(`Đã tải dữ liệu của ${data.length} nhân viên.`);
+      }
+    } catch (e) {
+      message.error("Lỗi kết nối server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // [QUAN TRỌNG] Xử lý dữ liệu để chèn dòng tiêu đề phân cách (Group Header)
+  const groupedDataSource = useMemo(() => {
+    const processed: TableRowData[] = [];
+    let currentGroupKey = "";
+
+    employees.forEach((emp) => {
+      // Tạo key định danh nhóm: Tên Nhà máy - Tên Phòng - Tên Kíp
+      // Logic này giúp gom nhóm các nhân viên cùng bộ phận lại với nhau
+      const factoryName = emp.department?.factory?.name || "Khác";
+      const deptName = emp.department?.name || "Chưa phân loại";
+      const kipName = emp.kip?.name ? ` - ${emp.kip.name}` : "";
+
+      const groupKey = `${factoryName} - ${deptName}${kipName}`;
+
+      // Nếu chuyển sang nhóm mới -> Chèn dòng Header
+      if (groupKey !== currentGroupKey) {
+        processed.push({
+          key: `group-${groupKey}-${emp.id}`, // Key unique
+          isGroupHeader: true,
+          groupTitle: groupKey.toUpperCase(), // VD: NHÀ MÁY SỢI 2 - SỢI CON - KÍP 1
+        });
+        currentGroupKey = groupKey;
+      }
+
+      // Push nhân viên vào
+      processed.push({ ...emp, key: emp.id });
+    });
+
+    return processed;
+  }, [employees]);
+
+  // Callback nhận từ Component con
+  const handleFilterChange = (result: FilterResult) => {
+    setCurrentFilter(result); // Lưu lại để dùng cho Columns và Excel
+    fetchMonthlyData(result);
+  };
+
+  // --- 2. COLUMNS DEFINITION ---
+  const columns = useMemo(() => {
+    // Nếu chưa có filter thì dùng tháng hiện tại làm mẫu
+    const viewDate = currentFilter?.date || dayjs();
+    const daysInMonth = viewDate.daysInMonth();
+
+    // 2.1 Định nghĩa các cột cơ bản (như cũ)
+    const fixedColumns: any[] = [
+      {
+        title: "STT",
+        key: "index", // Key này quan trọng để xử lý colSpan
+        width: 50,
+        fixed: "left",
+        align: "center",
+        render: (_: any, __: any, index: number) => (
+          <span style={{ color: "#888", fontWeight: 600 }}>{index + 1}</span>
+        ),
+      },
+      {
+        title: "Họ tên",
+        dataIndex: "fullName",
+        key: "fullName",
+        width: 160,
+        fixed: "left",
+        render: (text: string, record: MonthlyEmployeeData) => (
+          <div>
+            <div style={{ fontWeight: 500 }}>{text}</div>
+            <div style={{ fontSize: 11, color: "#888" }}>
+              {record.kip ? `(${record.kip.name})` : record.department?.name || ""}
+            </div>
+          </div>
+        ),
+      },
+    ];
+
+    const dayColumns = [];
+    for (let i = 1; i <= daysInMonth; i++) {
+      const currentDay = dayjs(`${viewDate.year()}-${viewDate.month() + 1}-${i}`);
+      const isWeekend = currentDay.day() === 0;
+      const dateStr = currentDay.format("YYYY-MM-DD");
+
+      dayColumns.push({
+        title: (
+          <div style={{ textAlign: "center", color: isWeekend ? "#ff4d4f" : "inherit" }}>
+            <div>{i}</div>
+            <div style={{ fontSize: 10, color: "#999" }}>
+              {["CN", "T2", "T3", "T4", "T5", "T6", "T7"][currentDay.day()]}
+            </div>
+          </div>
+        ),
+        width: 40,
+        align: "center",
+        key: `day-${i}`,
+        render: (_: any, record: MonthlyEmployeeData) => {
+          // [Fix] Kiểm tra record.timesheets tồn tại trước khi find
+          const log = record.timesheets?.find((t) => t.date.startsWith(dateStr));
+          if (log) {
+            return (
+              <Tooltip title={log.attendanceCode.name}>
+                <div style={{
+                  background: log.attendanceCode.color,
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: "bold",
+                  borderRadius: 2,
+                  height: 22,
+                  lineHeight: "22px",
+                  cursor: "default",
+                }}
+                >
+                  {log.attendanceCode.code}
+                </div>
+              </Tooltip>
+            );
+          }
+          return null;
+        },
+      });
+    }
+
+    const countCodes = (record: MonthlyEmployeeData, fullCodes: string[], halfCodes: string[] = []) => {
+      // [Fix] Kiểm tra mảng timesheets
+      return (record.timesheets || []).reduce((total, t) => {
+        const code = t.attendanceCode.code;
+        if (fullCodes.includes(code)) return total + 1;
+        if (halfCodes.includes(code)) return total + 0.5;
+        return total;
+      }, 0);
+    };
+
+    const summaryColumns = [
+      {
+        title: <span style={{ color: "#05FA46", fontSize: 12 }}>T.Công</span>,
+        width: 60, align: "center", fixed: "right", className: "bg-green-50", key: "sum_total",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          const total = countCodes(r, ["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["1/2X"]);
+          return total > 0 ? <b style={{ color: "#16a34a" }}>{total}</b> : "-";
+        },
+      },
+      {
+        title: <span style={{ fontSize: 12 }}>Ca 3</span>, width: 50, align: "center", fixed: "right", key: "sum_ca3",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          const total = countCodes(r, ["XD", "LD"]);
+          return total > 0 ? <b>{total}</b> : "-";
+        },
+      },
+      {
+        title: <span style={{ color: "#ff78cf", fontSize: 12 }}>100%</span>, width: 50, align: "center", fixed: "right", key: "sum_100",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          const total = countCodes(r, ["F", "R", "L"]);
+          return total > 0 ? <b style={{ color: "#2563eb" }}>{total}</b> : "-";
+        },
+      },
+      {
+        title: <span style={{ color: "#F8FF3B", fontSize: 12 }}>BHXH</span>, width: 50, align: "center", fixed: "right", key: "sum_bhxh",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          const total = countCodes(r, ["Ô", "CÔ", "TS", "DS", "T", "CL"]);
+          return total > 0 ? <b style={{ color: "#ca8a04" }}>{total}</b> : "-";
+        },
+      },
+      {
+        title: <span style={{ color: "#FF4545", fontSize: 12 }}>K.Lương</span>, width: 60, align: "center", fixed: "right", key: "sum_kl",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          const total = countCodes(r, ["RO"]);
+          return total > 0 ? <b style={{ color: "#dc2626" }}>{total}</b> : "-";
+        },
+      },
+      {
+        title: <span style={{ fontSize: 12 }}>Vô LD</span>, width: 50, align: "center", fixed: "right", key: "sum_vld",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          const total = countCodes(r, ["O"]);
+          return total > 0 ? <b style={{ color: "red", textDecoration: "underline" }}>{total}</b> : "-";
+        },
+      },
+      {
+        title: <span style={{ fontSize: 12 }}>Bão</span>, width: 50, align: "center", fixed: "right", key: "sum_bao",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          const total = countCodes(r, ["B"]);
+          return total > 0 ? <b>{total}</b> : "-";
+        },
+      },
+      {
+        title: <span style={{ fontSize: 12 }}>X.Loại</span>, width: 60, align: "center", fixed: "right", key: "classification",
+        render: (_: any, r: MonthlyEmployeeData) => {
+          const grade = r.classification;
+          let color = "#000";
+          if (grade === "A" || grade === "A+") color = "#16a34a";
+          if (grade === "B") color = "#2563eb";
+          if (grade === "C") color = "#ca8a04";
+          return <b style={{ color: color, fontSize: 13 }}>{grade || "-"}</b>;
+        },
+      },
+    ];
+
+    // 2.2 Gộp tất cả cột lại
+    const originalColumns = [...fixedColumns, ...dayColumns, ...summaryColumns];
+
+    // 2.3 [QUAN TRỌNG] Biến đổi cột để xử lý Row Span (Gộp ô) cho dòng tiêu đề
+    const processedColumns = originalColumns.map((col) => ({
+      ...col,
+      onCell: (record: TableRowData, index: number) => {
+        if (record.isGroupHeader) {
+          // Nếu là dòng tiêu đề:
+          // Cột 'index' (STT) sẽ chiếm trọn chiều ngang (colSpan = tổng số cột)
+          if (col.key === "index") {
+            return { colSpan: originalColumns.length };
+          }
+          // Các cột khác ẩn đi
+          return { colSpan: 0 };
+        }
+        return {};
+      },
+      render: (text: any, record: TableRowData, index: number) => {
+        // Render nội dung dòng tiêu đề
+        if (record.isGroupHeader) {
+          if (col.key === "index") {
+            return (
+              <div style={{
+                background: "#e6f7ff",
+                color: "#0050b3",
+                padding: "6px 16px",
+                fontWeight: "bold",
+                textAlign: "left",
+                borderTop: "2px solid #1890ff",
+                textTransform: "uppercase"
+              }}>
+                <AppstoreOutlined style={{ marginRight: 8 }} />
+                {record.groupTitle}
+              </div>
+            );
+          }
+          return null;
+        }
+        // Render bình thường cho dòng nhân viên
+        return col.render ? col.render(text, record, index) : text;
+      }
+    }));
+
+    return processedColumns;
+
+  }, [currentFilter, employees]);
+
+  // --- 3. EXPORT EXCEL (ĐÃ CẬP NHẬT ĐỘ RỘNG CỘT) ---
+  // --- 3. EXPORT EXCEL (ĐÃ TÍCH HỢP GROUP THEO PHÒNG BAN) ---
+  const handleExportExcel = async () => {
+    // Đổi điều kiện check: Dùng groupedDataSource thay vì employees
+    if (groupedDataSource.length === 0 || !currentFilter) return;
+    setLoading(true);
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("CongTangCuong");
+
+    // Setup trang in
+    worksheet.pageSetup = {
+      paperSize: 9,
+      orientation: "landscape",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: {
+        left: 0.25, right: 0.25, top: 0.75, bottom: 0.75,
+        header: 0.3, footer: 0.3
+      }
+    };
+
+    // --- TÍNH TOÁN SỐ CỘT ---
+    const daysInMonth = currentFilter.date.daysInMonth();
+    const totalColumns = 2 + daysInMonth + 8;
+
+    // --- THIẾT LẬP ĐỘ RỘNG CỘT ---
+    worksheet.getColumn(1).width = 5; // STT
+    worksheet.getColumn(2).width = 28; // Họ tên
+    for (let i = 1; i <= daysInMonth; i++) {
+      worksheet.getColumn(2 + i).width = 4.5;
+    }
+    for (let i = 2 + daysInMonth + 1; i <= totalColumns; i++) {
+      worksheet.getColumn(i).width = 7;
+    }
+
+    // --- HEADER ---
+    // Dòng 1: Tên Công ty
+    const row1 = worksheet.getCell("A1");
+    row1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
+    row1.font = { name: "Times New Roman", size: 14, bold: true };
+    row1.alignment = { vertical: "middle", horizontal: "center" };
+    worksheet.mergeCells(1, 1, 1, totalColumns);
+
+    // Dòng 2: Tiêu đề Bảng
+    const row2 = worksheet.getCell("A2");
+    row2.value = `BẢNG CÔNG TĂNG CƯỜNG THÁNG ${currentFilter.date.format("MM/YYYY")}`;
+    row2.font = { name: "Times New Roman", size: 16, bold: true };
+    row2.alignment = { vertical: "middle", horizontal: "center" };
+    worksheet.mergeCells(2, 1, 2, totalColumns);
+
+    // [ĐÃ BỎ] Dòng 3 cũ (Tiêu đề Bộ phận chung) đã được gỡ bỏ theo yêu cầu
+
+    // --- TABLE HEADER (Giờ đẩy lên dòng 3) ---
+    const headerRow = ["STT", "Họ và tên"];
+    for (let i = 1; i <= daysInMonth; i++) headerRow.push(`${i}`);
+    headerRow.push("T.Công", "Ca 3", "100%", "BHXH", "K.Lương", "Vô LD", "L.Bão", "X.Loại");
+
+    const headerRowExcel = worksheet.addRow(headerRow);
+    headerRowExcel.eachCell((cell) => {
+      cell.font = { name: "Times New Roman", bold: true };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0E0E0" } };
+    });
+
+    // --- TABLE DATA ---
+    let stt = 1; // Biến đếm số thứ tự
+
+    // [THAY ĐỔI QUAN TRỌNG] Duyệt qua mảng đã được group
+    groupedDataSource.forEach((record: any) => {
+
+      if (record.isGroupHeader) {
+        // 1. NẾU LÀ DÒNG TIÊU ĐỀ NHÓM (TÊN BỘ PHẬN)
+        const groupRow = worksheet.addRow([record.groupTitle]);
+        worksheet.mergeCells(groupRow.number, 1, groupRow.number, totalColumns);
+
+        // Định dạng làm nổi bật dòng tên phòng ban
+        for (let i = 1; i <= totalColumns; i++) {
+          const cell = groupRow.getCell(i);
+          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+          if (i === 1) {
+            cell.font = { name: "Times New Roman", bold: true, color: { argb: "FF0050B3" } }; // Màu xanh dương đậm
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE6F7FF" } }; // Nền xanh nhạt
+            cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+          }
+        }
+
+        // Reset lại STT = 1 mỗi khi sang phòng ban mới
+        stt = 1;
+      }
+      else {
+        // 2. NẾU LÀ DÒNG NHÂN VIÊN BÌNH THƯỜNG
+        const emp = record as MonthlyEmployeeData;
+        const rowData: any[] = [stt++, emp.fullName];
+
+        for (let i = 1; i <= daysInMonth; i++) {
+          const dateStr = dayjs(`${currentFilter.date.year()}-${currentFilter.date.month() + 1}-${i}`).format("YYYY-MM-DD");
+          const log = (emp.timesheets || []).find((t) => t.date.startsWith(dateStr));
+          rowData.push(log ? log.attendanceCode.code : "");
+        }
+
+        const count = (codes: string[]) => (emp.timesheets || []).reduce((acc, t) => codes.includes(t.attendanceCode.code) ? acc + 1 : acc, 0);
+        const countComplex = (full: string[], half: string[]) => (emp.timesheets || []).reduce((acc, t) => {
+          if (full.includes(t.attendanceCode.code)) return acc + 1;
+          if (half.includes(t.attendanceCode.code)) return acc + 0.5;
+          return acc;
+        }, 0);
+
+        // Đã cập nhật lại mảng nửa công ["1/2X", "X/2"] như lỗi bạn phát hiện trước đó
+        rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["1/2X", "X/2"]) || "");
+        rowData.push(count(["XD", "LD"]) || "");
+        rowData.push(count(["F", "R", "L"]) || "");
+        rowData.push(count(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
+        rowData.push(count(["RO"]) || "");
+        rowData.push(count(["O"]) || "");
+        rowData.push(count(["B"]) || "");
+        rowData.push(emp.classification || "");
+
+        const row = worksheet.addRow(rowData);
+        row.eachCell((cell, colNumber) => {
+          cell.font = { name: "Times New Roman" };
+          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+          if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
+          else cell.alignment = { horizontal: "center", vertical: "middle" };
+        });
+      }
+    });
+
+    // --- FOOTER CHỮ KÝ ---
+    worksheet.addRow([]);
+    worksheet.addRow([]);
+
+    const signRowIndex = worksheet.lastRow!.number + 1;
+
+    worksheet.mergeCells(signRowIndex, 2, signRowIndex, 6);
+    const cellLeft = worksheet.getCell(signRowIndex, 2);
+    cellLeft.value = "Người chấm công";
+
+    const midCol = Math.floor(totalColumns / 2);
+    worksheet.mergeCells(signRowIndex, midCol - 2, signRowIndex, midCol + 2);
+    const cellMid = worksheet.getCell(signRowIndex, midCol - 2);
+    cellMid.value = "Phụ trách đơn vị";
+
+    worksheet.mergeCells(signRowIndex, totalColumns - 4, signRowIndex, totalColumns);
+    const cellRight = worksheet.getCell(signRowIndex, totalColumns - 4);
+    cellRight.value = "Cán bộ kiểm tra";
+
+    [cellLeft, cellMid, cellRight].forEach(cell => {
+      cell.font = { name: "Times New Roman", bold: true, size: 11 };
+      cell.alignment = { horizontal: "center" };
+    });
+
+    // --- LƯU FILE ---
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    saveAs(blob, `BangCongTangCuong_${currentFilter.date.format("MM-YYYY")}.xlsx`);
+    setLoading(false);
+  };
+
+  return (
+    <AdminLayout>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Title level={3} style={{ margin: 0 }}>Tổng hợp công tăng cường tháng</Title>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {/* [MỚI] Nút Load Tất cả */}
+          <Button
+            style={{ background: "#F54F2F", color: "white" }}
+            onClick={handleLoadAll}
+            loading={loading}
+            icon={<AppstoreOutlined />}
+          >
+            Xem tất cả các phòng
+          </Button>
+
+          <Button
+            type="primary"
+            style={{ background: "#217346" }}
+            icon={<FileExcelOutlined />}
+            onClick={handleExportExcel}
+            disabled={employees.length === 0}
+            loading={loading}
+          >
+            Xuất Excel
+          </Button>
+        </div>
+      </div>
+
+      {/* --- SỬ DỤNG COMPONENT LỌC DÙNG CHUNG --- */}
+      <CommonFilter
+        dateMode="month" // Chế độ Tháng
+        onFilterChange={handleFilterChange}
+      />
+
+      <Table
+        bordered
+        dataSource={groupedDataSource} // [QUAN TRỌNG] Dùng data đã group để hiển thị
+        columns={columns}
+        rowKey="key"
+        loading={loading}
+        pagination={false}
+        scroll={{ x: "max-content", y: 600 }}
+        size="small"
+        sticky // Giữ tiêu đề khi cuộn
+      />
+    </AdminLayout>
+  );
+}
+
+--- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\extra-timesheets\monthly\page.tsx ---
 
 
 ================================================================================
@@ -6511,6 +7812,8 @@ FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\overtime\page.tsx
 import React, { useEffect, useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { useSession } from "next-auth/react";
+import ExcelJS from "exceljs"; // [MỚI] Import ExcelJS
+import { saveAs } from "file-saver"; // [MỚI] Import File Saver
 import {
     Card,
     Form,
@@ -6532,11 +7835,11 @@ import {
 import {
     PlusOutlined,
     ClockCircleOutlined,
-    ReloadOutlined,
     EditOutlined,
     DeleteOutlined,
     UserOutlined,
     FilterOutlined,
+    FileExcelOutlined, // [MỚI] Icon Excel
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -6585,6 +7888,7 @@ export default function OvertimePage() {
     const [viewMonth, setViewMonth] = useState<Dayjs>(dayjs());
 
     const [loading, setLoading] = useState(false);
+    const [exporting, setExporting] = useState(false); // [MỚI] State loading riêng cho Excel
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [editingRecord, setEditingRecord] = useState<OvertimeRecord | null>(null);
 
@@ -6602,16 +7906,11 @@ export default function OvertimePage() {
     const isManager = userRole === "TIMEKEEPER";
     const isAdmin = userRole === "ADMIN";
 
-    // Lấy danh sách các phòng ban mà User được phép tác động
     const authorizedDepartments = useMemo(() => {
         if (!session || departments.length === 0) return [];
-
-        // Admin/Leader/HR: Thấy hết
         if (["ADMIN", "HR_MANAGER", "LEADER"].includes(userRole as string)) {
             return departments;
         }
-
-        // Staff/Timekeeper: Chỉ thấy phòng được phân công
         if (isStaff || isManager) {
             const allowedIds = session.user.managedDeptIds || [];
             return departments.filter((d) => allowedIds.includes(d.id));
@@ -6619,12 +7918,10 @@ export default function OvertimePage() {
         return [];
     }, [departments, session, userRole]);
 
-    // Lọc tiếp: Chỉ lấy các phòng Hành chính/Phụ trợ (Mã không bắt đầu bằng số)
     const officeDepartments = useMemo(() => {
         return authorizedDepartments.filter(d => !/^\d/.test(d.code));
     }, [authorizedDepartments]);
 
-    // Lấy danh sách Nhà máy từ các phòng ban hợp lệ ở trên
     const availableFactories = useMemo(() => {
         const map = new Map();
         officeDepartments.forEach((d) => {
@@ -6633,43 +7930,22 @@ export default function OvertimePage() {
         return Array.from(map.values()) as Factory[];
     }, [officeDepartments]);
 
-    // --- 3. LOGIC TỰ ĐỘNG NHẬN DIỆN STAFF (TRÁNH CHỌN NHẦM) ---
+    // --- 3. LOGIC TỰ ĐỘNG NHẬN DIỆN STAFF ---
     useEffect(() => {
         const autoSelectForStaff = async () => {
-            // Chỉ chạy nếu là STAFF và chưa chọn gì cả
             if (isStaff && session?.user && officeDepartments.length > 0) {
                 try {
-                    // Lấy danh sách nhân viên của tất cả phòng mà Staff thuộc về
-                    // (Thường Staff chỉ thuộc 1 phòng, nhưng code hỗ trợ nhiều phòng)
                     const promises = officeDepartments.map(d =>
                         fetch(`/api/employees?departmentId=${d.id}`).then(r => r.json())
                     );
                     const results = await Promise.all(promises);
                     const allEmps: Employee[] = results.flat();
 
-                    // Tìm nhân viên có CODE trùng với USERNAME (Chính xác nhất)
-                    // Nếu không thấy thì tìm theo Tên (Kém chính xác hơn)
-                    const me = allEmps.find(e =>
-                        // Lưu ý: Nếu muốn chắc chắn không lỗi chữ hoa/thường thì dùng:
-                        e.code.toLowerCase() === session.user.username.toLowerCase()
-                    );
+                    const me = allEmps.find(e => e.code.toLowerCase() === session.user.username.toLowerCase());
 
                     if (me) {
-                        // Tự động set dữ liệu vào Form
-                        // Cần tìm department của nhân viên đó để set Factory và Dept
-                        const myDept = officeDepartments.find(d =>
-                            // Logic tìm phòng hơi phức tạp vì API employee trả về dept riêng
-                            // Nên ta tìm trong allEmps xem employee này thuộc deptId nào
-                            // Giả sử API employee có trả departmentId, ở đây ta làm đơn giản:
-                            true
-                        ); // Ở bước này ta chỉ cần set EmployeeID là đủ để submit
-
-                        // Để hiển thị đẹp, ta set list nhân viên chỉ có 1 mình người đó
                         setFormEmployees([me]);
                         form.setFieldsValue({ employeeId: me.id });
-
-                        // (Tùy chọn) Nếu muốn fill cả Factory/Dept thì cần logic phức tạp hơn chút,
-                        // nhưng với yêu cầu của bạn thì chỉ cần khóa ô Nhân viên là được.
                     }
                 } catch (e) { console.error(e); }
             }
@@ -6706,18 +7982,14 @@ export default function OvertimePage() {
                     content: values.content,
                     startTime: values.timeRange[0],
                     endTime: values.timeRange[1],
-                    createdBy: session.user.username, // Lưu người tạo
+                    createdBy: session.user.username,
                 }),
             });
 
             if (res.ok) {
                 message.success("Đã lưu thành công!");
                 form.resetFields(["content", "timeRange"]);
-                // Nếu không phải STAFF thì reset cả nhân viên để nhập người tiếp theo
-                if (!isStaff) {
-                    form.resetFields(["employeeId"]);
-                }
-                // Reload danh sách bên phải nếu đang xem đúng phòng đó
+                if (!isStaff) form.resetFields(["employeeId"]);
                 if (filterDeptId) loadRecords(filterDeptId);
             } else {
                 message.error("Lỗi khi lưu");
@@ -6736,7 +8008,6 @@ export default function OvertimePage() {
         } catch (e) { message.error("Lỗi tải dữ liệu"); }
     };
 
-    // Tự động reload khi đổi tháng hoặc đổi phòng xem
     useEffect(() => {
         if (filterDeptId) loadRecords(filterDeptId);
     }, [viewMonth]);
@@ -6769,7 +8040,127 @@ export default function OvertimePage() {
         } else message.error("Lỗi cập nhật");
     };
 
-    // --- COLUMNS ---
+    // --- 7. [MỚI] HÀM XUẤT EXCEL ---
+    const handleExportExcel = async () => {
+        if (records.length === 0) {
+            message.warning("Không có dữ liệu để xuất Excel");
+            return;
+        }
+
+        setExporting(true);
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet("LamThemGio");
+
+            worksheet.pageSetup = {
+                paperSize: 9,
+                orientation: "portrait",
+                fitToPage: true,
+                fitToWidth: 1,
+                fitToHeight: 0,
+                margins: { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 }
+            };
+
+            // Định nghĩa độ rộng cột
+            worksheet.columns = [
+                { width: 12 }, // Cột 1: Ngày
+                { width: 25 }, // Cột 2: Tên nhân viên
+                { width: 35 }, // Cột 3: Nội dung làm thêm
+                { width: 15 }, // Cột 4: Giờ
+                { width: 12 }, // Cột 5: Tổng giờ
+            ];
+
+            const totalCols = 5;
+
+            // Dòng 1: Tên Công Ty
+            const r1 = worksheet.getCell("A1");
+            r1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
+            r1.font = { name: "Times New Roman", size: 12, bold: true };
+            worksheet.mergeCells(1, 1, 1, totalCols);
+
+            // Dòng 2: Tiêu đề Bảng
+            const r2 = worksheet.getCell("A2");
+            r2.value = `BẢNG TỔNG HỢP GIỜ LÀM THÊM THÁNG ${viewMonth.format("MM/YYYY")}`;
+            r2.font = { name: "Times New Roman", size: 14, bold: true };
+            r2.alignment = { horizontal: "center", vertical: "middle" };
+            worksheet.mergeCells(2, 1, 2, totalCols);
+
+            // Dòng 3: Tên Phòng Ban
+            const dept = filterDepts.find(d => d.id === filterDeptId);
+            const deptName = dept ? dept.name : "Chưa xác định";
+            const r3 = worksheet.getCell("A3");
+            r3.value = `Phòng / CĐ: ${deptName}`;
+            r3.font = { name: "Times New Roman", size: 12, bold: true, italic: true };
+            r3.alignment = { horizontal: "center", vertical: "middle" };
+            worksheet.mergeCells(3, 1, 3, totalCols);
+
+            // Dòng 4: Dòng trống tạo khoảng cách
+            worksheet.addRow([]);
+
+            // Dòng 5: Tiêu đề các cột
+            const headerRow = worksheet.addRow([
+                "Ngày",
+                "Tên nhân viên làm thêm",
+                "Nội dung làm thêm",
+                "Giờ",
+                "Tổng giờ"
+            ]);
+            headerRow.eachCell(cell => {
+                cell.font = { name: "Times New Roman", bold: true };
+                cell.alignment = { horizontal: "center", vertical: "middle" };
+                cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+                cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0E0E0" } };
+            });
+
+            // Duyệt data điền vào bảng
+            records.forEach(r => {
+                // Đổi phút ra dạng Giờ và Phút (vd: 2h30 hoặc 2h)
+                const h = Math.floor(r.totalMinutes / 60);
+                const m = r.totalMinutes % 60;
+                const timeStr = m > 0 ? `${h}h${m}` : `${h}h`;
+
+                const row = worksheet.addRow([
+                    dayjs(r.startTime).format("DD/MM/YYYY"),
+                    r.employee.fullName,
+                    r.content,
+                    `${dayjs(r.startTime).format("HH:mm")} - ${dayjs(r.endTime).format("HH:mm")}`,
+                    timeStr
+                ]);
+
+                // Định dạng viền và căn lề cho dòng data
+                row.eachCell((cell, colNum) => {
+                    cell.font = { name: "Times New Roman" };
+                    cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+                    if (colNum === 2 || colNum === 3) {
+                        cell.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
+                    } else {
+                        cell.alignment = { horizontal: "center", vertical: "middle" };
+                    }
+                });
+            });
+
+            // Footer: Chữ ký xác nhận
+            worksheet.addRow([]); // Thêm 1 dòng trống
+            const signRowIndex = worksheet.lastRow!.number + 1;
+            worksheet.mergeCells(signRowIndex, 3, signRowIndex, 5); // Gộp 3 cột bên phải lại để căn giữa
+            const signCell = worksheet.getCell(signRowIndex, 3);
+            signCell.value = "Xác nhận của trưởng Phòng / Công đoạn";
+            signCell.font = { name: "Times New Roman", bold: true, italic: true };
+            signCell.alignment = { horizontal: "center" };
+
+            // Render và Tải File
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            saveAs(blob, `LamThemGio_${deptName}_${viewMonth.format("MM-YYYY")}.xlsx`);
+
+        } catch (e) {
+            message.error("Lỗi xuất file Excel");
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    // --- COLUMNS CHO BẢNG TRÊN WEB ---
     const columns = [
         { title: "Ngày", dataIndex: "startTime", width: 90, render: (d: string) => dayjs(d).format("DD/MM") },
         { title: "Nhân viên", dataIndex: ["employee", "fullName"], render: (t: string) => <b>{t}</b> },
@@ -6783,7 +8174,7 @@ export default function OvertimePage() {
         },
         {
             title: "Tổng", dataIndex: "totalMinutes", align: "center" as const, width: 70, render: (m: number) => {
-                const h = Math.floor(m / 60); const min = m % 60; return <Tag color="blue">{h}h{min}</Tag>;
+                const h = Math.floor(m / 60); const min = m % 60; return <Tag color="blue">{h}h{min > 0 ? min : ''}</Tag>;
             }
         },
         {
@@ -6793,10 +8184,8 @@ export default function OvertimePage() {
         {
             title: "", width: 80, align: "center" as const,
             render: (_: any, r: OvertimeRecord) => {
-                // [LOGIC PHÂN QUYỀN NÚT SỬA/XÓA]
                 const checkAdmin = isAdmin;
                 const checkOwner = session?.user?.username === r.createdBy;
-                // Check Manager: Phải là Timekeeper VÀ đang quản lý phòng của nhân viên này
                 const managedIds = session?.user?.managedDeptIds || [];
                 const checkManager = isManager && managedIds.includes(r.employee.departmentId);
 
@@ -6813,18 +8202,15 @@ export default function OvertimePage() {
         },
     ];
 
-    // Danh sách phòng ban cho Dropdown bên Form nhập liệu (Lọc theo Factory đã chọn)
     const formDepts = useMemo(() => {
         if (!selectedFormFactoryId) return [];
         return officeDepartments.filter(d => d.factory?.id === selectedFormFactoryId);
     }, [officeDepartments, selectedFormFactoryId]);
 
-    // Danh sách phòng ban cho Dropdown bên Danh sách xem (Lọc theo Factory đã chọn)
     const filterDepts = useMemo(() => {
         if (!filterFactoryId) return [];
         return officeDepartments.filter(d => d.factory?.id === filterFactoryId);
     }, [officeDepartments, filterFactoryId]);
-
 
     return (
         <AdminLayout>
@@ -6835,8 +8221,6 @@ export default function OvertimePage() {
                 <Col xs={24} md={8}>
                     <Card title={<span><PlusOutlined /> Nhập liệu mới</span>} bordered={false}>
                         <Form layout="vertical" form={form} onFinish={handleCreate}>
-
-                            {/* Nếu là STAFF -> Ẩn chọn NM/Phòng -> Chỉ hiện tên mình */}
                             {isStaff ? (
                                 <>
                                     <Form.Item label="Nhân viên" tooltip="Hệ thống tự động nhận diện bạn">
@@ -6844,12 +8228,10 @@ export default function OvertimePage() {
                                             {formEmployees.map(e => <Select.Option key={e.id} value={e.id}>{e.fullName}</Select.Option>)}
                                         </Select>
                                     </Form.Item>
-                                    {/* Input ẩn để đảm bảo validator hoạt động nếu select disabled không gửi value */}
                                     <Form.Item name="employeeId" hidden rules={[{ required: true, message: "Không tìm thấy thông tin nhân viên của bạn" }]}><Input /></Form.Item>
                                 </>
                             ) : (
                                 <>
-                                    {/* Admin & Manager được chọn tự do trong phạm vi quyền hạn */}
                                     <Form.Item label="Nhà máy">
                                         <Select placeholder="Chọn Nhà máy..." onChange={handleFormFactoryChange}>
                                             {availableFactories.map(f => <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>)}
@@ -6882,24 +8264,39 @@ export default function OvertimePage() {
                 {/* === CỘT PHẢI: DANH SÁCH XEM & LỌC === */}
                 <Col xs={24} md={16}>
                     <Card bordered={false}>
-                        {/* Bộ lọc xem riêng biệt */}
-                        <div style={{ marginBottom: 16, padding: 12, background: "#f9f9f9", borderRadius: 8, border: "1px solid #eee" }}>
-                            <div style={{ fontWeight: 600, marginBottom: 8, color: '#1890ff' }}><FilterOutlined /> Bộ lọc danh sách:</div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Select
-                                    placeholder="Chọn Nhà máy" style={{ width: 150 }}
-                                    onChange={(val) => { setFilterFactoryId(val); setFilterDeptId(null); setRecords([]); }}
+                        <div style={{ marginBottom: 16, padding: 12, background: "#f9f9f9", borderRadius: 8, border: "1px solid #eee", display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+                            <div>
+                                <div style={{ fontWeight: 600, marginBottom: 8, color: '#1890ff' }}><FilterOutlined /> Bộ lọc danh sách:</div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <Select
+                                        placeholder="Chọn Nhà máy" style={{ width: 150 }}
+                                        onChange={(val) => { setFilterFactoryId(val); setFilterDeptId(null); setRecords([]); }}
+                                    >
+                                        {availableFactories.map(f => <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>)}
+                                    </Select>
+                                    <Select
+                                        placeholder="Chọn Phòng ban để xem" style={{ flex: 1, minWidth: 200 }}
+                                        disabled={!filterFactoryId}
+                                        onChange={(val) => { setFilterDeptId(val); loadRecords(val); }}
+                                    >
+                                        {filterDepts.map(d => <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>)}
+                                    </Select>
+                                    <DatePicker picker="month" value={viewMonth} onChange={(val) => val && setViewMonth(val)} format="MM/YYYY" allowClear={false} style={{ width: 110 }} />
+                                </div>
+                            </div>
+
+                            {/* [MỚI] NÚT XUẤT EXCEL */}
+                            <div style={{ display: "flex", alignItems: "flex-end" }}>
+                                <Button
+                                    type="primary"
+                                    style={{ background: "#217346", borderColor: "#217346" }}
+                                    icon={<FileExcelOutlined />}
+                                    onClick={handleExportExcel}
+                                    disabled={records.length === 0}
+                                    loading={exporting}
                                 >
-                                    {availableFactories.map(f => <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>)}
-                                </Select>
-                                <Select
-                                    placeholder="Chọn Phòng ban để xem" style={{ flex: 1, minWidth: 200 }}
-                                    disabled={!filterFactoryId}
-                                    onChange={(val) => { setFilterDeptId(val); loadRecords(val); }}
-                                >
-                                    {filterDepts.map(d => <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>)}
-                                </Select>
-                                <DatePicker picker="month" value={viewMonth} onChange={(val) => val && setViewMonth(val)} format="MM/YYYY" allowClear={false} style={{ width: 110 }} />
+                                    Xuất Excel
+                                </Button>
                             </div>
                         </div>
 
@@ -6935,14 +8332,115 @@ FILE START: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\page.tsx
 "use client";
 import AdminLayout from "@/components/AdminLayout";
 import { useSession } from "next-auth/react";
-import { Typography, Space } from "antd";
+import { Typography, Row, Col, Card, Tag } from "antd";
+import Link from "next/link";
 import {
-  CheckCircleTwoTone,
-  SafetyCertificateTwoTone,
-  DashboardTwoTone
+  FormOutlined,
+  TableOutlined,
+  BarChartOutlined,
+  DashboardOutlined,
+  TeamOutlined,
+  FieldTimeOutlined,
+  DownloadOutlined,
+  UnorderedListOutlined,
+  AppstoreOutlined,
+  CalendarOutlined,
+  BankOutlined,
+  ApartmentOutlined,
 } from "@ant-design/icons";
 
 const { Title, Text } = Typography;
+
+const MODULES = [
+  {
+    title: "Chấm công",
+    desc: "Nhập & tra cứu dữ liệu chấm công hàng ngày",
+    icon: <FormOutlined style={{ fontSize: 28 }} />,
+    href: "/timesheets/daily",
+    color: "#1677ff",
+    bg: "#e6f4ff",
+    tag: "Hàng ngày",
+  },
+  {
+    title: "Tổng hợp công",
+    desc: "Xem báo cáo tổng hợp công tháng theo phòng ban",
+    icon: <TableOutlined style={{ fontSize: 28 }} />,
+    href: "/timesheets/monthly",
+    color: "#13c2c2",
+    bg: "#e6fffb",
+    tag: "Hàng tháng",
+  },
+  {
+    title: "Xếp loại A,B,C",
+    desc: "Đánh giá và xếp loại năng suất nhân viên theo tháng",
+    icon: <BarChartOutlined style={{ fontSize: 28 }} />,
+    href: "/evaluations/monthly",
+    color: "#722ed1",
+    bg: "#f9f0ff",
+    tag: "Đánh giá",
+  },
+  {
+    title: "Dashboard",
+    desc: "Tổng quan tình hình nhân sự theo ngày toàn công ty",
+    icon: <DashboardOutlined style={{ fontSize: 28 }} />,
+    href: "/dashboard",
+    color: "#eb2f96",
+    bg: "#fff0f6",
+    tag: "Thống kê",
+  },
+  {
+    title: "Làm thêm giờ",
+    desc: "Quản lý và theo dõi dữ liệu làm thêm giờ (OT)",
+    icon: <FieldTimeOutlined style={{ fontSize: 28 }} />,
+    href: "/overtime",
+    color: "#fa8c16",
+    bg: "#fff7e6",
+    tag: "Tăng ca",
+  },
+  {
+    title: "Công tăng cường",
+    desc: "Chấm công và tổng hợp công tăng cường hàng tháng",
+    icon: <AppstoreOutlined style={{ fontSize: 28 }} />,
+    href: "/extra-timesheets/daily",
+    color: "#52c41a",
+    bg: "#f6ffed",
+    tag: "Đặc biệt",
+  },
+  {
+    title: "Tình hình lao động",
+    desc: "Báo cáo chi tiết biến động nhân sự theo phòng ban",
+    icon: <UnorderedListOutlined style={{ fontSize: 28 }} />,
+    href: "/dashboard/departments",
+    color: "#1890ff",
+    bg: "#e6f7ff",
+    tag: "Báo cáo",
+  },
+  {
+    title: "Xuất Excel BRAVO",
+    desc: "Xuất dữ liệu chấm công sang định dạng cho BRAVO",
+    icon: <DownloadOutlined style={{ fontSize: 28 }} />,
+    href: "/bravo-data",
+    color: "#d48806",
+    bg: "#fffbe6",
+    tag: "Xuất dữ liệu",
+  },
+  {
+    title: "Nhân viên",
+    desc: "Quản lý hồ sơ và thông tin toàn bộ nhân viên",
+    icon: <TeamOutlined style={{ fontSize: 28 }} />,
+    href: "/employees",
+    color: "#096dd9",
+    bg: "#e6f4ff",
+    tag: "Danh mục",
+  },
+];
+
+function getTodayStr() {
+  const now = new Date();
+  const weekdays = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
+  const day = weekdays[now.getDay()];
+  return `${day}, ngày ${now.getDate().toString().padStart(2, "0")}/${(now.getMonth() + 1).toString().padStart(2, "0")}/${now.getFullYear()}`;
+}
 
 export default function Home() {
   const { data: session } = useSession();
@@ -6950,92 +8448,140 @@ export default function Home() {
 
   return (
     <AdminLayout>
+      {/* ===== HERO SECTION ===== */}
       <div
         style={{
-          width: "100%",
-          minHeight: "85vh",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          // Nền gradient xanh nhạt sang trắng (rất dịu mắt và chuyên nghiệp)
-          background: "linear-gradient(135deg, #f0f5ff 0%, #ffffff 100%)",
+          background: "linear-gradient(135deg, #003a8c 0%, #1677ff 60%, #40a9ff 100%)",
           borderRadius: "16px",
-          padding: "20px",
-          border: "1px solid #e6f0ff",
+          padding: "40px 48px",
+          marginBottom: 32,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 24,
+          boxShadow: "0 8px 32px rgba(22, 119, 255, 0.25)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        {/* KHỐI NỘI DUNG CHÍNH (White Card) */}
-        <div
-          style={{
-            background: "#ffffff",
-            padding: "50px 60px",
-            borderRadius: "24px",
-            boxShadow: "0 20px 40px rgba(0, 58, 140, 0.08)", // Đổ bóng xanh nhạt
-            textAlign: "center",
-            maxWidth: "800px",
-            width: "100%",
-            border: "1px solid #f0f0f0",
-          }}
-        >
-          {/* LỜI CHÀO CÁ NHÂN */}
-          <div
-            style={{
-              display: "inline-block",
-              padding: "8px 24px",
-              background: "#e6f4ff", // Nền xanh ant design
-              color: "#1677ff",
-              borderRadius: "50px",
-              fontWeight: 600,
-              fontSize: "16px",
-              marginBottom: "24px",
-              border: "1px solid #91caff",
-            }}
-          >
-            👋 Xin chào, <span style={{ color: "#d9363e", fontWeight: "bold" }}>{userName}</span>!
+        {/* Decorative circles */}
+        <div style={{
+          position: "absolute", right: -60, top: -60,
+          width: 240, height: 240, borderRadius: "50%",
+          background: "rgba(255,255,255,0.06)", pointerEvents: "none",
+        }} />
+        <div style={{
+          position: "absolute", right: 60, bottom: -80,
+          width: 180, height: 180, borderRadius: "50%",
+          background: "rgba(255,255,255,0.04)", pointerEvents: "none",
+        }} />
+
+        {/* Left: greeting */}
+        <div>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 8,
+            background: "rgba(255,255,255,0.15)", borderRadius: 50,
+            padding: "4px 16px", marginBottom: 16,
+            color: "#fff", fontSize: 14, fontWeight: 500,
+          }}>
+            <CalendarOutlined />
+            {getTodayStr()}
           </div>
-
-          {/* TIÊU ĐỀ CHÍNH */}
-          <h1
-            style={{
-              fontSize: "32px",
-              fontWeight: 800,
-              color: "#003a8c",
-              marginBottom: "16px",
-              lineHeight: 1.4,
-              textTransform: "uppercase",
-            }}
-          >
-            Hệ thống Quản lý Nhân sự <br />
-            <span style={{ color: "#1677ff", fontSize: "38px" }}>Công ty CP Sợi Phú Bài</span>
-          </h1>
-
-          {/* LỜI DẪN */}
-          <p style={{ fontSize: "18px", color: "#595959", marginBottom: "40px" }}>
-            Chúc bạn một ngày làm việc hiệu quả. Vui lòng chọn các chức năng trên thanh menu bên trái để bắt đầu.
-          </p>
-
-          {/* CÁC ICON TRANG TRÍ (Hiển thị tính năng hệ thống) */}
-          <div style={{ display: "flex", justifyContent: "center", gap: "50px", marginTop: "20px" }}>
-            <div style={{ textAlign: "center" }}>
-              <DashboardTwoTone twoToneColor="#1677ff" style={{ fontSize: "36px", marginBottom: "12px" }} />
-              <div style={{ color: "#8c8c8c", fontSize: "14px", fontWeight: 500 }}>Trực quan</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <CheckCircleTwoTone twoToneColor="#52c41a" style={{ fontSize: "36px", marginBottom: "12px" }} />
-              <div style={{ color: "#8c8c8c", fontSize: "14px", fontWeight: 500 }}>Chính xác</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <SafetyCertificateTwoTone twoToneColor="#faad14" style={{ fontSize: "36px", marginBottom: "12px" }} />
-              <div style={{ color: "#8c8c8c", fontSize: "14px", fontWeight: 500 }}>Bảo mật</div>
-            </div>
-          </div>
-
+          <Title level={2} style={{ color: "#fff", margin: 0, fontWeight: 800, lineHeight: 1.3 }}>
+            Xin chào, <span style={{ color: "#ffd666" }}>{userName}</span>!
+          </Title>
+          <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 16, marginTop: 8, display: "block" }}>
+            Chào mừng đến với Hệ thống Quản lý Nhân sự
+          </Text>
         </div>
+
+        {/* Right: company info */}
+        <div style={{
+          background: "rgba(255,255,255,0.12)",
+          border: "1px solid rgba(255,255,255,0.25)",
+          borderRadius: 12, padding: "16px 28px",
+          textAlign: "center", backdropFilter: "blur(4px)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "center", marginBottom: 6 }}>
+            <BankOutlined style={{ fontSize: 24, color: "#ffd666" }} />
+            <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>
+              CÔNG TY CP SỢI PHÚ BÀI
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+            <ApartmentOutlined style={{ color: "rgba(255,255,255,0.7)", fontSize: 13 }} />
+            <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 13 }}>
+              Hệ thống HRM nội bộ
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== QUICK ACCESS SECTION ===== */}
+      <div style={{ marginBottom: 12 }}>
+        <Title level={4} style={{ color: "#1d2939", margin: "0 0 20px 4px", fontWeight: 700 }}>
+          Truy cập nhanh
+        </Title>
+        <Row gutter={[16, 16]}>
+          {MODULES.map((mod) => (
+            <Col xs={24} sm={12} md={8} lg={8} xl={6} key={mod.href}>
+              <Link href={mod.href} style={{ display: "block" }}>
+                <Card
+                  hoverable
+                  style={{
+                    borderRadius: 12,
+                    border: "1px solid #f0f0f0",
+                    height: "100%",
+                    transition: "all 0.25s ease",
+                    cursor: "pointer",
+                  }}
+                  styles={{
+                    body: { padding: "20px 22px" },
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.boxShadow = `0 8px 24px ${mod.color}33`;
+                    (e.currentTarget as HTMLElement).style.borderColor = mod.color;
+                    (e.currentTarget as HTMLElement).style.transform = "translateY(-3px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                    (e.currentTarget as HTMLElement).style.borderColor = "#f0f0f0";
+                    (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+                  }}
+                >
+                  {/* Icon */}
+                  <div style={{
+                    width: 52, height: 52, borderRadius: 12,
+                    background: mod.bg, color: mod.color,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    marginBottom: 14,
+                  }}>
+                    {mod.icon}
+                  </div>
+
+                  {/* Title + Tag */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: "#1d2939" }}>{mod.title}</span>
+                    <Tag color={mod.color} style={{ fontSize: 11, borderRadius: 50, margin: 0 }}>
+                      {mod.tag}
+                    </Tag>
+                  </div>
+
+                  {/* Description */}
+                  <Text style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+                    {mod.desc}
+                  </Text>
+                </Card>
+              </Link>
+            </Col>
+          ))}
+        </Row>
       </div>
     </AdminLayout>
   );
 }
+
 
 --- FILE END: D:\DU-AN-PHAN-MEM\PHUBAI-HRM\phubai-hrm\src\app\page.tsx ---
 
@@ -7202,6 +8748,7 @@ export default function DailyTimesheetPage() {
                 message.error(res.status === 403 ? `KHÓA SỔ: ${err.error}` : err.error || "Lỗi lưu");
             }
         } catch (error) {
+            console.error(error);
             message.error("Lỗi kết nối");
         } finally {
             setSaving(false);
@@ -7343,6 +8890,7 @@ export default function DailyTimesheetPage() {
                                 <Button size="small" onClick={() => setAllStatus("+")}>Đi làm (+)</Button>
                                 <Button size="small" onClick={() => setAllStatus("XD")}>Làm ca đêm (XD)</Button>
                                 <Button size="small" onClick={() => setAllStatus("ĐC")}>Đảo ca (ĐC)</Button>
+                                <Button size="small" onClick={() => setAllStatus("CN")}>Nghỉ Chủ Nhật (CN)</Button>
                                 <Button size="small" onClick={() => setAllStatus("L")}>Nghỉ lễ (L)</Button>
                                 <Button size="small" onClick={() => setAllStatus("F")}>Nghỉ F (F)</Button>
                             </Space>
@@ -7481,6 +9029,7 @@ export default function MonthlyTimesheetPage() {
         setEmployees(data);
       }
     } catch (error) {
+      console.error(error);
       message.error("Lỗi tải dữ liệu");
       setEmployees([]);
     } finally {
@@ -7648,7 +9197,7 @@ export default function MonthlyTimesheetPage() {
         title: <span style={{ color: "#05FA46", fontSize: 12 }}>T.Công</span>,
         width: 60, align: "center", fixed: "right", className: "bg-green-50", key: "sum_total",
         render: (_: any, r: MonthlyEmployeeData) => {
-          const total = countCodes(r, ["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]);
+          const total = countCodes(r, ["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["1/2X"]);
           return total > 0 ? <b style={{ color: "#16a34a" }}>{total}</b> : "-";
         },
       },
@@ -7756,8 +9305,10 @@ export default function MonthlyTimesheetPage() {
   }, [currentFilter, employees]);
 
   // --- 3. EXPORT EXCEL (ĐÃ CẬP NHẬT ĐỘ RỘNG CỘT) ---
+  // --- 3. EXPORT EXCEL (ĐÃ TÍCH HỢP GROUP THEO PHÒNG BAN) ---
   const handleExportExcel = async () => {
-    if (employees.length === 0 || !currentFilter) return;
+    // Đổi điều kiện check: Dùng groupedDataSource thay vì employees
+    if (groupedDataSource.length === 0 || !currentFilter) return;
     setLoading(true);
 
     const workbook = new ExcelJS.Workbook();
@@ -7778,51 +9329,36 @@ export default function MonthlyTimesheetPage() {
 
     // --- TÍNH TOÁN SỐ CỘT ---
     const daysInMonth = currentFilter.date.daysInMonth();
-    // 2 cột đầu (STT, Tên) + Số ngày + 8 cột tổng hợp
     const totalColumns = 2 + daysInMonth + 8;
 
-    // --- [MỚI] THIẾT LẬP ĐỘ RỘNG CỘT (QUAN TRỌNG) ---
-    // Cột 1: STT -> Hẹp
-    worksheet.getColumn(1).width = 5;
-    // Cột 2: Họ tên -> Rộng
-    worksheet.getColumn(2).width = 28;
-
-    // Các cột ngày: Từ cột 3 đến cột (2 + số ngày) -> Rất hẹp
+    // --- THIẾT LẬP ĐỘ RỘNG CỘT ---
+    worksheet.getColumn(1).width = 5; // STT
+    worksheet.getColumn(2).width = 28; // Họ tên
     for (let i = 1; i <= daysInMonth; i++) {
       worksheet.getColumn(2 + i).width = 4.5;
     }
-
-    // Các cột tổng hợp cuối cùng -> Vừa phải
     for (let i = 2 + daysInMonth + 1; i <= totalColumns; i++) {
       worksheet.getColumn(i).width = 7;
     }
-    // -----------------------------------------------
 
-    // --- HEADER (CĂN GIỮA) ---
+    // --- HEADER ---
+    // Dòng 1: Tên Công ty
     const row1 = worksheet.getCell("A1");
     row1.value = "CÔNG TY CỔ PHẦN SỢI PHÚ BÀI";
     row1.font = { name: "Times New Roman", size: 14, bold: true };
     row1.alignment = { vertical: "middle", horizontal: "center" };
     worksheet.mergeCells(1, 1, 1, totalColumns);
 
+    // Dòng 2: Tiêu đề Bảng
     const row2 = worksheet.getCell("A2");
     row2.value = `BẢNG CHẤM CÔNG THÁNG ${currentFilter.date.format("MM/YYYY")}`;
     row2.font = { name: "Times New Roman", size: 16, bold: true };
     row2.alignment = { vertical: "middle", horizontal: "center" };
     worksheet.mergeCells(2, 1, 2, totalColumns);
 
-    // Tên bộ phận
-    const deptDisplayName = employees.length > 0
-      ? (employees[0].kip ? `Kíp: ${employees[0].kip.name}` : `Bộ phận: ${employees[0].department?.name || 'Tổng hợp'}`)
-      : "Tổng hợp";
+    // [ĐÃ BỎ] Dòng 3 cũ (Tiêu đề Bộ phận chung) đã được gỡ bỏ theo yêu cầu
 
-    const row3 = worksheet.getCell("A3");
-    row3.value = deptDisplayName.toUpperCase();
-    row3.font = { name: "Times New Roman", size: 14, bold: true };
-    row3.alignment = { vertical: "middle", horizontal: "center" };
-    worksheet.mergeCells(3, 1, 3, totalColumns);
-
-    // --- TABLE HEADER ---
+    // --- TABLE HEADER (Giờ đẩy lên dòng 3) ---
     const headerRow = ["STT", "Họ và tên"];
     for (let i = 1; i <= daysInMonth; i++) headerRow.push(`${i}`);
     headerRow.push("T.Công", "Ca 3", "100%", "BHXH", "K.Lương", "Vô LD", "L.Bão", "X.Loại");
@@ -7836,58 +9372,83 @@ export default function MonthlyTimesheetPage() {
     });
 
     // --- TABLE DATA ---
-    employees.forEach((emp, index) => {
-      const rowData: any[] = [index + 1, emp.fullName];
-      for (let i = 1; i <= daysInMonth; i++) {
-        const dateStr = dayjs(`${currentFilter.date.year()}-${currentFilter.date.month() + 1}-${i}`).format("YYYY-MM-DD");
-        const log = emp.timesheets.find((t) => t.date.startsWith(dateStr));
-        rowData.push(log ? log.attendanceCode.code : "");
+    let stt = 1; // Biến đếm số thứ tự
+
+    // [THAY ĐỔI QUAN TRỌNG] Duyệt qua mảng đã được group
+    groupedDataSource.forEach((record: any) => {
+
+      if (record.isGroupHeader) {
+        // 1. NẾU LÀ DÒNG TIÊU ĐỀ NHÓM (TÊN BỘ PHẬN)
+        const groupRow = worksheet.addRow([record.groupTitle]);
+        worksheet.mergeCells(groupRow.number, 1, groupRow.number, totalColumns);
+
+        // Định dạng làm nổi bật dòng tên phòng ban
+        for (let i = 1; i <= totalColumns; i++) {
+          const cell = groupRow.getCell(i);
+          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+          if (i === 1) {
+            cell.font = { name: "Times New Roman", bold: true, color: { argb: "FF0050B3" } }; // Màu xanh dương đậm
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE6F7FF" } }; // Nền xanh nhạt
+            cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+          }
+        }
+
+        // Reset lại STT = 1 mỗi khi sang phòng ban mới
+        stt = 1;
       }
+      else {
+        // 2. NẾU LÀ DÒNG NHÂN VIÊN BÌNH THƯỜNG
+        const emp = record as MonthlyEmployeeData;
+        const rowData: any[] = [stt++, emp.fullName];
 
-      const count = (codes: string[]) => emp.timesheets.reduce((acc, t) => codes.includes(t.attendanceCode.code) ? acc + 1 : acc, 0);
-      const countComplex = (full: string[], half: string[]) => emp.timesheets.reduce((acc, t) => {
-        if (full.includes(t.attendanceCode.code)) return acc + 1;
-        if (half.includes(t.attendanceCode.code)) return acc + 0.5;
-        return acc;
-      }, 0);
+        for (let i = 1; i <= daysInMonth; i++) {
+          const dateStr = dayjs(`${currentFilter.date.year()}-${currentFilter.date.month() + 1}-${i}`).format("YYYY-MM-DD");
+          const log = (emp.timesheets || []).find((t) => t.date.startsWith(dateStr));
+          rowData.push(log ? log.attendanceCode.code : "");
+        }
 
-      rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["X/2"]) || "");
-      rowData.push(count(["XD", "LD"]) || "");
-      rowData.push(count(["F", "R", "L"]) || "");
-      rowData.push(count(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
-      rowData.push(count(["RO"]) || "");
-      rowData.push(count(["O"]) || "");
-      rowData.push(count(["B"]) || "");
-      rowData.push(emp.classification || "");
+        const count = (codes: string[]) => (emp.timesheets || []).reduce((acc, t) => codes.includes(t.attendanceCode.code) ? acc + 1 : acc, 0);
+        const countComplex = (full: string[], half: string[]) => (emp.timesheets || []).reduce((acc, t) => {
+          if (full.includes(t.attendanceCode.code)) return acc + 1;
+          if (half.includes(t.attendanceCode.code)) return acc + 0.5;
+          return acc;
+        }, 0);
 
-      const row = worksheet.addRow(rowData);
-      row.eachCell((cell, colNumber) => {
-        cell.font = { name: "Times New Roman" };
-        cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-        // Canh trái cho Họ tên, còn lại canh giữa
-        if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
-        else cell.alignment = { horizontal: "center" };
-      });
+        // Đã cập nhật lại mảng nửa công ["1/2X", "X/2"] như lỗi bạn phát hiện trước đó
+        rowData.push(countComplex(["+", "XD", "CT", "LĐ", "XL", "LE", "LD"], ["1/2X", "X/2"]) || "");
+        rowData.push(count(["XD", "LD"]) || "");
+        rowData.push(count(["F", "R", "L"]) || "");
+        rowData.push(count(["Ô", "CÔ", "TS", "DS", "T", "CL"]) || "");
+        rowData.push(count(["RO"]) || "");
+        rowData.push(count(["O"]) || "");
+        rowData.push(count(["B"]) || "");
+        rowData.push(emp.classification || "");
+
+        const row = worksheet.addRow(rowData);
+        row.eachCell((cell, colNumber) => {
+          cell.font = { name: "Times New Roman" };
+          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+          if (colNumber === 2) cell.alignment = { horizontal: "left", indent: 1 };
+          else cell.alignment = { horizontal: "center", vertical: "middle" };
+        });
+      }
     });
 
-    // --- FOOTER CHỮ KÝ (3 CỘT) ---
+    // --- FOOTER CHỮ KÝ ---
     worksheet.addRow([]);
     worksheet.addRow([]);
 
     const signRowIndex = worksheet.lastRow!.number + 1;
 
-    // 1. NGƯỜI CHẤM CÔNG
     worksheet.mergeCells(signRowIndex, 2, signRowIndex, 6);
     const cellLeft = worksheet.getCell(signRowIndex, 2);
     cellLeft.value = "Người chấm công";
 
-    // 2. PHỤ TRÁCH ĐƠN VỊ
     const midCol = Math.floor(totalColumns / 2);
     worksheet.mergeCells(signRowIndex, midCol - 2, signRowIndex, midCol + 2);
     const cellMid = worksheet.getCell(signRowIndex, midCol - 2);
     cellMid.value = "Phụ trách đơn vị";
 
-    // 3. CÁN BỘ KIỂM TRA
     worksheet.mergeCells(signRowIndex, totalColumns - 4, signRowIndex, totalColumns);
     const cellRight = worksheet.getCell(signRowIndex, totalColumns - 4);
     cellRight.value = "Cán bộ kiểm tra";
@@ -8352,6 +9913,23 @@ export default function AdminLayout({
                 key: "/bravo-data",
                 icon: <DownloadOutlined />,
                 label: <Link href="/bravo-data">Xuất Excel BRAVO</Link>,
+              },
+              {
+                key: "cong-tang-cuong",
+                icon: <AppstoreOutlined />,
+                label: "Công tăng cường",
+                children: [
+                  {
+                    key: "/extra-timesheets/daily",
+                    icon: <TeamOutlined />,
+                    label: <Link href="/extra-timesheets/daily">Chấm công tăng cường</Link>,
+                  },
+                  {
+                    key: "/extra-timesheets/monthly",
+                    icon: <UnorderedListOutlined />,
+                    label: <Link href="/extra-timesheets/monthly">Tổng hợp công tăng cường</Link>,
+                  },
+                ],
               },
               {
                 key: "/overtime",
