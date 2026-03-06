@@ -39,6 +39,7 @@ import {
   KeyOutlined,
   BarChartOutlined,
   DownloadOutlined,
+  QrcodeOutlined,
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -223,9 +224,26 @@ export default function AdminLayout({
                 ],
               },
               {
-                key: "/timesheets/daily",
+                key: "chamcong-group",
                 icon: <FormOutlined />,
-                label: <Link href="/timesheets/daily">Chấm công</Link>,
+                label: "Chấm công",
+                children: [
+                  {
+                    key: "/timesheets/daily",
+                    icon: <FormOutlined />,
+                    label: <Link href="/timesheets/daily">Chấm công (Desktop)</Link>,
+                  },
+                  {
+                    key: "/timesheets/daily-mobile",
+                    icon: <FormOutlined />,
+                    label: <Link href="/timesheets/daily-mobile">Chấm công (Mobile)</Link>,
+                  },
+                  {
+                    key: "/timesheets/daily-mobile/qr-generator",
+                    icon: <QrcodeOutlined />,
+                    label: <Link href="/timesheets/daily-mobile/qr-generator">Tạo QR Chấm công</Link>,
+                  },
+                ],
               },
               {
                 key: "/evaluations/monthly",

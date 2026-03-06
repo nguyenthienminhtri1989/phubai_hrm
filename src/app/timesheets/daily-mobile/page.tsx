@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, Suspense } from "react";
 import { useSession, signOut } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import {
     Select,
     Button,
@@ -26,9 +27,10 @@ import {
     KeyOutlined,
     CheckCircleOutlined,
     CloseCircleOutlined,
-    MenuOutlined,
+    QrcodeOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
+import Link from "next/link";
 
 // --- INTERFACES ---
 interface AttendanceCode {
@@ -53,7 +55,6 @@ interface Factory { id: number; name: string; }
 interface Department { id: number; code: string; name: string; factory?: Factory; }
 interface Kip { id: number; name: string; factoryId: number; }
 
-// Quick action buttons config
 const QUICK_ACTIONS = [
     { code: "+", label: "Đi làm" },
     { code: "XD", label: "Ca đêm" },
@@ -63,9 +64,10 @@ const QUICK_ACTIONS = [
     { code: "F", label: "Nghỉ F" },
 ];
 
-// --- MAIN COMPONENT ---
-export default function MobileDailyTimesheetPage() {
+// --- INNER COMPONENT (uses useSearchParams) ---
+function MobileDailyTimesheetInner() {
     const { data: session } = useSession();
+    const searchParams = useSearchParams();
     const isViewOnly = ["LEADER", "STAFF"].includes(session?.user?.role as string);
 
     // --- DATA STATE ---
@@ -75,6 +77,7 @@ export default function MobileDailyTimesheetPage() {
     const [kips, setKips] = useState<Kip[]>([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [catalogReady, setCatalogReady] = useState(false);
 
     // --- FILTER STATE ---
     const [date, setDate] = useState<Dayjs>(dayjs());
@@ -89,9 +92,13 @@ export default function MobileDailyTimesheetPage() {
     const [passLoading, setPassLoading] = useState(false);
     const [passForm] = Form.useForm();
     const [searchText, setSearchText] = useState("");
+    const [paramsApplied, setParamsApplied] = useState(false);
 
     const MATRIX_FACTORY_IDS = [1, 2, 3];
-    const isMatrix = useMemo(() => selectedFactoryId ? MATRIX_FACTORY_IDS.includes(selectedFactoryId) : false, [selectedFactoryId]);
+    const isMatrix = useMemo(() =>
+        selectedFactoryId ? MATRIX_FACTORY_IDS.includes(selectedFactoryId) : false,
+        [selectedFactoryId]
+    );
 
     // --- LOAD CATALOGS ---
     useEffect(() => {
@@ -114,12 +121,38 @@ export default function MobileDailyTimesheetPage() {
                 setAttendanceCodes(codes);
                 setDepartments(await deptsRes.json());
                 setKips(await kipsRes.json());
+                setCatalogReady(true);
             } catch {
                 message.error("Lỗi tải danh mục");
             }
         };
         init();
     }, []);
+
+    // --- APPLY URL PARAMS AFTER CATALOGS LOAD (QR scan support) ---
+    // URL format: ?f=1&d=SECTION:BC,DEPT:5&k=2,3
+    useEffect(() => {
+        if (!catalogReady || paramsApplied) return;
+
+        const fParam = searchParams.get("f");
+        const dParam = searchParams.get("d");
+        const kParam = searchParams.get("k");
+
+        if (fParam) {
+            const factoryId = parseInt(fParam);
+            if (!isNaN(factoryId)) setSelectedFactoryId(factoryId);
+        }
+        if (dParam) {
+            const depts = dParam.split(",").map(s => s.trim()).filter(Boolean);
+            setMixedDeptValues(depts);
+        }
+        if (kParam) {
+            const kipIds = kParam.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+            setSelectedKipIds(kipIds);
+        }
+
+        setParamsApplied(true);
+    }, [catalogReady, paramsApplied, searchParams]);
 
     // --- PERMISSION FILTER ---
     const availableDepartments = useMemo(() => {
@@ -204,8 +237,7 @@ export default function MobileDailyTimesheetPage() {
         setLoading(true);
         try {
             const dateStr = date.format("YYYY-MM-DD");
-            const deptParam = realIds.join(",");
-            const res = await fetch(`/api/timesheets/daily?date=${dateStr}&departmentId=${deptParam}`);
+            const res = await fetch(`/api/timesheets/daily?date=${dateStr}&departmentId=${realIds.join(",")}`);
             if (!res.ok) throw new Error();
             setEmployees(await res.json());
         } catch {
@@ -216,11 +248,12 @@ export default function MobileDailyTimesheetPage() {
         }
     }, [date, resolveRealDepartmentIds]);
 
-    // Auto-fetch when filter changes
+    // Auto-fetch when filter changes (wait for catalog+params to be ready)
     useEffect(() => {
+        if (!catalogReady) return;
         const timer = setTimeout(() => { fetchTimesheetData(); }, 400);
         return () => clearTimeout(timer);
-    }, [date, selectedFactoryId, mixedDeptValues, selectedKipIds]);
+    }, [date, selectedFactoryId, mixedDeptValues, selectedKipIds, catalogReady]);
 
     // --- SAVE ---
     const handleSave = async () => {
@@ -242,7 +275,7 @@ export default function MobileDailyTimesheetPage() {
             });
             if (res.ok) {
                 const validCount = records.filter(r => r.attendanceCodeId !== null).length;
-                message.success(`Đã lưu! (${validCount} người được chấm)`);
+                message.success(`Đã lưu! (${validCount}/${employees.length} người được chấm)`);
                 fetchTimesheetData();
             } else {
                 const err = await res.json();
@@ -314,38 +347,58 @@ export default function MobileDailyTimesheetPage() {
     const checkedCount = employees.filter(e => e.attendanceCodeId !== null).length;
     const filterApplied = mixedDeptValues.length > 0;
 
+    // --- FILTER LABEL (shown in header) ---
+    const filterLabel = useMemo(() => {
+        if (!filterApplied) return null;
+        const deptLabels = mixedDeptValues.map(v => {
+            const opt = mixedDeptOptions.find(o => o.value === v);
+            return opt?.label || v;
+        });
+        const kipLabels = selectedKipIds.map(id => {
+            const k = kips.find(k => k.id === id);
+            return k?.name || "";
+        }).filter(Boolean);
+        const parts = [...deptLabels];
+        if (kipLabels.length > 0) parts.push(kipLabels.join(", "));
+        return parts.join(" · ");
+    }, [filterApplied, mixedDeptValues, mixedDeptOptions, selectedKipIds, kips]);
+
     // --- RENDER ---
     return (
-        <div style={{ minHeight: "100vh", background: "#f0f2f5", paddingBottom: 80 }}>
+        <div style={{ minHeight: "100vh", background: "#f0f2f5", paddingBottom: 90 }}>
 
             {/* === TOP HEADER === */}
             <div style={{
                 position: "sticky", top: 0, zIndex: 100,
                 background: "#1677ff", color: "#fff",
                 padding: "10px 16px",
-                display: "flex", alignItems: "center", justifyContent: "space-between",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
             }}>
-                <div>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>Chấm Công</div>
-                    <div style={{ fontSize: 12, opacity: 0.85 }}>{date.format("dddd, DD/MM/YYYY")}</div>
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    {/* Filter button with badge */}
-                    <Badge dot={filterApplied} color="yellow">
-                        <Button
-                            icon={<FilterOutlined />}
-                            onClick={() => setFilterDrawerOpen(true)}
-                            style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff" }}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 17 }}>Chấm Công Hàng Ngày</div>
+                        <div style={{ fontSize: 12, opacity: 0.85 }}>{date.format("dddd, DD/MM/YYYY")}</div>
+                        {filterLabel && (
+                            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {filterLabel}
+                            </div>
+                        )}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                        <Badge dot={filterApplied} color="yellow">
+                            <Button
+                                icon={<FilterOutlined />}
+                                onClick={() => setFilterDrawerOpen(true)}
+                                style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff" }}
+                            />
+                        </Badge>
+                        <Avatar
+                            size={34}
+                            icon={<UserOutlined />}
+                            style={{ background: "rgba(255,255,255,0.3)", cursor: "pointer" }}
+                            onClick={() => setUserMenuOpen(true)}
                         />
-                    </Badge>
-                    {/* User avatar */}
-                    <Avatar
-                        size={34}
-                        icon={<UserOutlined />}
-                        style={{ background: "rgba(255,255,255,0.3)", cursor: "pointer" }}
-                        onClick={() => setUserMenuOpen(true)}
-                    />
+                    </div>
                 </div>
             </div>
 
@@ -368,7 +421,6 @@ export default function MobileDailyTimesheetPage() {
                 }
             >
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    {/* Ngày */}
                     <div>
                         <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Ngày chấm công</div>
                         <DatePicker
@@ -380,8 +432,6 @@ export default function MobileDailyTimesheetPage() {
                             size="large"
                         />
                     </div>
-
-                    {/* Nhà máy */}
                     <div>
                         <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Nhà máy</div>
                         <Select
@@ -398,8 +448,6 @@ export default function MobileDailyTimesheetPage() {
                             allowClear
                         />
                     </div>
-
-                    {/* Tổ / Phòng ban */}
                     <div>
                         <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
                             {isMatrix ? "Tổ / Bộ phận" : "Phòng ban"}
@@ -419,8 +467,6 @@ export default function MobileDailyTimesheetPage() {
                             allowClear
                         />
                     </div>
-
-                    {/* Kíp */}
                     <div>
                         <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
                             {isMatrix ? "Lọc theo kíp" : "Kíp"}
@@ -437,14 +483,7 @@ export default function MobileDailyTimesheetPage() {
                             allowClear
                         />
                     </div>
-
-                    <Button
-                        type="primary"
-                        size="large"
-                        block
-                        onClick={() => setFilterDrawerOpen(false)}
-                        style={{ marginTop: 4 }}
-                    >
+                    <Button type="primary" size="large" block onClick={() => setFilterDrawerOpen(false)}>
                         Áp dụng
                     </Button>
                 </div>
@@ -465,8 +504,14 @@ export default function MobileDailyTimesheetPage() {
                     </div>
                     <Tag color="blue" style={{ marginTop: 4 }}>{session?.user?.role}</Tag>
                 </div>
-
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {["ADMIN", "HR_MANAGER", "TIMEKEEPER"].includes(session?.user?.role as string) && (
+                        <Link href="/timesheets/daily-mobile/qr-generator">
+                            <Button icon={<QrcodeOutlined />} block onClick={() => setUserMenuOpen(false)}>
+                                Tạo QR chấm công
+                            </Button>
+                        </Link>
+                    )}
                     <Button
                         icon={<KeyOutlined />}
                         block
@@ -475,9 +520,7 @@ export default function MobileDailyTimesheetPage() {
                         Đổi mật khẩu
                     </Button>
                     <Button
-                        danger
-                        icon={<LogoutOutlined />}
-                        block
+                        danger icon={<LogoutOutlined />} block
                         onClick={() => signOut({ callbackUrl: "/login" })}
                     >
                         Đăng xuất
@@ -519,16 +562,12 @@ export default function MobileDailyTimesheetPage() {
 
             {/* === MAIN CONTENT === */}
             <div style={{ padding: "12px 12px 0" }}>
-
-                {/* Status bar */}
                 {employees.length > 0 && (
                     <div style={{ marginBottom: 10 }}>
                         {timesheetStatus?.isSubmitted ? (
                             <Alert
                                 message={`Đã chấm: ${checkedCount}/${employees.length} người · Cập nhật ${timesheetStatus.lastUpdate}`}
-                                type="success"
-                                showIcon
-                                style={{ fontSize: 12 }}
+                                type="success" showIcon style={{ fontSize: 12 }}
                             />
                         ) : (
                             <Alert message="Chưa có dữ liệu chấm công." type="info" showIcon style={{ fontSize: 12 }} />
@@ -536,7 +575,7 @@ export default function MobileDailyTimesheetPage() {
                     </div>
                 )}
 
-                {/* Quick action buttons (only if not view-only and has data) */}
+                {/* Quick action row */}
                 {!isViewOnly && employees.length > 0 && (
                     <div style={{ marginBottom: 10, overflowX: "auto" }}>
                         <div style={{ display: "flex", gap: 8, paddingBottom: 4, whiteSpace: "nowrap" }}>
@@ -544,18 +583,8 @@ export default function MobileDailyTimesheetPage() {
                             {QUICK_ACTIONS.map(({ code, label }) => {
                                 const ac = attendanceCodes.find(c => c.code === code);
                                 return (
-                                    <Button
-                                        key={code}
-                                        size="small"
-                                        onClick={() => setAllStatus(code)}
-                                        style={{
-                                            flexShrink: 0,
-                                            background: ac?.color || "#ddd",
-                                            borderColor: ac?.color || "#ddd",
-                                            color: "#fff",
-                                            fontWeight: 600,
-                                        }}
-                                    >
+                                    <Button key={code} size="small" onClick={() => setAllStatus(code)}
+                                        style={{ flexShrink: 0, background: ac?.color || "#ddd", borderColor: ac?.color || "#ddd", color: "#fff", fontWeight: 600 }}>
                                         {code} · {label}
                                     </Button>
                                 );
@@ -564,7 +593,7 @@ export default function MobileDailyTimesheetPage() {
                     </div>
                 )}
 
-                {/* Search box (when data loaded) */}
+                {/* Search box */}
                 {employees.length > 0 && (
                     <Input.Search
                         placeholder="Tìm tên, mã nhân viên..."
@@ -584,13 +613,8 @@ export default function MobileDailyTimesheetPage() {
                 </div>
             ) : employees.length === 0 ? (
                 <div style={{
-                    margin: "12px",
-                    padding: "32px 20px",
-                    background: "#fff",
-                    borderRadius: 12,
-                    textAlign: "center",
-                    color: "#999",
-                    border: "1px dashed #ddd",
+                    margin: "12px", padding: "32px 20px", background: "#fff",
+                    borderRadius: 12, textAlign: "center", color: "#999", border: "1px dashed #ddd",
                 }}>
                     <FilterOutlined style={{ fontSize: 32, marginBottom: 12, color: "#ccc" }} />
                     <div style={{ fontWeight: 600, marginBottom: 8 }}>Chưa có dữ liệu</div>
@@ -603,57 +627,49 @@ export default function MobileDailyTimesheetPage() {
                     {filteredEmployees.map((emp, index) => {
                         const currentCode = attendanceCodes.find(c => c.id === emp.attendanceCodeId);
                         return (
-                            <div
-                                key={emp.employeeId}
-                                style={{
-                                    background: "#fff",
-                                    borderRadius: 10,
-                                    padding: "12px 14px",
-                                    boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
-                                    borderLeft: `4px solid ${currentCode?.color || "#e0e0e0"}`,
-                                }}
-                            >
-                                {/* Row 1: Name + index */}
+                            <div key={emp.employeeId} style={{
+                                background: "#fff",
+                                borderRadius: 10,
+                                padding: "12px 14px",
+                                boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
+                                borderLeft: `4px solid ${currentCode?.color || "#e0e0e0"}`,
+                            }}>
+                                {/* Row 1: Name */}
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                                    <div style={{ flex: 1 }}>
-                                        <span style={{ color: "#999", fontSize: 12, marginRight: 6 }}>{index + 1}.</span>
-                                        <span style={{ fontWeight: 600, fontSize: 15 }}>{emp.fullName}</span>
-                                        <div style={{ marginTop: 2 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div>
+                                            <span style={{ color: "#aaa", fontSize: 12, marginRight: 4 }}>{index + 1}.</span>
+                                            <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: 0.1 }}>{emp.fullName}</span>
+                                        </div>
+                                        <div style={{ marginTop: 3 }}>
                                             {emp.kipName ? (
                                                 <Tag color="blue" style={{ fontSize: 11 }}>{emp.kipName}</Tag>
                                             ) : (
                                                 <Tag style={{ fontSize: 11 }}>{emp.departmentName}</Tag>
                                             )}
+                                            <span style={{ fontSize: 11, color: "#bbb" }}>{emp.employeeCode}</span>
                                         </div>
                                     </div>
-                                    {/* Status indicator */}
                                     {emp.attendanceCodeId ? (
-                                        <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 18, marginTop: 2 }} />
+                                        <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 20, marginTop: 2 }} />
                                     ) : (
-                                        <CloseCircleOutlined style={{ color: "#d9d9d9", fontSize: 18, marginTop: 2 }} />
+                                        <CloseCircleOutlined style={{ color: "#d9d9d9", fontSize: 20, marginTop: 2 }} />
                                     )}
                                 </div>
 
-                                {/* Row 2: Attendance code select */}
+                                {/* Attendance select */}
                                 <Select
                                     value={emp.attendanceCodeId}
                                     allowClear
-                                    style={{ width: "100%", marginBottom: 8 }}
+                                    style={{ width: "100%", marginBottom: isViewOnly ? 0 : 8 }}
                                     size="large"
                                     placeholder="Chọn mã chấm công..."
                                     disabled={isViewOnly}
                                     onChange={(val) => handleRowChange(emp.employeeId, "attendanceCodeId", val ?? null)}
-                                    options={attendanceCodes.map(c => ({
-                                        value: c.id,
-                                        label: `${c.code} - ${c.name}`,
-                                        item: c,
-                                    }))}
+                                    options={attendanceCodes.map(c => ({ value: c.id, label: `${c.code} - ${c.name}`, item: c }))}
                                     optionRender={(opt) => (
                                         <Space>
-                                            <Tag
-                                                color={opt.data.item.color}
-                                                style={{ fontWeight: "bold", minWidth: 36, textAlign: "center" }}
-                                            >
+                                            <Tag color={opt.data.item.color} style={{ fontWeight: "bold", minWidth: 36, textAlign: "center" }}>
                                                 {opt.data.item.code}
                                             </Tag>
                                             {opt.data.item.name}
@@ -669,11 +685,10 @@ export default function MobileDailyTimesheetPage() {
                                     }}
                                 />
 
-                                {/* Row 3: Note input */}
+                                {/* Note input */}
                                 {!isViewOnly ? (
                                     <Input
                                         value={emp.note}
-                                        disabled={isViewOnly}
                                         onChange={e => handleRowChange(emp.employeeId, "note", e.target.value)}
                                         placeholder="Ghi chú..."
                                         size="small"
@@ -689,25 +704,14 @@ export default function MobileDailyTimesheetPage() {
 
             {/* === FLOATING SAVE BUTTON === */}
             {!isViewOnly && employees.length > 0 && (
-                <div style={{
-                    position: "fixed",
-                    bottom: 20,
-                    right: 16,
-                    zIndex: 200,
-                }}>
+                <div style={{ position: "fixed", bottom: 20, right: 16, zIndex: 200 }}>
                     <Button
-                        type="primary"
-                        size="large"
-                        icon={<SaveOutlined />}
-                        onClick={handleSave}
-                        loading={saving}
+                        type="primary" size="large" icon={<SaveOutlined />}
+                        onClick={handleSave} loading={saving}
                         style={{
-                            height: 52,
-                            paddingInline: 24,
-                            borderRadius: 26,
+                            height: 52, paddingInline: 24, borderRadius: 26,
                             boxShadow: "0 4px 16px rgba(22,119,255,0.45)",
-                            fontSize: 15,
-                            fontWeight: 600,
+                            fontSize: 15, fontWeight: 700,
                         }}
                     >
                         Lưu ({checkedCount}/{employees.length})
@@ -726,5 +730,18 @@ export default function MobileDailyTimesheetPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+// Wrap with Suspense for useSearchParams
+export default function MobileDailyTimesheetPage() {
+    return (
+        <Suspense fallback={
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
+                <Spin size="large" />
+            </div>
+        }>
+            <MobileDailyTimesheetInner />
+        </Suspense>
     );
 }
