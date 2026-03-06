@@ -224,26 +224,9 @@ export default function AdminLayout({
                 ],
               },
               {
-                key: "chamcong-group",
+                key: "/timesheets/daily",
                 icon: <FormOutlined />,
-                label: "Chấm công",
-                children: [
-                  {
-                    key: "/timesheets/daily",
-                    icon: <FormOutlined />,
-                    label: <Link href="/timesheets/daily">Chấm công (Desktop)</Link>,
-                  },
-                  {
-                    key: "/timesheets/daily-mobile",
-                    icon: <FormOutlined />,
-                    label: <Link href="/timesheets/daily-mobile">Chấm công (Mobile)</Link>,
-                  },
-                  {
-                    key: "/timesheets/daily-mobile/qr-generator",
-                    icon: <QrcodeOutlined />,
-                    label: <Link href="/timesheets/daily-mobile/qr-generator">Tạo QR Chấm công</Link>,
-                  },
-                ],
+                label: <Link href="/timesheets/daily">Chấm công</Link>,
               },
               {
                 key: "/evaluations/monthly",
@@ -344,12 +327,29 @@ export default function AdminLayout({
                 ]
                 : []),
               // ------------------------------------
-
               {
-                key: "/help",
-                icon: <QuestionCircleOutlined />,
-                label: <Link href="/help">Hướng dẫn</Link>,
+                key: "tienich-group",
+                icon: <FormOutlined />,
+                label: "Tiện ích",
+                children: [
+                  {
+                    key: "/help",
+                    icon: <QuestionCircleOutlined />,
+                    label: <Link href="/help">Hướng dẫn</Link>,
+                  },
+                  {
+                    key: "/timesheets/daily-mobile",
+                    icon: <FormOutlined />,
+                    label: <Link href="/timesheets/daily-mobile">Mobile</Link>,
+                  },
+                  {
+                    key: "/timesheets/daily-mobile/qr-generator",
+                    icon: <QrcodeOutlined />,
+                    label: <Link href="/timesheets/daily-mobile/qr-generator">Tạo QR Chấm công</Link>,
+                  },
+                ],
               },
+
             ]}
           />
         </ConfigProvider>

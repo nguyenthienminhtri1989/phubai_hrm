@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
-import { Select, DatePicker, Button, message, Card, Space } from "antd";
+import { Select, DatePicker, Button, message, Card, Space, Tag } from "antd";
 import { FilterOutlined } from "@ant-design/icons";
 import { useSession } from "next-auth/react";
 import dayjs, { Dayjs } from "dayjs";
 
 // --- INTERFACES ---
 interface Factory { id: number; name: string; }
-interface Department { id: number; code: string; name: string; factory?: Factory; }
+interface Department { id: number; code: string; name: string; isKip: boolean; factory?: Factory; }
 interface Kip { id: number; name: string; factoryId: number; }
-interface DeptOption { value: string; label: string; type: "SECTION" | "DEPT"; }
+interface DeptOption { value: string; label: string; type: "SECTION" | "DEPT"; isKip: boolean; }
 
 // Dữ liệu bộ lọc trả về cho trang cha
 export interface FilterResult {
@@ -89,11 +89,11 @@ export default function CommonFilter({ dateMode = "date", onFilterChange, loadin
                 const sectionCode = match[1];
                 if (!processedSections.has(sectionCode)) {
                     const displayName = d.name.replace(/(kíp|ca)\s*\d+.*$/gi, "").replace(/-+.*$/gi, "").trim();
-                    options.push({ value: `SECTION:${sectionCode}`, label: displayName, type: "SECTION" });
+                    options.push({ value: `SECTION:${sectionCode}`, label: displayName, type: "SECTION", isKip: true });
                     processedSections.add(sectionCode);
                 }
             } else {
-                options.push({ value: `DEPT:${d.id}`, label: d.name, type: "DEPT" });
+                options.push({ value: `DEPT:${d.id}`, label: d.name, type: "DEPT", isKip: d.isKip });
             }
         });
         return options.sort((a, b) => a.label.localeCompare(b.label));
@@ -215,6 +215,19 @@ export default function CommonFilter({ dateMode = "date", onFilterChange, loadin
                         optionFilterProp="label"
                         maxTagCount="responsive"
                         allowClear
+                        optionRender={(opt) => {
+                            const o = mixedDeptOptions.find(x => x.value === opt.value);
+                            return (
+                                <Space>
+                                    <span>{opt.label as string}</span>
+                                    {o?.isKip && (
+                                        <Tag color="blue" style={{ fontSize: 10, lineHeight: "16px", padding: "0 5px" }}>
+                                            Ca Kíp
+                                        </Tag>
+                                    )}
+                                </Space>
+                            );
+                        }}
                     />
                 </div>
 

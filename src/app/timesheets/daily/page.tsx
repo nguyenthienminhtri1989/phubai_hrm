@@ -206,11 +206,12 @@ export default function DailyTimesheetPage() {
             width: 150,
             render: (_: any, record: TimesheetRow) => (
                 <div style={{ fontSize: 12 }}>
-                    {record.kipName ? (
+                    {/* {record.kipName ? (
                         <Tag color="blue">{record.kipName}</Tag>
                     ) : (
                         <Tag>{record.departmentName}</Tag>
-                    )}
+                    )} */}
+                    <Tag color="blue">{record.departmentName}</Tag>
                 </div>
             ),
         },
