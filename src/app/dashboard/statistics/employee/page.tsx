@@ -31,9 +31,21 @@ const { Title } = Typography;
 const COLORS = ["#0088FE", "#FF8042", "#FFBB28"];
 const BAR_COLORS = ["#1890ff", "#13c2c2", "#52c41a", "#faad14", "#f5222d", "#8c8c8c"];
 
+interface ChartDataItem {
+  name: string;
+  value: number;
+  [key: string]: unknown;
+}
+
+interface EmployeeStats {
+  total: number;
+  genderData: ChartDataItem[];
+  ageData: ChartDataItem[];
+}
+
 export default function EmployeeStatisticsPage() {
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<EmployeeStats | null>(null);
 
   const fetchStats = async () => {
     try {
@@ -44,8 +56,9 @@ export default function EmployeeStatisticsPage() {
       }
       const data = await res.json();
       setStats(data);
-    } catch (error: any) {
-      message.error(error.message || "Có lỗi xảy ra");
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      message.error(err.message || "Có lỗi xảy ra");
     } finally {
       setLoading(false);
     }
@@ -62,6 +75,9 @@ export default function EmployeeStatisticsPage() {
       </div>
     );
   }
+
+  const renderPieLabel = ({ name, percent }: { name?: string; percent?: number }) =>
+    `${name ?? ""}: ${((percent ?? 0) * 100).toFixed(1)}%`;
 
   return (
     <AdminLayout>
@@ -93,16 +109,16 @@ export default function EmployeeStatisticsPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={true}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`}
+                    label={renderPieLabel}
                     outerRadius={100}
                     fill="#8884d8"
                     dataKey="value"
                   >
-                    {stats?.genderData?.map((entry: any, index: number) => (
+                    {stats?.genderData?.map((_entry: ChartDataItem, index: number) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <RechartsTooltip formatter={(value: number) => [`${value} người`, "Số lượng"]} />
+                  <RechartsTooltip formatter={(value) => [`${value} người`, "Số lượng"]} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -120,9 +136,9 @@ export default function EmployeeStatisticsPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis allowDecimals={false} />
-                  <RechartsTooltip formatter={(value: number) => [`${value} người`, "Số lượng"]} />
+                  <RechartsTooltip formatter={(value) => [`${value} người`, "Số lượng"]} />
                   <Bar dataKey="value" name="Số lượng">
-                    {stats?.ageData?.map((entry: any, index: number) => (
+                    {stats?.ageData?.map((_entry: ChartDataItem, index: number) => (
                       <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
                     ))}
                   </Bar>
