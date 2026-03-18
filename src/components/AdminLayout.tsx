@@ -40,6 +40,7 @@ import {
   BarChartOutlined,
   DownloadOutlined,
   QrcodeOutlined,
+  PieChartOutlined,
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -283,6 +284,18 @@ export default function AdminLayout({
                 label: (
                   <Link href="/evaluations/yearly">Tổng hợp năm</Link>
                 ),
+              },
+              {
+                key: "statistics",
+                icon: <PieChartOutlined />,
+                label: "Thống kê",
+                children: [
+                  {
+                    key: "/dashboard/statistics/employee",
+                    icon: <TeamOutlined />,
+                    label: <Link href="/dashboard/statistics/employee">Lao động</Link>,
+                  },
+                ],
               },
 
               // --- [SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY] ---
