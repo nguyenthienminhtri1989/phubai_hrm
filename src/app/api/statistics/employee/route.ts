@@ -1,15 +1,38 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import dayjs from "dayjs";
 
 const prisma = new PrismaClient();
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const fromDate = searchParams.get("fromDate");
+    const toDate = searchParams.get("toDate");
+
+    // Build where clause
+    const where: {
+      isActive: boolean;
+      startDate?: {
+        gte?: Date;
+        lte?: Date;
+      };
+    } = {
+      isActive: true,
+    };
+
+    if (fromDate || toDate) {
+      where.startDate = {};
+      if (fromDate) {
+        where.startDate.gte = dayjs(fromDate).startOf("day").toDate();
+      }
+      if (toDate) {
+        where.startDate.lte = dayjs(toDate).endOf("day").toDate();
+      }
+    }
+
     const employees = await prisma.employee.findMany({
-      where: {
-        isActive: true, // Only count active employees
-      },
+      where,
       select: {
         gender: true,
         birthday: true,
@@ -74,9 +97,11 @@ export async function GET() {
       total,
       genderData,
       ageData,
+      filterApplied: !!(fromDate || toDate),
     });
-  } catch (error: any) {
-    console.error("Error fetching employee statistics:", error);
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error("Error fetching employee statistics:", err.message);
     return NextResponse.json({ error: "Lỗi server khi lấy thống kê" }, { status: 500 });
   }
 }

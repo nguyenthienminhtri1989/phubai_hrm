@@ -119,8 +119,7 @@ export async function POST(request: Request) {
 
     // --- [BẮT ĐẦU] LOGIC KIỂM TRA KHÓA SỔ (LOCK RULE) ---
 
-    // 1. Xác định Nhà máy của nhân viên đang được chấm
-    // Lấy thông tin của nhân viên đầu tiên trong danh sách để tìm Nhà máy
+    // 1. Lấy thông tin phòng ban + nhà máy của nhân viên đầu tiên
     const firstEmpId = records[0].employeeId;
     const employeeInfo = await prisma.employee.findUnique({
       where: { id: firstEmpId },
@@ -128,22 +127,33 @@ export async function POST(request: Request) {
     });
 
     const factoryId = employeeInfo?.department?.factory?.id;
+    const departmentId = employeeInfo?.departmentId;
 
-    // 2. Tìm luật khóa đang hiệu lực
+    // 2. Tìm luật khóa đang hiệu lực theo 3 cấp độ:
+    //    - Cấp 1: Khóa toàn hệ thống (factoryId = null, không có phòng ban)
+    //    - Cấp 2: Khóa theo nhà máy (factoryId = X, không có phòng ban)
+    //    - Cấp 3: Khóa theo phòng ban (có liên kết LockRuleDepartment)
     const activeLock = await prisma.lockRule.findFirst({
       where: {
-        fromDate: { lte: targetDate }, // Ngày chấm >= Ngày bắt đầu khóa
-        toDate: { gte: targetDate }, // Ngày chấm <= Ngày kết thúc khóa
+        fromDate: { lte: targetDate },
+        toDate: { gte: targetDate },
         OR: [
-          { factoryId: null }, // Khóa toàn bộ hệ thống
-          { factoryId: factoryId ? factoryId : undefined }, // Khóa riêng nhà máy này
+          // Cấp 1: Khóa toàn hệ thống
+          { factoryId: null, departments: { none: {} } },
+          // Cấp 2: Khóa nhà máy của nhân viên
+          ...(factoryId
+            ? [{ factoryId: factoryId, departments: { none: {} } }]
+            : []),
+          // Cấp 3: Khóa phòng ban của nhân viên
+          ...(departmentId
+            ? [{ departments: { some: { departmentId: departmentId } } }]
+            : []),
         ],
       },
     });
 
-    // 3. Nếu tìm thấy luật khóa -> CHẶN
+    // 3. Nếu tìm thấy luật khóa -> CHẶN (Admin được bỏ qua)
     if (activeLock) {
-      // Cho phép Admin sửa bất chấp khóa (nếu muốn chặn cả Admin thì xóa dòng if này)
       if (session.user.role !== "ADMIN") {
         return NextResponse.json(
           {

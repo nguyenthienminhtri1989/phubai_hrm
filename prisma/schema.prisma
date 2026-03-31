@@ -55,6 +55,9 @@ model Department {
 
   // --- [BỔ SUNG] Quan hệ 2: Những user THUỘC VỀ phòng này (One-to-Many) ---
   staffUsers User[] @relation("UserBelongsTo")
+
+  // --- [MỚI] Quan hệ với lệnh khóa theo phòng ban ---
+  lockRules LockRuleDepartment[]
 }
 
 //============ 3. Bảng Nhân Viên ================
@@ -176,15 +179,30 @@ model User {
 
 // Bảng quản lý luật khóa sổ chấm công
 model LockRule {
-  id        Int      @id @default(autoincrement())
-  factoryId Int?     // Nếu null -> Khóa TOÀN BỘ hệ thống. Nếu có ID -> Khóa riêng Nhà máy đó.
-  fromDate  DateTime // Ngày bắt đầu khóa
-  toDate    DateTime // Ngày kết thúc khóa
-  reason    String?  // Lý do (VD: Chốt lương tháng 1)
-  createdAt DateTime @default(now())
-  
-  // Thiết lập quan hệ (Nếu bạn đã có model Factory)
-  factory   Factory? @relation(fields: [factoryId], references: [id])
+  id          Int                  @id @default(autoincrement())
+  // factoryId: null = Khóa TOÀN BỘ hệ thống hoặc khóa theo phòng ban. Có ID = Khóa riêng Nhà máy đó.
+  factoryId   Int?
+  fromDate    DateTime             // Ngày bắt đầu khóa
+  toDate      DateTime             // Ngày kết thúc khóa
+  reason      String?              // Lý do (VD: Chốt lương tháng 1)
+  createdAt   DateTime             @default(now())
+
+  // Thiết lập quan hệ với Nhà máy
+  factory     Factory?             @relation(fields: [factoryId], references: [id])
+
+  // --- [MỚI] Quan hệ nhiều-nhiều với Phòng ban (nếu rỗng = khóa theo nhà máy/toàn hệ thống) ---
+  departments LockRuleDepartment[]
+}
+
+// [MỚI] Bảng trung gian: 1 lệnh khóa có thể áp dụng cho nhiều phòng ban
+model LockRuleDepartment {
+  lockRuleId   Int
+  departmentId Int
+
+  lockRule   LockRule   @relation(fields: [lockRuleId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@id([lockRuleId, departmentId])
 }
 
 // Bảng lưu kết quả xếp loại tháng

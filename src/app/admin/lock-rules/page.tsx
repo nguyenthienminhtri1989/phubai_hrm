@@ -15,12 +15,16 @@ import {
   Card,
   Typography,
   Space,
+  Radio,
 } from "antd";
 import {
   DeleteOutlined,
   PlusOutlined,
   LockOutlined,
   EditOutlined,
+  BankOutlined,
+  ApartmentOutlined,
+  GlobalOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -28,13 +32,19 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 export default function LockRulesPage() {
-  const [rules, setRules] = useState([]);
+  const [rules, setRules] = useState<any[]>([]);
   const [factories, setFactories] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // State quản lý Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingRule, setEditingRule] = useState<any>(null); // Lưu bản ghi đang sửa
+  const [editingRule, setEditingRule] = useState<any>(null);
+
+  // Loại khóa đang chọn trong form
+  const [lockType, setLockType] = useState<"ALL" | "FACTORY" | "DEPARTMENT">(
+    "ALL",
+  );
 
   const [form] = Form.useForm();
 
@@ -42,13 +52,15 @@ export default function LockRulesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [rulesRes, factRes] = await Promise.all([
+      const [rulesRes, factRes, deptRes] = await Promise.all([
         fetch("/api/admin/lock-rules"),
         fetch("/api/factories"),
+        fetch("/api/departments"),
       ]);
       if (rulesRes.ok) setRules(await rulesRes.json());
       if (factRes.ok) setFactories(await factRes.json());
-    } catch (error) {
+      if (deptRes.ok) setDepartments(await deptRes.json());
+    } catch {
       message.error("Lỗi tải dữ liệu");
     } finally {
       setLoading(false);
@@ -59,19 +71,35 @@ export default function LockRulesPage() {
     fetchData();
   }, []);
 
+  // Tính loại khóa từ record dữ liệu
+  const getRuleType = (record: any): "ALL" | "FACTORY" | "DEPARTMENT" => {
+    if (record.departments && record.departments.length > 0) return "DEPARTMENT";
+    if (record.factoryId) return "FACTORY";
+    return "ALL";
+  };
+
   // Mở Modal để TẠO MỚI
   const openCreateModal = () => {
-    setEditingRule(null); // Xóa trạng thái sửa
-    form.resetFields(); // Xóa form
+    setEditingRule(null);
+    setLockType("ALL");
+    form.resetFields();
+    form.setFieldValue("lockType", "ALL");
     setIsModalOpen(true);
   };
 
   // Mở Modal để SỬA
   const openEditModal = (record: any) => {
-    setEditingRule(record); // Lưu bản ghi đang sửa
-    // Điền dữ liệu cũ vào form
+    setEditingRule(record);
+    const type = getRuleType(record);
+    setLockType(type);
+
     form.setFieldsValue({
-      factoryId: record.factoryId ? record.factoryId : "ALL",
+      lockType: type,
+      factoryId: record.factoryId ?? undefined,
+      departmentIds:
+        type === "DEPARTMENT"
+          ? record.departments.map((d: any) => d.departmentId)
+          : undefined,
       dateRange: [dayjs(record.fromDate), dayjs(record.toDate)],
       reason: record.reason,
     });
@@ -81,42 +109,49 @@ export default function LockRulesPage() {
   // Xử lý chung cho cả TẠO và SỬA
   const handleFinish = async (values: any) => {
     try {
-      const payload = {
-        factoryId: values.factoryId === "ALL" ? null : values.factoryId,
+      const payload: any = {
+        lockType: values.lockType,
         fromDate: values.dateRange[0].format("YYYY-MM-DD"),
         toDate: values.dateRange[1].format("YYYY-MM-DD"),
         reason: values.reason,
-        id: editingRule ? editingRule.id : undefined, // Nếu đang sửa thì gửi kèm ID
       };
 
-      // Quyết định gọi API nào (POST hay PUT)
-      const method = editingRule ? "PUT" : "POST";
-      const url = "/api/admin/lock-rules";
+      if (values.lockType === "FACTORY") {
+        payload.factoryId = values.factoryId;
+      }
+      if (values.lockType === "DEPARTMENT") {
+        payload.departmentIds = values.departmentIds;
+      }
+      if (editingRule) {
+        payload.id = editingRule.id;
+      }
 
-      const res = await fetch(url, {
-        method: method,
+      const method = editingRule ? "PUT" : "POST";
+      const res = await fetch("/api/admin/lock-rules", {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
+      const data = await res.json();
       if (res.ok) {
         message.success(
-          editingRule ? "Đã cập nhật thành công!" : "Đã tạo lệnh khóa mới!"
+          editingRule ? "Đã cập nhật thành công!" : "Đã tạo lệnh khóa mới!",
         );
         setIsModalOpen(false);
         form.resetFields();
         setEditingRule(null);
-        fetchData(); // Load lại bảng
+        fetchData();
       } else {
-        message.error("Lỗi khi lưu dữ liệu");
+        message.error(data.error || "Lỗi khi lưu dữ liệu");
       }
-    } catch (e) {
+    } catch {
       message.error("Lỗi kết nối");
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Bạn có chắc chắn muốn XÓA luật này không?")) return;
+    if (!confirm("Bạn có chắc chắn muốn XÓA luật khóa này không?")) return;
     try {
       const res = await fetch(`/api/admin/lock-rules?id=${id}`, {
         method: "DELETE",
@@ -125,23 +160,60 @@ export default function LockRulesPage() {
         message.success("Đã xóa thành công");
         fetchData();
       } else {
-        message.error("Không thể xóa");
+        const data = await res.json();
+        message.error(data.error || "Không thể xóa");
       }
-    } catch (e) {
+    } catch {
       message.error("Lỗi kết nối");
     }
   };
 
+  // Nhóm phòng ban theo nhà máy để hiển thị trong Select
+  const groupedDeptOptions = factories.map((factory) => ({
+    label: factory.name,
+    options: departments
+      .filter((d) => d.factoryId === factory.id)
+      .map((d) => ({
+        label: d.name,
+        value: d.id,
+      })),
+  }));
+
   const columns = [
     {
+      title: "Loại khóa",
+      key: "type",
+      width: 150,
+      render: (_: any, record: any) => {
+        const type = getRuleType(record);
+        if (type === "ALL")
+          return <Tag color="red" icon={<GlobalOutlined />}>Toàn hệ thống</Tag>;
+        if (type === "FACTORY")
+          return <Tag color="orange" icon={<BankOutlined />}>Nhà máy</Tag>;
+        return <Tag color="blue" icon={<ApartmentOutlined />}>Phòng ban</Tag>;
+      },
+    },
+    {
       title: "Phạm vi áp dụng",
-      dataIndex: "factory",
-      render: (factory: any) =>
-        factory ? (
-          <Tag color="blue">{factory.name}</Tag>
-        ) : (
-          <Tag color="red">TOÀN CÔNG TY</Tag>
-        ),
+      key: "scope",
+      render: (_: any, record: any) => {
+        const type = getRuleType(record);
+        if (type === "ALL") return <Text strong>Toàn bộ công ty</Text>;
+        if (type === "FACTORY" && record.factory)
+          return <Tag color="orange">{record.factory.name}</Tag>;
+        if (type === "DEPARTMENT") {
+          return (
+            <Space size={[4, 4]} wrap>
+              {record.departments.map((d: any) => (
+                <Tag key={d.departmentId} color="blue">
+                  {d.department?.name}
+                </Tag>
+              ))}
+            </Space>
+          );
+        }
+        return "-";
+      },
     },
     {
       title: "Từ ngày",
@@ -162,7 +234,6 @@ export default function LockRulesPage() {
       key: "action",
       render: (_: any, record: any) => (
         <Space>
-          {/* Nút Sửa */}
           <Button
             type="primary"
             ghost
@@ -171,8 +242,6 @@ export default function LockRulesPage() {
           >
             Sửa
           </Button>
-
-          {/* Nút Xóa */}
           <Button
             danger
             icon={<DeleteOutlined />}
@@ -195,7 +264,7 @@ export default function LockRulesPage() {
           marginBottom: 20,
         }}
       >
-        <Title level={3}>Quản lý Khóa sổ & Kỳ lương</Title>
+        <Title level={3}>Quản lý Khóa sổ &amp; Kỳ lương</Title>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -209,6 +278,7 @@ export default function LockRulesPage() {
         <div style={{ marginBottom: 16 }}>
           <Text type="secondary">
             <LockOutlined /> Quản lý các quy tắc chặn sửa dữ liệu chấm công.
+            Hệ thống hỗ trợ 3 cấp độ: Toàn công ty → Nhà máy → Phòng ban / Công đoạn cụ thể.
           </Text>
         </div>
         <Table
@@ -224,30 +294,87 @@ export default function LockRulesPage() {
       <Modal
         title={editingRule ? "Cập nhật Lệnh khóa" : "Thiết lập Khóa sổ mới"}
         open={isModalOpen}
-        onCancel={() => setIsModalOpen(false)}
+        onCancel={() => {
+          setIsModalOpen(false);
+          setEditingRule(null);
+          form.resetFields();
+        }}
         footer={null}
+        width={560}
       >
         <Form form={form} layout="vertical" onFinish={handleFinish}>
-          {/* Chỉ cho phép sửa Nhà máy khi tạo mới (để tránh lỗi logic khi sửa). 
-              Nếu bạn muốn cho sửa cả nhà máy thì bỏ prop disabled đi */}
+          {/* CHỌN LOẠI KHÓA */}
           <Form.Item
-            name="factoryId"
-            label="Phạm vi khóa"
+            name="lockType"
+            label="Loại khóa"
             initialValue="ALL"
             rules={[{ required: true }]}
           >
-            <Select disabled={!!editingRule}>
-              <Select.Option value="ALL">
-                🚫 KHÓA TOÀN BỘ HỆ THỐNG
-              </Select.Option>
-              {factories.map((f) => (
-                <Select.Option key={f.id} value={f.id}>
-                  {f.name}
-                </Select.Option>
-              ))}
-            </Select>
+            <Radio.Group
+              onChange={(e) => {
+                setLockType(e.target.value);
+                // Reset các field phụ khi đổi loại
+                form.setFieldsValue({
+                  factoryId: undefined,
+                  departmentIds: undefined,
+                });
+              }}
+              optionType="button"
+              buttonStyle="solid"
+            >
+              <Radio.Button value="ALL">
+                <GlobalOutlined /> Toàn hệ thống
+              </Radio.Button>
+              <Radio.Button value="FACTORY">
+                <BankOutlined /> Theo nhà máy
+              </Radio.Button>
+              <Radio.Button value="DEPARTMENT">
+                <ApartmentOutlined /> Theo phòng ban
+              </Radio.Button>
+            </Radio.Group>
           </Form.Item>
 
+          {/* CHỌN NHÀ MÁY (chỉ hiện khi type = FACTORY) */}
+          {lockType === "FACTORY" && (
+            <Form.Item
+              name="factoryId"
+              label="Chọn nhà máy cần khóa"
+              rules={[{ required: true, message: "Vui lòng chọn nhà máy" }]}
+            >
+              <Select placeholder="-- Chọn nhà máy --">
+                {factories.map((f) => (
+                  <Select.Option key={f.id} value={f.id}>
+                    {f.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          )}
+
+          {/* CHỌN PHÒNG BAN (chỉ hiện khi type = DEPARTMENT) */}
+          {lockType === "DEPARTMENT" && (
+            <Form.Item
+              name="departmentIds"
+              label="Chọn phòng ban / công đoạn"
+              rules={[
+                {
+                  required: true,
+                  message: "Vui lòng chọn ít nhất một phòng ban",
+                },
+              ]}
+            >
+              <Select
+                mode="multiple"
+                allowClear
+                placeholder="-- Chọn một hoặc nhiều phòng ban --"
+                options={groupedDeptOptions}
+                optionFilterProp="label"
+                showSearch
+              />
+            </Form.Item>
+          )}
+
+          {/* KHOẢNG THỜI GIAN */}
           <Form.Item
             name="dateRange"
             label="Khoảng thời gian cấm sửa"
@@ -256,13 +383,18 @@ export default function LockRulesPage() {
             <RangePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
           </Form.Item>
 
+          {/* LÝ DO */}
           <Form.Item name="reason" label="Lý do / Ghi chú">
             <Input placeholder="Ví dụ: Chốt công tháng 1" />
           </Form.Item>
 
           <div style={{ textAlign: "right", marginTop: 20 }}>
             <Button
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => {
+                setIsModalOpen(false);
+                setEditingRule(null);
+                form.resetFields();
+              }}
               style={{ marginRight: 8 }}
             >
               Hủy
