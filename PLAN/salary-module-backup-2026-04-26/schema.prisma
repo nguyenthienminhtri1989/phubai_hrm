@@ -1,0 +1,418 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Bảng Nhà Máy
+model Factory {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique
+  name        String
+  departments Department[] // Quan hệ ngược: 1 nhà máy có nhiều phòng
+
+  // --- BỔ SUNG DÒNG NÀY VÀO ---
+  kips        Kip[]        // Quan hệ ngược: 1 nhà máy có nhiều Kíp
+  lockRules   LockRule[] // Liên kết với bảng khóa sổ để chọn nhà máy cần khóa
+}
+
+// 2. Kíp (BẢNG MỚI - Định nghĩa Kíp 1 -> Kíp 10)
+model Kip {
+  id   Int    @id @default(autoincrement())
+  name String // "Kíp 1", "Kíp 2", ..., "Kíp 10"
+  
+  // Liên kết với Nhà máy (Vì Kíp 1 nhà máy 2 khác Kíp 1 nhà máy 3)
+  factoryId Int
+  factory   Factory @relation(fields: [factoryId], references: [id])
+  
+  employees Employee[] // 1 Kíp có nhiều nhân viên
+}
+
+// 2. Bảng Phòng Ban - Công đoạn
+model Department {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique
+  name      String     // Tên hiển thị: "Sợi con", "Bông chải"
+
+  // --- THÊM CỘT NÀY ---
+  // true: Là bộ phận sản xuất theo Kíp (Kíp 1, Kíp 2...)
+  // false: Là bộ phận hành chính/phụ trợ (Bảo trì, Kho...)
+  isKip     Boolean  @default(false) 
+  // --------------------
+  
+  // Khóa ngoại liên kết nhà máy
+  factoryId Int      
+  factory   Factory   @relation(fields: [factoryId], references: [id])
+  employees Employee[] // Quan hệ ngược: 1 phòng có nhiều nhân viên
+  // Quan hệ 1: Những user QUẢN LÝ phòng này (Many-to-Many)
+  // [SỬA LỖI] Bổ sung @relation("ManagedDepartments") vào đây để khớp với bên User
+  managers User[] @relation("ManagedDepartments")
+
+  // --- [BỔ SUNG] Quan hệ 2: Những user THUỘC VỀ phòng này (One-to-Many) ---
+  staffUsers User[] @relation("UserBelongsTo")
+
+  // --- [MỚI] Quan hệ với lệnh khóa theo phòng ban ---
+  lockRules LockRuleDepartment[]
+}
+
+//============ 3. Bảng Nhân Viên ================
+model Employee {
+  id         Int        @id @default(autoincrement())
+  code       String     @unique // Mã NV nhập tay/import
+  fullName   String
+  birthday   DateTime?
+  gender     String?
+  address    String?
+  phone      String?
+  position   String?    // Nhập tay thoải mái
+
+  // --- [MỚI] CÁC TRƯỜNG BỔ SUNG ---
+  startDate     DateTime? // Ngày vào làm
+  idCardNumber  String?   // Số CCCD
+  idCardDate    DateTime? // Ngày cấp
+  idCardPlace   String?   // Nơi cấp
+  bankAccount   String?   // Số tài khoản
+  taxCode       String?   // Mã số thuế
+  // true = Đang làm việc, false = Đã nghỉ việc
+  isActive     Boolean   @default(true)
+  // -------------------------------
+  
+  // Khóa ngoại liên kết phòng ban
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  // --- MỚI: THÊM CÁI NÀY ĐỂ LỌC ---
+  kipId        Int?     // Cho phép NULL (để ông Bảo trì/Văn phòng không cần điền)
+  kip          Kip?     @relation(fields: [kipId], references: [id])
+  // --------------------------------
+  timesheets Timesheet[]
+
+  evaluations MonthlyEvaluation[] // Truy vấn xếp loại
+
+  extraTimesheets ExtraTimesheet[] // <-- Kết nối với bảng công tăng cường
+  
+  // --- Liên kết đến bảng làm thêm ---
+  overtimeRecords OvertimeRecord[]
+
+  // === Module lương ===
+}
+
+// 1. Bảng định nghĩa các loại công (X, F, Ô...)
+model AttendanceCode {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique // Ví dụ: X, F, XD
+  name        String   // Ví dụ: Đi làm, Nghỉ phép
+  
+  // Nhóm chế độ (Lương thời gian, Ốm, Thai sản...)
+  category    String   
+  
+  // Hệ số: Thêm dấu ? để không bắt buộc nhập lúc này
+  factor      Float?   
+  
+  color       String?  // Màu sắc (để ? luôn cho thoải mái, nhập sau cũng được)
+  description String?  
+  
+  // Mối quan hệ ngược: Một loại công link tới NHIỀU dòng chấm công
+  timesheets  Timesheet[]
+
+  // Liên kết với bảng chấm công tăng cường
+  extraTimesheets ExtraTimesheet[]
+}
+
+// 2. Bảng chấm công hàng ngày
+model Timesheet {
+  id               Int      @id @default(autoincrement())
+  date             DateTime // Ngày chấm công
+  
+  // Liên kết với Nhân viên
+  employeeId       Int
+  employee         Employee @relation(fields: [employeeId], references: [id])
+  
+  // Liên kết với Loại công
+  attendanceCodeId Int
+  attendanceCode   AttendanceCode @relation(fields: [attendanceCodeId], references: [id])
+  
+  note             String? // Ghi chú (VD: Đi muộn 30p)
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Đảm bảo 1 nhân viên trong 1 ngày chỉ có 1 dòng chấm công
+  @@unique([employeeId, date], name: "employeeId_date")
+}
+
+// 1. Thêm Enum cho các Vai trò (Role)
+enum Role {
+  ADMIN       // Quản trị hệ thống cao nhất
+  HR_MANAGER  // Quản lý nhân sự (Sửa danh mục, xem tất cả)
+  LEADER      // Lãnh đạo (Chỉ xem)
+  TIMEKEEPER  // Người chấm công (Chỉ được chấm các phòng được giao)
+  STAFF       // Nhân viên bình thường, chỉ xem và sửa bảng làm thêm
+}
+
+// 2. Thêm bảng User
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique // Dùng tên đăng nhập (vd: to1, admin) thay vì email
+  password  String   // Mật khẩu đã mã hóa
+  fullName  String?
+  role      Role     @default(TIMEKEEPER)
+
+  // --- [BỔ SUNG CÁC TRƯỜNG MỚI] ---
+  employeeCode String?  // Mã nhân viên (Để liên kết với bảng lương/nhân sự sau này)
+
+  // Phòng ban trực thuộc (User này thuộc phòng nào?)
+  userDepartmentId Int? 
+  userDepartment   Department? @relation("UserBelongsTo", fields: [userDepartmentId], references: [id])
+  // -------------------------------
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Quan hệ cũ: User quản lý những phòng nào (Cho Timekeeper/Manager)
+  managedDepartments Department[] @relation("ManagedDepartments")
+
+}
+
+// Bảng quản lý luật khóa sổ chấm công
+model LockRule {
+  id          Int                  @id @default(autoincrement())
+  // factoryId: null = Khóa TOÀN BỘ hệ thống hoặc khóa theo phòng ban. Có ID = Khóa riêng Nhà máy đó.
+  factoryId   Int?
+  fromDate    DateTime             // Ngày bắt đầu khóa
+  toDate      DateTime             // Ngày kết thúc khóa
+  reason      String?              // Lý do (VD: Chốt lương tháng 1)
+  createdAt   DateTime             @default(now())
+
+  // Thiết lập quan hệ với Nhà máy
+  factory     Factory?             @relation(fields: [factoryId], references: [id])
+
+  // --- [MỚI] Quan hệ nhiều-nhiều với Phòng ban (nếu rỗng = khóa theo nhà máy/toàn hệ thống) ---
+  departments LockRuleDepartment[]
+}
+
+// [MỚI] Bảng trung gian: 1 lệnh khóa có thể áp dụng cho nhiều phòng ban
+model LockRuleDepartment {
+  lockRuleId   Int
+  departmentId Int
+
+  lockRule   LockRule   @relation(fields: [lockRuleId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@id([lockRuleId, departmentId])
+}
+
+// Bảng lưu kết quả xếp loại tháng
+model MonthlyEvaluation {
+  id          Int      @id @default(autoincrement())
+  
+  // Liên kết nhân viên
+  employeeId  Int
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  month       Int      // Ví dụ: 1
+  year        Int      // Ví dụ: 2026
+  
+  grade       String   // Giá trị: "A", "B", "C", "A+"...
+  note        String?  // Ghi chú lý do (nếu cần)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Ràng buộc: Mỗi nhân viên chỉ có 1 kết quả xếp loại trong 1 tháng
+  @@unique([employeeId, month, year])
+}
+
+// Thêm vào cuối file schema.prisma
+
+model OvertimeRecord {
+  id           Int      @id @default(autoincrement())
+  
+  employeeId   Int
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  content      String   // Nội dung công việc
+  startTime    DateTime // Giờ vào (VD: 2026-01-22 17:00:00)
+  endTime      DateTime // Giờ ra  (VD: 2026-01-22 19:30:00)
+  totalMinutes Int      // Tổng thời gian (tính bằng phút để dễ cộng trừ)
+  createdAt    DateTime @default(now())
+
+  // [MỚI] Lưu username người tạo (Ví dụ: "admin", "to1", "bao_tri")
+  createdBy    String?
+}
+
+// Bảng Chấm công Tăng cường (Quản lý nội bộ, không xuất BRAVO)
+model ExtraTimesheet {
+  id               Int            @id @default(autoincrement())
+  date             DateTime       // Ngày chấm công
+  
+  employeeId       Int
+  employee         Employee       @relation(fields: [employeeId], references: [id])
+  
+  attendanceCodeId Int
+  attendanceCode   AttendanceCode @relation(fields: [attendanceCodeId], references: [id])
+  
+  note             String?        // Ghi chú (VD: Tăng cường xưởng 2)
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Đảm bảo 1 ngày 1 người chỉ có 1 dòng công TĂNG CƯỜNG
+  @@unique([employeeId, date], name: "employeeId_date")
+}
+
+// ================================================================
+// MODULE TÍNH LƯƠNG — PHUBAI-HRM
+// ================================================================
+
+// Thang bậc lương (dữ liệu từ file THANG_LƯƠNG_VÀ_HỆ_SỐ_CV.xlsx)
+model SalaryGrade {
+  id                Int      @id @default(autoincrement())
+  // "CN_SAN_XUAT" | "LAI_XE" | "CHUYEN_MON_DH" | "CHUYEN_MON_CD" | "QUAN_LY"
+  gradeGroup        String
+  gradeNumber       Int      // Bậc 1..9 (hoặc 12)
+  coefficient       Float    // Hệ số: 1.25, 1.33...
+  baseSalaryAmount  Float    // Mức lương: 5,175,000...
+  minMonthsRequired Int      @default(0)
+  effectiveYear     Int
+  note              String?
+  @@unique([gradeGroup, gradeNumber, effectiveYear])
+}
+
+// Hệ số công việc theo chức danh (sheet "HS CV MỚI")
+model JobCoefficientConfig {
+  id            Int      @id @default(autoincrement())
+  // "LANH_DAO" | "GIAM_DOC_TRUONG_PHONG" | "TO_TRUONG" | "CHUYEN_VIEN" | "CONG_NHAN"
+  jobGroup      String
+  jobTitle      String   // "Tổng Giám đốc", "Tổ trưởng cấp I"...
+  coefficient   Float    // 200, 95, 35, 7.9...
+  gradeMin      Int?
+  gradeMax      Int?
+  effectiveDate DateTime
+  note          String?
+}
+
+// Cấu hình lương theo tháng/năm
+model SalaryConfig {
+  id                   Int      @id @default(autoincrement())
+  month                Int
+  year                 Int
+  regionMinWage        Float    @default(4140000)
+  standardWorkDays     Int      @default(26)
+  mealAllowanceSunday  Float    @default(0)   // Đơn giá ăn cơm CN/ngày
+  shift3UnitPrice      Float    @default(0)   // Đơn giá PC ca 3/công
+  companyBhxhRate      Float    @default(0.175)
+  companyBhtnRate      Float    @default(0.01)
+  companyBhytRate      Float    @default(0.03)
+  employeeBhxhRate     Float    @default(0.08)
+  employeeBhtnRate     Float    @default(0.01)
+  employeeBhytRate     Float    @default(0.015)
+  unionFeeRate         Float    @default(0.01)
+  note                 String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  @@unique([month, year])
+}
+
+// Thông tin lương cá nhân — có lịch sử thay đổi
+model EmployeeSalaryInfo {
+  id                 Int       @id @default(autoincrement())
+  employeeId         Int
+  employee           Employee  @relation("SalaryInfos", fields: [employeeId], references: [id], onDelete: Cascade)
+  baseSalary         Float     // Mức lương cơ bản thỏa thuận
+  salaryCoefficient  Float     // Hệ số
+  salaryGrade        Int?      // Bậc (1..9)
+  salaryLevel        Int?      // Cấp trong bậc
+  phoneAllowance     Float     @default(0)
+  transportAllowance Float     @default(0)
+  effectiveDate      DateTime
+  expiredDate        DateTime? // null = đang áp dụng
+  note               String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  monthlySalaries    MonthlySalary[]
+}
+
+// Kết quả & thưởng tháng (nhập thủ công bởi HR_MANAGER)
+model MonthlyPerformanceBonus {
+  id                     Int      @id @default(autoincrement())
+  employeeId             Int
+  employee               Employee @relation("PerformanceBonuses", fields: [employeeId], references: [id], onDelete: Cascade)
+  month                  Int
+  year                   Int
+  performanceCoefficient Float    @default(0)  // Hệ số KQ công việc
+  productionCoefficient  Float    @default(0)  // HS KQSX theo ca (chỉ SX)
+  shift3Days             Float    @default(0)  // Công ca 3 (nhập thủ công, chỉ SX)
+  bonusFullAttendance    Float    @default(0)  // Thưởng đủ công
+  bonusAdminWork         Float    @default(0)  // Thưởng HC (chỉ HC)
+  bonusShift3            Float    @default(0)  // Thưởng ca 3 (chỉ SX)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  @@unique([employeeId, month, year])
+}
+
+// Tạm ứng lương
+model AdvancePayment {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  employee   Employee @relation("AdvancePayments", fields: [employeeId], references: [id], onDelete: Cascade)
+  month      Int
+  year       Int
+  amount     Float
+  note       String?
+  createdBy  String?  // User.username
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Bảng lương tháng — snapshot kết quả tính lương
+model MonthlySalary {
+  id                 Int                 @id @default(autoincrement())
+  employeeId         Int
+  employee           Employee            @relation("MonthlySalaries", fields: [employeeId], references: [id], onDelete: Cascade)
+  salaryInfoId       Int?
+  salaryInfo         EmployeeSalaryInfo? @relation(fields: [salaryInfoId], references: [id])
+  month              Int
+  year               Int
+  // --- Công từ Timesheet ---
+  actualWorkDays     Float @default(0)
+  shift3Days         Float @default(0)
+  sundayWorkDays     Float @default(0)
+  holidayLeaveDays   Float @default(0)
+  // --- Thu nhập ---
+  timeSalary         Float @default(0)
+  overtimeSalary     Float @default(0)
+  holidaySalary      Float @default(0)
+  mealAllowance      Float @default(0)
+  shift3Allowance    Float @default(0)  // 0 nếu HC
+  performanceSalary  Float @default(0)
+  specialAllowance   Float @default(0)
+  totalIncome        Float @default(0)
+  // --- Khấu trừ ---
+  advanceDeduction   Float @default(0)
+  bhxhDeduction      Float @default(0)
+  bhytDeduction      Float @default(0)
+  bhtnDeduction      Float @default(0)
+  unionFeeDeduction  Float @default(0)
+  mealDeduction      Float @default(0)
+  incomeTaxDeduction Float @default(0)  // Tạm set 0, tính sau
+  netSalary          Float @default(0)
+  status             SalaryStatus @default(DRAFT)
+  note               String?
+  calculatedBy       String?
+  confirmedBy        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  @@unique([employeeId, month, year])
+}
+
+enum SalaryStatus {
+  DRAFT      // Đang tính
+  CONFIRMED  // HR_MANAGER đã duyệt
+  LOCKED     // Đã khóa, không sửa được
+}

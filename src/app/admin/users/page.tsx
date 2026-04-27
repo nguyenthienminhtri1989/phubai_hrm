@@ -33,6 +33,7 @@ const ROLES = [
 export default function UserManagementPage() {
   const { data: session } = useSession();
   const [users, setUsers] = useState<any[]>([]);
+  const [searchFullName, setSearchFullName] = useState("");
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -214,6 +215,10 @@ export default function UserManagementPage() {
     },
   ];
 
+  const filteredUsers = users.filter((user) =>
+    (user.fullName || "").toLowerCase().includes(searchFullName.trim().toLowerCase())
+  );
+
   if (session?.user?.role !== "ADMIN") {
     return (
       <AdminLayout>
@@ -231,7 +236,16 @@ export default function UserManagementPage() {
         </Button>
       </div>
 
-      <Table dataSource={users} columns={columns} rowKey="id" loading={loading} bordered />
+      <div style={{ marginBottom: 16 }}>
+        <Input
+          placeholder="Tìm theo họ và tên user"
+          allowClear
+          value={searchFullName}
+          onChange={(e) => setSearchFullName(e.target.value)}
+        />
+      </div>
+
+      <Table dataSource={filteredUsers} columns={columns} rowKey="id" loading={loading} bordered />
 
       <Modal
         title={editingUser ? "Cập nhật tài khoản" : "Tạo tài khoản mới"}

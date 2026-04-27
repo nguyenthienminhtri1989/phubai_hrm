@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma:*)",
+      "Bash(FORCE_COLOR=0 CI=false npx prisma:*)",
+      "Bash(winpty npx:*)"
+    ]
+  }
+}

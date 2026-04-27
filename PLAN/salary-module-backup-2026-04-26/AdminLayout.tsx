@@ -14,6 +14,7 @@ import {
   Modal,
   Form,
   Input,
+  Upload,
   ConfigProvider,
 } from "antd";
 import {
@@ -42,6 +43,7 @@ import {
   DownloadOutlined,
   QrcodeOutlined,
   PieChartOutlined,
+  DollarOutlined,
 } from "@ant-design/icons";
 import saveAs from "file-saver";
 import Link from "next/link";
@@ -64,8 +66,10 @@ export default function AdminLayout({
   const [passForm] = Form.useForm();
   const [passLoading, setPassLoading] = useState(false);
 
-  // --- STATE CHO RESTORE ---
-  const [isRestoreLoading, setIsRestoreLoading] = useState(false);
+  // --- STATE CHO RESTORE DATABASE ---
+  const [isRestoreOpen, setIsRestoreOpen] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
 
   const {
     token: { colorBgContainer, borderRadiusLG },
@@ -99,33 +103,34 @@ export default function AdminLayout({
     }
   };
 
-  // 3b. Hàm xử lý Restore
-  const handleRestore = async (file: File) => {
-    if (!file) return;
-    const confirmed = window.confirm(
-      `⚠️ BẠN SẮP KHÔI PHỤC DỮ LIỆU TỪ FILE "${file.name}".\nThao tác này sẽ GHI ĐÈ toàn bộ dữ liệu hiện tại!\n\nBạn có chắc chắn muốn tiếp tục không?`
-    );
-    if (!confirmed) return;
-    setIsRestoreLoading(true);
+  // 3. Hàm xử lý Restore
+  const handleRestore = async () => {
+    if (!restoreFile) {
+      message.warning("Vui lòng chọn file SQL để khôi phục!");
+      return;
+    }
+    setRestoreLoading(true);
     const hide = message.loading("Đang khôi phục dữ liệu...", 0);
     try {
       const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/system/restore", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Lỗi server");
-      message.success("Khôi phục dữ liệu thành công! Hệ thống sẽ làm mới.");
-      setTimeout(() => window.location.reload(), 1500);
+      formData.append("file", restoreFile);
+      const res = await fetch("/api/system/restore", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Lỗi server khi restore");
+      }
+      message.success("Khôi phục dữ liệu thành công!");
+      setIsRestoreOpen(false);
+      setRestoreFile(null);
     } catch (error: any) {
-      message.error("Lỗi khôi phục: " + error.message);
+      message.error(error.message);
     } finally {
       hide();
-      setIsRestoreLoading(false);
+      setRestoreLoading(false);
     }
-  };
-
-  const triggerRestoreInput = () => {
-    document.getElementById("restore-file-input")?.click();
   };
 
   // 3. Hàm xử lý Đổi mật khẩu
@@ -366,23 +371,17 @@ export default function AdminLayout({
                             icon: <ImportOutlined />,
                             label: <Link href="/admin/employees/import">Import</Link>,
                           },
-                        ]
-                        : []),
-
-                      // Backup & Restore: Chỉ hiển thị cho ADMIN
-                      ...(session?.user?.role === "ADMIN"
-                        ? [
+                          // Backup Database: Chỉ ADMIN
                           {
                             key: "backup-db",
                             icon: <CloudDownloadOutlined />,
-                            label: "Backup DB",
-                            onClick: handleDownloadBackup,
+                            label: <span onClick={handleDownloadBackup} style={{ cursor: "pointer" }}>Backup DB</span>,
                           },
+                          // Restore Database: Chỉ ADMIN
                           {
                             key: "restore-db",
-                            icon: isRestoreLoading ? <CloudUploadOutlined spin /> : <CloudUploadOutlined />,
-                            label: "Restore DB",
-                            onClick: triggerRestoreInput,
+                            icon: <CloudUploadOutlined />,
+                            label: <span onClick={() => setIsRestoreOpen(true)} style={{ cursor: "pointer" }}>Restore DB</span>,
                           },
                         ]
                         : []),
@@ -391,6 +390,41 @@ export default function AdminLayout({
                 ]
                 : []),
               // ------------------------------------
+
+              // --- MENU TIỀN LƯƠNG (ADMIN + HR_MANAGER) ---
+              ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
+                ? [
+                    {
+                      key: "salary-group",
+                      icon: <DollarOutlined />,
+                      label: "Tiền lương",
+                      children: [
+                        {
+                          key: "/salary/calculate",
+                          label: <Link href="/salary/calculate">Tính lương</Link>,
+                        },
+                        {
+                          key: "/salary/performance",
+                          label: <Link href="/salary/performance">Kết quả tháng</Link>,
+                        },
+                        {
+                          key: "/salary/advance",
+                          label: <Link href="/salary/advance">Tạm ứng</Link>,
+                        },
+                        {
+                          key: "/salary/employee-info",
+                          label: <Link href="/salary/employee-info">Thông tin lương NV</Link>,
+                        },
+                        {
+                          key: "/salary/config",
+                          label: <Link href="/salary/config">Cấu hình lương</Link>,
+                        },
+                      ],
+                    },
+                  ]
+                : []),
+              // -------------------------------------------
+
               {
                 key: "tienich-group",
                 icon: <FormOutlined />,
@@ -444,19 +478,6 @@ export default function AdminLayout({
           >
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </div>
-
-          {/* Hidden input cho Restore */}
-          <input
-            id="restore-file-input"
-            type="file"
-            accept=".sql"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleRestore(file);
-              e.target.value = ""; // reset để chọn lại cùng file nếu cần
-            }}
-          />
 
           <div style={{ display: "flex", alignItems: "center" }}>
 
@@ -551,7 +572,43 @@ export default function AdminLayout({
             </Form.Item>
           </Form>
         </Modal>
+
+        {/* --- MODAL RESTORE DATABASE --- */}
+        <Modal
+          title="Khôi phục Database"
+          open={isRestoreOpen}
+          onCancel={() => {
+            setIsRestoreOpen(false);
+            setRestoreFile(null);
+          }}
+          onOk={handleRestore}
+          confirmLoading={restoreLoading}
+          okText="Khôi phục"
+          cancelText="Hủy"
+          okButtonProps={{ danger: true }}
+        >
+          <div style={{ marginBottom: 12, color: "#d4380d", fontWeight: 500 }}>
+            ⚠️ Cảnh báo: Thao tác này sẽ ghi đè toàn bộ dữ liệu hiện tại!
+          </div>
+          <Upload
+            accept=".sql"
+            maxCount={1}
+            beforeUpload={(file) => {
+              setRestoreFile(file);
+              return false; // Ngăn upload tự động
+            }}
+            onRemove={() => setRestoreFile(null)}
+            fileList={restoreFile ? [{ uid: "-1", name: restoreFile.name, status: "done" }] : []}
+          >
+            <Button icon={<CloudUploadOutlined />}>Chọn file SQL</Button>
+          </Upload>
+          {restoreFile && (
+            <div style={{ marginTop: 8, color: "#52c41a" }}>
+              ✅ Đã chọn: <strong>{restoreFile.name}</strong>
+            </div>
+          )}
+        </Modal>
       </Layout>
-    </Layout >
+    </Layout>
   );
 }
