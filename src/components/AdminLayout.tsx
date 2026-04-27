@@ -6,11 +6,8 @@ import {
   Menu,
   theme,
   Dropdown,
-  Button,
   Avatar,
-  Typography,
   message,
-  Tooltip,
   Modal,
   Form,
   Input,
@@ -31,8 +28,7 @@ import {
   DownOutlined,
   QuestionCircleOutlined,
   AppstoreOutlined,
-  CloudDownloadOutlined,
-  CloudUploadOutlined,
+  HddOutlined,
   LockOutlined,
   ImportOutlined,
   SettingOutlined,
@@ -43,7 +39,6 @@ import {
   QrcodeOutlined,
   PieChartOutlined,
 } from "@ant-design/icons";
-import saveAs from "file-saver";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -64,9 +59,6 @@ export default function AdminLayout({
   const [passForm] = Form.useForm();
   const [passLoading, setPassLoading] = useState(false);
 
-  // --- STATE CHO RESTORE ---
-  const [isRestoreLoading, setIsRestoreLoading] = useState(false);
-
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
@@ -76,59 +68,7 @@ export default function AdminLayout({
     signOut({ callbackUrl: "/login" });
   };
 
-  // 2. Hàm xử lý Backup
-  const handleDownloadBackup = async () => {
-    const hide = message.loading("Đang tạo bản backup...", 0);
-    try {
-      const res = await fetch("/api/system/backup");
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Lỗi server");
-      }
-
-      const blob = await res.blob();
-      const dateStr = new Date().toISOString().slice(0, 10);
-      saveAs(blob, `backup_phubai_hrm_${dateStr}.sql`);
-
-      message.success("Tải backup thành công!");
-    } catch (error: any) {
-      message.error(error.message);
-    } finally {
-      hide();
-    }
-  };
-
-  // 3b. Hàm xử lý Restore
-  const handleRestore = async (file: File) => {
-    if (!file) return;
-    const confirmed = window.confirm(
-      `⚠️ BẠN SẮP KHÔI PHỤC DỮ LIỆU TỪ FILE "${file.name}".\nThao tác này sẽ GHI ĐÈ toàn bộ dữ liệu hiện tại!\n\nBạn có chắc chắn muốn tiếp tục không?`
-    );
-    if (!confirmed) return;
-    setIsRestoreLoading(true);
-    const hide = message.loading("Đang khôi phục dữ liệu...", 0);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/system/restore", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Lỗi server");
-      message.success("Khôi phục dữ liệu thành công! Hệ thống sẽ làm mới.");
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (error: any) {
-      message.error("Lỗi khôi phục: " + error.message);
-    } finally {
-      hide();
-      setIsRestoreLoading(false);
-    }
-  };
-
-  const triggerRestoreInput = () => {
-    document.getElementById("restore-file-input")?.click();
-  };
-
-  // 3. Hàm xử lý Đổi mật khẩu
+  // 2. Hàm xử lý Đổi mật khẩu
   const handleChangePassword = async (values: any) => {
     setPassLoading(true);
     try {
@@ -370,22 +310,15 @@ export default function AdminLayout({
                         : []),
 
                       // Backup & Restore: Chỉ hiển thị cho ADMIN
-                      ...(session?.user?.role === "ADMIN"
-                        ? [
-                          {
-                            key: "backup-db",
-                            icon: <CloudDownloadOutlined />,
-                            label: "Backup DB",
-                            onClick: handleDownloadBackup,
-                          },
-                          {
-                            key: "restore-db",
-                            icon: isRestoreLoading ? <CloudUploadOutlined spin /> : <CloudUploadOutlined />,
-                            label: "Restore DB",
-                            onClick: triggerRestoreInput,
-                          },
-                        ]
-                        : []),
+                       ...(session?.user?.role === "ADMIN"
+                         ? [
+                           {
+                             key: "/admin/system",
+                             icon: <HddOutlined />,
+                             label: <Link href="/admin/system">Sao lưu & Khôi phục</Link>,
+                           },
+                         ]
+                         : []),
                     ],
                   },
                 ]
@@ -445,18 +378,7 @@ export default function AdminLayout({
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </div>
 
-          {/* Hidden input cho Restore */}
-          <input
-            id="restore-file-input"
-            type="file"
-            accept=".sql"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleRestore(file);
-              e.target.value = ""; // reset để chọn lại cùng file nếu cần
-            }}
-          />
+
 
           <div style={{ display: "flex", alignItems: "center" }}>
 
