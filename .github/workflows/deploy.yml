@@ -1,0 +1,55 @@
+name: Deploy HRM to SPB Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    # GitHub sẽ tự động tìm Runner "Idle" đang rảnh trong các Runner bạn đã cài
+    runs-on: self-hosted
+
+    steps:
+      - name: 0. Targeted Stop (Only HRM - Port 3000)
+        continue-on-error: true
+        shell: powershell
+        run: |
+          # 1. Dừng ứng dụng phubai-hrm trong PM2
+          $pm2 = "C:\Users\Administrator\AppData\Roaming\npm\pm2.cmd"
+          if (Test-Path $pm2) { & $pm2 stop phubai-hrm }
+
+          # 2. Giải phóng cổng 3000 (Phòng lỗi EADDRINUSE - Ghost Process)
+          $conn = Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue
+          if ($conn) { 
+            Write-Host "Detected process on port 3000. Killing PID: $($conn.OwningProcess)"
+            Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue 
+          }
+
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Create .env file (Safe UTF8)
+        shell: powershell
+        env:
+          ENV_DATA: ${{ secrets.ENV_FILE }}
+        run: |
+          # Sử dụng phương pháp WriteAllText để tránh lỗi ký tự BOM khiến Prisma/Next.js không đọc được file
+          [System.IO.File]::WriteAllText("$(Get-Location)\.env", $env:ENV_DATA)
+
+      - name: 3. Install dependencies
+        run: npm install
+
+      - name: 4. Apply Database Changes Safely
+        run: npx prisma migrate deploy
+
+      - name: 5. Prisma Generate
+        run: npx prisma generate
+
+      - name: 6. Build Next.js
+        run: npm run build
+
+      - name: 7. Restart PM2 (Surgical Strike)
+        run: |
+          # Chỉ khởi động lại duy nhất app phubai-hrm để không đụng tới ERP (3001)
+          & "C:\Users\Administrator\AppData\Roaming\npm\pm2.cmd" startOrReload ecosystem.config.js --only phubai-hrm --update-env
