@@ -3,7 +3,7 @@ name: Deploy HRM to SPB Server
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   build-and-deploy:
