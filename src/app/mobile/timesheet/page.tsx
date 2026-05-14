@@ -71,7 +71,13 @@ export default function MobileTimesheetPage() {
       const data = await res.json();
       if (!data.error) {
         const found = (data as MonthlyEmployeeData[]).find(e => e.id === empId);
-        setSelectedEmployee(found ?? (prev => prev ? { ...prev!, timesheets: [] } : null) as any);
+        if (found) {
+          setSelectedEmployee(found);
+        } else {
+          setSelectedEmployee((prev: MonthlyEmployeeData | null) =>
+            prev ? { ...prev, timesheets: [] } : null
+          );
+        }
       }
     } catch { message.error("Lỗi tải dữ liệu"); }
     finally { setLoadingCalendar(false); }
