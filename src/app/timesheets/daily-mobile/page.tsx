@@ -28,6 +28,7 @@ import {
     CheckCircleOutlined,
     CloseCircleOutlined,
     QrcodeOutlined,
+    HomeOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import Link from "next/link";
@@ -365,35 +366,43 @@ function MobileDailyTimesheetInner() {
 
     // --- RENDER ---
     return (
-        <div style={{ minHeight: "100vh", background: "#f0f2f5", paddingBottom: 90 }}>
+        <div style={{ minHeight: "100vh", background: "#f0f2f5", paddingBottom: 80, maxWidth: 480, margin: "0 auto" }}>
 
             {/* === TOP HEADER === */}
             <div style={{
                 position: "sticky", top: 0, zIndex: 100,
-                background: "#1677ff", color: "#fff",
-                padding: "10px 16px",
+                background: "linear-gradient(135deg, #1677ff 0%, #0958d9 100%)", color: "#fff",
+                padding: "8px 12px",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
             }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 17 }}>Chấm Công Hàng Ngày</div>
-                        <div style={{ fontSize: 12, opacity: 0.85 }}>{date.format("dddd, DD/MM/YYYY")}</div>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>Chấm Công Hàng Ngày</div>
+                        <div style={{ fontSize: 11, opacity: 0.85 }}>{date.format("dddd, DD/MM/YYYY")}</div>
                         {filterLabel && (
-                            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <div style={{ fontSize: 10, opacity: 0.75, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {filterLabel}
                             </div>
                         )}
                     </div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                        <Link href="/">
+                            <Button
+                                icon={<HomeOutlined />}
+                                size="small"
+                                style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", width: 32, height: 32 }}
+                            />
+                        </Link>
                         <Badge dot={filterApplied} color="yellow">
                             <Button
                                 icon={<FilterOutlined />}
+                                size="small"
                                 onClick={() => setFilterDrawerOpen(true)}
-                                style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff" }}
+                                style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", width: 32, height: 32 }}
                             />
                         </Badge>
                         <Avatar
-                            size={34}
+                            size={30}
                             icon={<UserOutlined />}
                             style={{ background: "rgba(255,255,255,0.3)", cursor: "pointer" }}
                             onClick={() => setUserMenuOpen(true)}
@@ -561,31 +570,31 @@ function MobileDailyTimesheetInner() {
             </Modal>
 
             {/* === MAIN CONTENT === */}
-            <div style={{ padding: "12px 12px 0" }}>
+            <div style={{ padding: "8px 8px 0" }}>
                 {employees.length > 0 && (
-                    <div style={{ marginBottom: 10 }}>
+                    <div style={{ marginBottom: 6 }}>
                         {timesheetStatus?.isSubmitted ? (
                             <Alert
-                                message={`Đã chấm: ${checkedCount}/${employees.length} người · Cập nhật ${timesheetStatus.lastUpdate}`}
-                                type="success" showIcon style={{ fontSize: 12 }}
+                                message={`Đã chấm: ${checkedCount}/${employees.length} · ${timesheetStatus.lastUpdate}`}
+                                type="success" showIcon style={{ fontSize: 11, padding: "4px 8px" }}
                             />
                         ) : (
-                            <Alert message="Chưa có dữ liệu chấm công." type="info" showIcon style={{ fontSize: 12 }} />
+                            <Alert message="Chưa có dữ liệu chấm công." type="info" showIcon style={{ fontSize: 11, padding: "4px 8px" }} />
                         )}
                     </div>
                 )}
 
                 {/* Quick action row */}
                 {!isViewOnly && employees.length > 0 && (
-                    <div style={{ marginBottom: 10, overflowX: "auto" }}>
-                        <div style={{ display: "flex", gap: 8, paddingBottom: 4, whiteSpace: "nowrap" }}>
-                            <span style={{ fontSize: 12, color: "#666", lineHeight: "28px", flexShrink: 0 }}>Tất cả:</span>
+                    <div style={{ marginBottom: 6, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                        <div style={{ display: "flex", gap: 4, paddingBottom: 2, whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: 11, color: "#666", lineHeight: "24px", flexShrink: 0 }}>Tất cả:</span>
                             {QUICK_ACTIONS.map(({ code, label }) => {
                                 const ac = attendanceCodes.find(c => c.code === code);
                                 return (
                                     <Button key={code} size="small" onClick={() => setAllStatus(code)}
-                                        style={{ flexShrink: 0, background: ac?.color || "#ddd", borderColor: ac?.color || "#ddd", color: "#fff", fontWeight: 600 }}>
-                                        {code} · {label}
+                                        style={{ flexShrink: 0, background: ac?.color || "#ddd", borderColor: ac?.color || "#ddd", color: "#fff", fontWeight: 600, fontSize: 11, height: 24, padding: "0 6px" }}>
+                                        {code}
                                     </Button>
                                 );
                             })}
@@ -596,64 +605,65 @@ function MobileDailyTimesheetInner() {
                 {/* Search box */}
                 {employees.length > 0 && (
                     <Input.Search
-                        placeholder="Tìm tên, mã nhân viên..."
+                        placeholder="Tìm tên, mã NV..."
                         value={searchText}
                         onChange={e => setSearchText(e.target.value)}
                         allowClear
-                        style={{ marginBottom: 10 }}
+                        size="middle"
+                        style={{ marginBottom: 6 }}
                     />
                 )}
             </div>
 
             {/* === EMPLOYEE CARDS === */}
             {loading ? (
-                <div style={{ textAlign: "center", padding: 60 }}>
+                <div style={{ textAlign: "center", padding: 40 }}>
                     <Spin size="large" />
-                    <div style={{ marginTop: 12, color: "#999" }}>Đang tải...</div>
+                    <div style={{ marginTop: 8, color: "#999", fontSize: 13 }}>Đang tải...</div>
                 </div>
             ) : employees.length === 0 ? (
                 <div style={{
-                    margin: "12px", padding: "32px 20px", background: "#fff",
-                    borderRadius: 12, textAlign: "center", color: "#999", border: "1px dashed #ddd",
+                    margin: "8px", padding: "24px 16px", background: "#fff",
+                    borderRadius: 10, textAlign: "center", color: "#999", border: "1px dashed #ddd",
                 }}>
-                    <FilterOutlined style={{ fontSize: 32, marginBottom: 12, color: "#ccc" }} />
-                    <div style={{ fontWeight: 600, marginBottom: 8 }}>Chưa có dữ liệu</div>
-                    <div style={{ fontSize: 13 }}>
-                        Bấm nút <FilterOutlined /> góc trên để chọn ngày và bộ phận cần chấm
+                    <FilterOutlined style={{ fontSize: 28, marginBottom: 8, color: "#ccc" }} />
+                    <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Chưa có dữ liệu</div>
+                    <div style={{ fontSize: 12 }}>
+                        Bấm nút <FilterOutlined /> góc trên để chọn ngày và bộ phận
                     </div>
                 </div>
             ) : (
-                <div style={{ padding: "0 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ padding: "0 8px", display: "flex", flexDirection: "column", gap: 6 }}>
                     {filteredEmployees.map((emp, index) => {
                         const currentCode = attendanceCodes.find(c => c.id === emp.attendanceCodeId);
                         return (
                             <div key={emp.employeeId} style={{
                                 background: "#fff",
-                                borderRadius: 10,
-                                padding: "12px 14px",
-                                boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
-                                borderLeft: `4px solid ${currentCode?.color || "#e0e0e0"}`,
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                                borderLeft: `3px solid ${currentCode?.color || "#e0e0e0"}`,
                             }}>
                                 {/* Row 1: Name */}
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div>
-                                            <span style={{ color: "#aaa", fontSize: 12, marginRight: 4 }}>{index + 1}.</span>
-                                            <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: 0.1 }}>{emp.fullName}</span>
+                                        <div style={{ display: "flex", alignItems: "baseline", gap: 2 }}>
+                                            <span style={{ color: "#aaa", fontSize: 11 }}>{index + 1}.</span>
+                                            <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.1 }}>{emp.fullName}</span>
                                         </div>
-                                        <div style={{ marginTop: 3 }}>
+                                        <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
                                             {emp.kipName ? (
-                                                <Tag color="blue" style={{ fontSize: 11 }}>{emp.kipName}</Tag>
+                                                <Tag color="blue" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px", margin: 0 }}>{emp.kipName}</Tag>
                                             ) : (
-                                                <Tag style={{ fontSize: 11 }}>{emp.departmentName}</Tag>
+                                                <Tag style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px", margin: 0 }}>{emp.departmentName}</Tag>
                                             )}
-                                            <span style={{ fontSize: 11, color: "#bbb" }}>{emp.employeeCode}</span>
+                                            <span style={{ fontSize: 10, color: "#bbb" }}>{emp.employeeCode}</span>
                                         </div>
                                     </div>
                                     {emp.attendanceCodeId ? (
-                                        <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 20, marginTop: 2 }} />
+                                        <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 16 }} />
                                     ) : (
-                                        <CloseCircleOutlined style={{ color: "#d9d9d9", fontSize: 20, marginTop: 2 }} />
+                                        <CloseCircleOutlined style={{ color: "#d9d9d9", fontSize: 16 }} />
                                     )}
                                 </div>
 
@@ -661,8 +671,8 @@ function MobileDailyTimesheetInner() {
                                 <Select
                                     value={emp.attendanceCodeId}
                                     allowClear
-                                    style={{ width: "100%", marginBottom: isViewOnly ? 0 : 8 }}
-                                    size="large"
+                                    style={{ width: "100%", marginBottom: isViewOnly ? 0 : 6 }}
+                                    size="middle"
                                     placeholder="Chọn mã chấm công..."
                                     disabled={isViewOnly}
                                     onChange={(val) => handleRowChange(emp.employeeId, "attendanceCodeId", val ?? null)}
@@ -704,14 +714,14 @@ function MobileDailyTimesheetInner() {
 
             {/* === FLOATING SAVE BUTTON === */}
             {!isViewOnly && employees.length > 0 && (
-                <div style={{ position: "fixed", bottom: 20, right: 16, zIndex: 200 }}>
+                <div style={{ position: "fixed", bottom: 16, right: 12, zIndex: 200 }}>
                     <Button
                         type="primary" size="large" icon={<SaveOutlined />}
                         onClick={handleSave} loading={saving}
                         style={{
-                            height: 52, paddingInline: 24, borderRadius: 26,
+                            height: 44, paddingInline: 18, borderRadius: 22,
                             boxShadow: "0 4px 16px rgba(22,119,255,0.45)",
-                            fontSize: 15, fontWeight: 700,
+                            fontSize: 13, fontWeight: 700,
                         }}
                     >
                         Lưu ({checkedCount}/{employees.length})
@@ -724,9 +734,9 @@ function MobileDailyTimesheetInner() {
                 <div style={{
                     position: "fixed", bottom: 0, left: 0, right: 0,
                     background: "#fffbe6", borderTop: "1px solid #ffe58f",
-                    padding: "8px 16px", textAlign: "center", fontSize: 12, color: "#ad6800"
+                    padding: "6px 12px", textAlign: "center", fontSize: 11, color: "#ad6800"
                 }}>
-                    Bạn đang ở chế độ xem — không có quyền chỉnh sửa
+                    Chế độ xem — không có quyền chỉnh sửa
                 </div>
             )}
         </div>

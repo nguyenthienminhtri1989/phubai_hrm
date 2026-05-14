@@ -38,6 +38,7 @@ import {
   DownloadOutlined,
   QrcodeOutlined,
   PieChartOutlined,
+  MobileOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -171,32 +172,33 @@ export default function AdminLayout({
             defaultSelectedKeys={[pathname]}
             items={[
               {
-                key: "catalog-management",
-                icon: <AppstoreOutlined />,
-                label: "Danh mục",
+                key: "mobile-group",
+                icon: <MobileOutlined />,
+                label: "MOBILE",
                 children: [
                   {
-                    key: "/factories",
-                    icon: <BankOutlined />,
-                    label: <Link href="/factories">Nhà máy</Link>,
+                    key: "/timesheets/daily-mobile",
+                    icon: <FormOutlined />,
+                    label: <Link href="/timesheets/daily-mobile">Chấm công Mobile</Link>,
                   },
                   {
-                    key: "/departments",
-                    icon: <ApartmentOutlined />,
-                    label: <Link href="/departments">Phòng ban</Link>,
+                    key: "/evaluations/mobile",
+                    icon: <BarChartOutlined />,
+                    label: <Link href="/evaluations/mobile">Xếp loại Mobile</Link>,
                   },
                   {
-                    key: "/employees",
-                    icon: <TeamOutlined />,
-                    label: <Link href="/employees">Nhân viên</Link>,
+                    key: "/timesheets/daily-mobile/qr-generator",
+                    icon: <QrcodeOutlined />,
+                    label: <Link href="/timesheets/daily-mobile/qr-generator">Tạo QR Chấm công</Link>,
                   },
                   {
-                    key: "/attendance-codes",
-                    icon: <UnorderedListOutlined />,
-                    label: <Link href="/attendance-codes">Ký hiệu</Link>,
+                    key: "/mobile/timesheet",
+                    icon: <TableOutlined />,
+                    label: <Link href="/mobile/timesheet">Chấm công tháng (Mobile)</Link>,
                   },
                 ],
               },
+
               {
                 key: "/timesheets/daily",
                 icon: <FormOutlined />,
@@ -271,6 +273,34 @@ export default function AdminLayout({
                 ],
               },
 
+              {
+                key: "catalog-management",
+                icon: <AppstoreOutlined />,
+                label: "Danh mục",
+                children: [
+                  {
+                    key: "/factories",
+                    icon: <BankOutlined />,
+                    label: <Link href="/factories">Nhà máy</Link>,
+                  },
+                  {
+                    key: "/departments",
+                    icon: <ApartmentOutlined />,
+                    label: <Link href="/departments">Phòng ban</Link>,
+                  },
+                  {
+                    key: "/employees",
+                    icon: <TeamOutlined />,
+                    label: <Link href="/employees">Nhân viên</Link>,
+                  },
+                  {
+                    key: "/attendance-codes",
+                    icon: <UnorderedListOutlined />,
+                    label: <Link href="/attendance-codes">Ký hiệu</Link>,
+                  },
+                ],
+              },
+
               // --- [SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY] ---
               // Hiện Menu Quản trị nếu là ADMIN HOẶC HR_MANAGER
               ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
@@ -333,16 +363,6 @@ export default function AdminLayout({
                     key: "/help",
                     icon: <QuestionCircleOutlined />,
                     label: <Link href="/help">Hướng dẫn</Link>,
-                  },
-                  {
-                    key: "/timesheets/daily-mobile",
-                    icon: <FormOutlined />,
-                    label: <Link href="/timesheets/daily-mobile">Mobile</Link>,
-                  },
-                  {
-                    key: "/timesheets/daily-mobile/qr-generator",
-                    icon: <QrcodeOutlined />,
-                    label: <Link href="/timesheets/daily-mobile/qr-generator">Tạo QR Chấm công</Link>,
                   },
                 ],
               },
