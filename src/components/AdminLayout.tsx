@@ -39,6 +39,7 @@ import {
   QrcodeOutlined,
   PieChartOutlined,
   MobileOutlined,
+  HomeOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -177,25 +178,31 @@ export default function AdminLayout({
                 label: "MOBILE",
                 children: [
                   {
+                    key: "/mobile",
+                    icon: <HomeOutlined />,
+                    label: <Link href="/mobile">Trang chủ Mobile</Link>,
+                  },
+                  {
                     key: "/timesheets/daily-mobile",
                     icon: <FormOutlined />,
-                    label: <Link href="/timesheets/daily-mobile">Chấm công Mobile</Link>,
+                    label: <Link href="/timesheets/daily-mobile">Chấm công</Link>,
                   },
                   {
                     key: "/evaluations/mobile",
                     icon: <BarChartOutlined />,
-                    label: <Link href="/evaluations/mobile">Xếp loại Mobile</Link>,
-                  },
-                  {
-                    key: "/timesheets/daily-mobile/qr-generator",
-                    icon: <QrcodeOutlined />,
-                    label: <Link href="/timesheets/daily-mobile/qr-generator">Tạo QR Chấm công</Link>,
+                    label: <Link href="/evaluations/mobile">Xếp loại</Link>,
                   },
                   {
                     key: "/mobile/timesheet",
                     icon: <TableOutlined />,
-                    label: <Link href="/mobile/timesheet">Chấm công tháng (Mobile)</Link>,
+                    label: <Link href="/mobile/timesheet">Tổng hợp công</Link>,
                   },
+                  {
+                    key: "/mobile/yearly",
+                    icon: <BarChartOutlined />,
+                    label: <Link href="/mobile/yearly">Tổng hợp năm</Link>,
+                  },
+
                 ],
               },
 
@@ -212,7 +219,14 @@ export default function AdminLayout({
               {
                 key: "/timesheets/monthly",
                 icon: <TableOutlined />,
-                label: <Link href="/timesheets/monthly">Tổng hợp công</Link>,
+                label: <Link href="/timesheets/monthly">Tổng hợp Tháng</Link>,
+              },
+              {
+                key: "/evaluations/yearly",
+                icon: <BarChartOutlined />,
+                label: (
+                  <Link href="/evaluations/yearly">Tổng hợp Năm</Link>
+                ),
               },
               {
                 key: "/bravo-data",
@@ -251,13 +265,6 @@ export default function AdminLayout({
                 icon: <UnorderedListOutlined />,
                 label: (
                   <Link href="/dashboard/departments">Tình hình lao động</Link>
-                ),
-              },
-              {
-                key: "/evaluations/yearly",
-                icon: <BarChartOutlined />,
-                label: (
-                  <Link href="/evaluations/yearly">Tổng hợp năm</Link>
                 ),
               },
               {
@@ -340,15 +347,15 @@ export default function AdminLayout({
                         : []),
 
                       // Backup & Restore: Chỉ hiển thị cho ADMIN
-                       ...(session?.user?.role === "ADMIN"
-                         ? [
-                           {
-                             key: "/admin/system",
-                             icon: <HddOutlined />,
-                             label: <Link href="/admin/system">Sao lưu & Khôi phục</Link>,
-                           },
-                         ]
-                         : []),
+                      ...(session?.user?.role === "ADMIN"
+                        ? [
+                          {
+                            key: "/admin/system",
+                            icon: <HddOutlined />,
+                            label: <Link href="/admin/system">Sao lưu & Khôi phục</Link>,
+                          },
+                        ]
+                        : []),
                     ],
                   },
                 ]
@@ -363,6 +370,11 @@ export default function AdminLayout({
                     key: "/help",
                     icon: <QuestionCircleOutlined />,
                     label: <Link href="/help">Hướng dẫn</Link>,
+                  },
+                  {
+                    key: "/timesheets/daily-mobile/qr-generator",
+                    icon: <QrcodeOutlined />,
+                    label: <Link href="/timesheets/daily-mobile/qr-generator">Tạo QR Chấm công</Link>,
                   },
                 ],
               },

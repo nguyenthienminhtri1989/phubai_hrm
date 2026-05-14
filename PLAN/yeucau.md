@@ -10,6 +10,9 @@
 
 **Tính năng:** Chỉ xem (read-only). Không có thêm / sửa / xóa bất kỳ dữ liệu nào.
 
+> ⚠️ **QUAN TRỌNG — Dùng chung API với Desktop:**
+> Trang mobile này gọi **cùng API endpoint** với trang desktop `src/app/timesheets/monthly/page.tsx`. Không tạo API route mới, không duplicate logic backend. Toàn bộ xử lý dữ liệu phía server giữ nguyên, chỉ khác phần render UI.
+
 **File cần tạo:** `src/app/mobile/timesheet/page.tsx`
 
 **Đăng ký vào Sidebar:** Thêm vào group **"MOBILE"** trong `src/components/AdminLayout.tsx`.
