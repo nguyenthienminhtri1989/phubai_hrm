@@ -5,7 +5,7 @@ module.exports = {
       script: "node_modules/next/dist/bin/next",
       args: "start -p 3000",
       // DÒNG QUAN TRỌNG NHẤT: Trỏ trực tiếp vào thư mục làm việc của Runner HRM
-      cwd: "D:\\actions-runner-hrm\\_work\\phubai-hrm\\phubai-hrm",
+      cwd: "D:\\actions-runner-hrm\\_work\\phubai_hrm\\phubai_hrm",
       exec_mode: "fork",
       instances: 1,
       autorestart: true,
