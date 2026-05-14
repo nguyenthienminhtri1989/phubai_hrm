@@ -1,53 +1,74 @@
-Đây là lỗi rất kinh điển trên iOS/Safari! Nguyên nhân gần như chắc chắn là:
+Tìm ra thủ phạm rồi! Có **2 vấn đề cùng lúc**:
 
 ---
 
-## 🎯 Nguyên nhân: `-webkit-font-smoothing` + Font weight rendering trên iOS
+**Vấn đề 1 — Font Inter không load được trên mobile (quan trọng nhất)**
 
-Safari trên iPhone dùng cơ chế render font khác Chrome trên máy tính. Cụ thể:
+```tsx
+// layout.tsx
+const inter = Inter({ subsets: ["latin"] });
+// ...
+<body className={inter.className}>  // ← đây
+```
 
-**1. `font-weight` bị render nhẹ hơn thực tế**
-iOS Safari tự áp dụng **antialiasing** làm chữ trông mỏng và nhạt hơn, đặc biệt với màu chữ không phải đen thuần (`#000`). Ví dụ chữ màu `#595959` hay `rgba` trên desktop trông ổn nhưng trên iPhone trông rất mờ.
-
-**2. Tailwind CSS mặc định có `antialiased`**
-Nếu layout dùng class `antialiased` (Tailwind thường thêm vào `body` mặc định trong `globals.css`), trên iOS nó kích hoạt `-webkit-font-smoothing: antialiased` làm chữ mỏng đi đáng kể.
+`Inter` từ Google Fonts — nếu điện thoại không tải được font này (mạng chậm, block Google Fonts...) thì browser fallback sang font hệ thống và **class `inter.className` vẫn giữ nguyên các CSS variable của Inter**, gây ra rendering lạ, chữ mờ nhạt.
 
 ---
 
-## 🔧 Cách fix
-
-**Fix 1 — Trong `globals.css`, bỏ hoặc override `antialiased`:**
+**Vấn đề 2 — Dark mode đang bật ngầm**
 
 ```css
-body {
-  -webkit-font-smoothing: auto; /* thay vì antialiased */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground: #ededed; /* chữ trắng */
+    --background: #0a0a0a;
+  }
 }
 ```
 
-**Fix 2 — Tăng font-weight cho các text mobile:**
+Nếu điện thoại đang bật **Dark Mode** → chữ sẽ thành `#ededed` (trắng nhạt) trên nền `#0a0a0a`. Nhưng **Ant Design và Tailwind không biết** bạn đang dark mode → nền các component vẫn trắng → chữ trắng trên nền trắng = **mờ/vô hình!**
+
+---
+
+## Fix cụ thể
+
+**`globals.css`** — bỏ dark mode tự động đi (vì app chưa hỗ trợ dark mode hoàn chỉnh):
 
 ```css
-/* Với Tailwind, thêm vào các element text trên mobile */
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #1a1a1a; /* đậm hơn #171717 một chút */
+}
+
+/* XÓA TOÀN BỘ ĐOẠN NÀY */
+/* @media (prefers-color-scheme: dark) { ... } */
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
 @media (max-width: 768px) {
   body {
-    font-weight: 500; /* thay vì 400 */
+    font-weight: 500;
     -webkit-font-smoothing: auto;
   }
 }
 ```
 
-**Fix 3 — Kiểm tra màu chữ** — đổi các màu xám nhạt như `#8c8c8c`, `color: secondary` sang đậm hơn một chút cho phiên bản mobile.
+**`layout.tsx`** — bỏ Inter, dùng font hệ thống cho chắc:
 
----
+```tsx
+// Xóa dòng này
+// const inter = Inter({ subsets: ["latin"] });
 
-## 🔍 Cách xác nhận chính xác
-
-Mở `globals.css` hoặc `layout.tsx` tìm xem có dòng nào trong số này không:
-
-```css
-font-smoothing: antialiased
--webkit-font-smoothing: antialiased
-class="antialiased"   /* trong <body> của layout.tsx */
+// Và đổi <body> thành
+<body>   {/* bỏ className={inter.className} */}
 ```
 
-Nếu có → đó chính là thủ phạm. Bạn thử kiểm tra xem nhé!
+Thử 2 fix này xem có hết mờ không nhé!

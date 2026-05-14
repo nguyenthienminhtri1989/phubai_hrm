@@ -1,7 +1,7 @@
 // src/app/layout.tsx
 import React from "react";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+// Font Inter đã bỏ — dùng system font để tránh lỗi chữ mờ trên iPhone khi Google Fonts không load được
 import "./globals.css";
 import StyledComponentsRegistry from "@/lib/AntdRegistry"; // Import vào
 import { ConfigProvider } from "antd"; // Cấu hình thiết kế bảng dữ liệu
@@ -9,7 +9,7 @@ import { ConfigProvider } from "antd"; // Cấu hình thiết kế bảng dữ l
 // 1. IMPORT CÁI NÀY VÀO
 import SessionProviderWrapper from "@/components/SessionProviderWrapper";
 
-const inter = Inter({ subsets: ["latin"] });
+// const inter = Inter({ subsets: ["latin"] }); // Đã bỏ
 
 export const metadata: Metadata = {
   title: "HR Management App",
@@ -23,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body>
         {/* Bọc Registry ở đây để Ant Design hoạt động mượt mà */}
         <StyledComponentsRegistry>
           <SessionProviderWrapper>

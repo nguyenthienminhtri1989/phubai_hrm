@@ -2,34 +2,23 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #1a1a1a; /* đậm hơn một chút để rõ trên mobile */
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Dark mode bị XÓA chủ đích — app chưa hỗ trợ dark mode hoàn chỉnh.
+   Ant Design và Tailwind không đồng bộ dark mode tự động của browser,
+   dẫn đến chữ trắng trên nền trắng (mờ/vô hình) trên iPhone bật Dark Mode. */
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
-  /* Fix iOS/Safari font rendering: Tailwind preflight sets antialiased
-     which makes text appear thin and faded on iPhone. Override to 'auto'. */
+  /* Fix iOS/Safari: override Tailwind preflight antialiased */
   -webkit-font-smoothing: auto;
   -moz-osx-font-smoothing: auto;
 }
 
-/* Fix 2: Tăng font-weight trên mobile để chữ rõ hơn trên iPhone */
+/* Tăng font-weight trên mobile để chữ rõ hơn trên iPhone */
 @media (max-width: 768px) {
   body {
     font-weight: 500;
