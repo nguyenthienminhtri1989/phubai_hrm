@@ -14,11 +14,15 @@ import {
   Popconfirm,
   Space,
   Tooltip,
+  Tabs,
+  Badge,
 } from "antd";
 import {
   UserAddOutlined,
   DeleteOutlined,
   EditOutlined,
+  CheckOutlined,
+  CloseOutlined,
 } from "@ant-design/icons";
 import { useSession } from "next-auth/react";
 
@@ -39,9 +43,14 @@ export default function UserManagementPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [selectedPendingRowKeys, setSelectedPendingRowKeys] = useState<React.Key[]>([]);
+  const [approvalLoading, setApprovalLoading] = useState<"approve" | "reject" | null>(null);
 
   const [form] = Form.useForm();
   const selectedRole = Form.useWatch("role", form);
+  const userRole = session?.user?.role;
+  const canReviewUsers = ["ADMIN", "HR_MANAGER"].includes(userRole || "");
+  const canManageUsers = userRole === "ADMIN";
 
   const fetchData = async () => {
     setLoading(true);
@@ -52,11 +61,14 @@ export default function UserManagementPage() {
         fetch("/api/employees/list"),
       ]);
 
-      if (userRes.ok) setUsers(await userRes.json());
+      if (userRes.ok) {
+        setUsers(await userRes.json());
+        setSelectedPendingRowKeys([]);
+      }
       if (deptRes.ok) setDepartments(await deptRes.json());
       if (empRes.ok) setEmployees(await empRes.json());
 
-    } catch (error) {
+    } catch {
       message.error("Lỗi tải dữ liệu");
     } finally {
       setLoading(false);
@@ -135,7 +147,38 @@ export default function UserManagementPage() {
     }
   };
 
-  const columns = [
+  const handlePendingAction = async (action: "approve" | "reject") => {
+    if (selectedPendingRowKeys.length === 0) return;
+
+    setApprovalLoading(action);
+    try {
+      const res = await fetch(`/api/admin/users/${action}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: selectedPendingRowKeys.map(Number) }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        message.error(data.error || "Không thể xử lý danh sách đã chọn");
+        return;
+      }
+
+      message.success(
+        action === "approve"
+          ? `Đã duyệt ${data.count || selectedPendingRowKeys.length} tài khoản`
+          : `Đã từ chối ${data.count || selectedPendingRowKeys.length} tài khoản`,
+      );
+      setSelectedPendingRowKeys([]);
+      fetchData();
+    } catch {
+      message.error("Lỗi kết nối server");
+    } finally {
+      setApprovalLoading(null);
+    }
+  };
+
+  const baseColumns = [
     {
       title: "Tài khoản",
       dataIndex: "username",
@@ -182,44 +225,87 @@ export default function UserManagementPage() {
         </div>
       ),
     },
-    {
-      title: "Hành động",
-      key: "action",
-      render: (_: any, record: any) => (
-        <Space>
-          <Tooltip title="Sửa thông tin">
-            <Button
-              icon={<EditOutlined />}
-              size="small"
-              type="primary"
-              ghost
-              onClick={() => handleOpenEdit(record)}
-              disabled={record.username === "admin"}
-            />
-          </Tooltip>
+  ];
 
-          <Popconfirm
-            title="Bạn chắc chắn muốn xóa?"
-            onConfirm={() => handleDelete(record.id)}
+  const actionColumn = {
+    title: "Hành động",
+    key: "action",
+    render: (_: any, record: any) => (
+      <Space>
+        <Tooltip title="Sửa thông tin">
+          <Button
+            icon={<EditOutlined />}
+            size="small"
+            type="primary"
+            ghost
+            onClick={() => handleOpenEdit(record)}
+            disabled={record.username === "admin"}
+          />
+        </Tooltip>
+
+        <Popconfirm
+          title="Bạn chắc chắn muốn xóa?"
+          onConfirm={() => handleDelete(record.id)}
+          disabled={record.username === "admin" || record.username === session?.user?.username}
+        >
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            size="small"
             disabled={record.username === "admin" || record.username === session?.user?.username}
-          >
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              size="small"
-              disabled={record.username === "admin" || record.username === session?.user?.username}
-            />
-          </Popconfirm>
-        </Space>
-      ),
+          />
+        </Popconfirm>
+      </Space>
+    ),
+  };
+
+  const activeColumns = canManageUsers ? [...baseColumns, actionColumn] : baseColumns;
+
+  const pendingColumns = [
+    {
+      title: "Họ tên",
+      dataIndex: "fullName",
+      key: "fullName",
+    },
+    {
+      title: "Tên ĐN",
+      dataIndex: "username",
+      key: "username",
+      render: (text: string) => <b>{text}</b>,
+    },
+    {
+      title: "Mã NV",
+      dataIndex: "employeeCode",
+      key: "employeeCode",
+      render: (text: string) => text ? <Tag>{text}</Tag> : <span style={{ color: "#ccc" }}>-</span>,
+    },
+    {
+      title: "Phòng ban đăng ký",
+      dataIndex: ["userDepartment", "name"],
+      key: "userDepartment",
+      render: (_: any, record: any) =>
+        record.userDepartment?.name || <span style={{ color: "#ccc" }}>Chưa chọn</span>,
+    },
+    {
+      title: "Ngày đăng ký",
+      dataIndex: "createdAt",
+      key: "createdAt",
+      render: (value: string) =>
+        value ? new Date(value).toLocaleDateString("vi-VN") : "-",
     },
   ];
 
-  const filteredUsers = users.filter((user) =>
-    (user.fullName || "").toLowerCase().includes(searchFullName.trim().toLowerCase())
-  );
+  const matchesFullNameSearch = (user: any) =>
+    (user.fullName || "")
+      .toLowerCase()
+      .includes(searchFullName.trim().toLowerCase());
 
-  if (session?.user?.role !== "ADMIN") {
+  const activeUsers = users.filter((user) => (user.status || "ACTIVE") === "ACTIVE");
+  const pendingUsers = users.filter((user) => user.status === "PENDING");
+  const filteredActiveUsers = activeUsers.filter(matchesFullNameSearch);
+  const filteredPendingUsers = pendingUsers.filter(matchesFullNameSearch);
+
+  if (!canReviewUsers) {
     return (
       <AdminLayout>
         <div>Bạn không có quyền truy cập trang này.</div>
@@ -231,9 +317,11 @@ export default function UserManagementPage() {
     <AdminLayout>
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
         <h2>Quản lý Tài khoản hệ thống</h2>
-        <Button type="primary" icon={<UserAddOutlined />} onClick={handleOpenAdd}>
-          Tạo tài khoản mới
-        </Button>
+        {canManageUsers && (
+          <Button type="primary" icon={<UserAddOutlined />} onClick={handleOpenAdd}>
+            Tạo tài khoản mới
+          </Button>
+        )}
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -245,7 +333,76 @@ export default function UserManagementPage() {
         />
       </div>
 
-      <Table dataSource={filteredUsers} columns={columns} rowKey="id" loading={loading} bordered />
+      <Tabs
+        items={[
+          {
+            key: "active",
+            label: "Tài khoản hoạt động",
+            children: (
+              <Table
+                dataSource={filteredActiveUsers}
+                columns={activeColumns}
+                rowKey="id"
+                loading={loading}
+                bordered
+              />
+            ),
+          },
+          {
+            key: "pending",
+            label: (
+              <span>
+                Chờ duyệt{" "}
+                <Badge count={pendingUsers.length} size="small" />
+              </span>
+            ),
+            children: (
+              <>
+                <div
+                  style={{
+                    marginBottom: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>Đã chọn: {selectedPendingRowKeys.length}</span>
+                  <Button
+                    type="primary"
+                    icon={<CheckOutlined />}
+                    disabled={selectedPendingRowKeys.length === 0}
+                    loading={approvalLoading === "approve"}
+                    onClick={() => handlePendingAction("approve")}
+                  >
+                    Duyệt hàng loạt
+                  </Button>
+                  <Button
+                    danger
+                    icon={<CloseOutlined />}
+                    disabled={selectedPendingRowKeys.length === 0}
+                    loading={approvalLoading === "reject"}
+                    onClick={() => handlePendingAction("reject")}
+                  >
+                    Từ chối
+                  </Button>
+                </div>
+                <Table
+                  dataSource={filteredPendingUsers}
+                  columns={pendingColumns}
+                  rowKey="id"
+                  loading={loading}
+                  bordered
+                  rowSelection={{
+                    selectedRowKeys: selectedPendingRowKeys,
+                    onChange: setSelectedPendingRowKeys,
+                  }}
+                />
+              </>
+            ),
+          },
+        ]}
+      />
 
       <Modal
         title={editingUser ? "Cập nhật tài khoản" : "Tạo tài khoản mới"}

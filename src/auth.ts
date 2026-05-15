@@ -1,5 +1,5 @@
 // auth.ts (Nằm cùng cấp với folder app)
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
@@ -10,6 +10,14 @@ const loginSchema = z.object({
   username: z.string().min(1, "Vui lòng nhập tài khoản"),
   password: z.string().min(1, "Vui lòng nhập mật khẩu"),
 });
+
+class AccountPendingError extends CredentialsSignin {
+  code = "PENDING";
+}
+
+class AccountRejectedError extends CredentialsSignin {
+  code = "REJECTED";
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -33,6 +41,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           const isMatch = await bcrypt.compare(password, user.password);
           if (!isMatch) return null;
 
+          if (user.status === "PENDING") {
+            throw new AccountPendingError();
+          }
+
+          if (user.status === "REJECTED") {
+            throw new AccountRejectedError();
+          }
+
           // Trả về object user
           return {
             id: user.id.toString(),
@@ -43,6 +59,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             managedDepartments: user.managedDepartments, 
           } as any;
         } catch (e) {
+          if (e instanceof CredentialsSignin) {
+            throw e;
+          }
           return null;
         }
       },

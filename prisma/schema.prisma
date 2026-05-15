@@ -153,19 +153,27 @@ enum Role {
   STAFF       // Nhân viên bình thường, chỉ xem và sửa bảng làm thêm
 }
 
+enum UserStatus {
+  PENDING   // Chờ Admin phê duyệt
+  ACTIVE    // Đã được duyệt, có thể đăng nhập
+  REJECTED  // Bị từ chối
+}
+
 // 2. Thêm bảng User
 model User {
   id        Int      @id @default(autoincrement())
   username  String   @unique // Dùng tên đăng nhập (vd: to1, admin) thay vì email
   password  String   // Mật khẩu đã mã hóa
   fullName  String?
-  role      Role     @default(TIMEKEEPER)
+  role      Role       @default(STAFF)
+  status    UserStatus @default(PENDING)
 
   // --- [BỔ SUNG CÁC TRƯỜNG MỚI] ---
   employeeCode String?  // Mã nhân viên (Để liên kết với bảng lương/nhân sự sau này)
 
   // Phòng ban trực thuộc (User này thuộc phòng nào?)
   userDepartmentId Int? 
+  registeredKipId  Int? // Kíp user tự khai khi đăng ký (dùng để gán managedDepartments lúc duyệt)
   userDepartment   Department? @relation("UserBelongsTo", fields: [userDepartmentId], references: [id])
   // -------------------------------
   

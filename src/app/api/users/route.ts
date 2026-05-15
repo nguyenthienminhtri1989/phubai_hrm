@@ -4,11 +4,11 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { auth } from "@/auth"; // Để kiểm tra quyền Admin
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    // 1. Kiểm tra quyền (Chỉ Admin mới được xem danh sách)
+    // 1. Kiểm tra quyền (Admin/HR_Manager được xem để duyệt tài khoản)
     const session = await auth();
-    if (session?.user?.role !== "ADMIN") {
+    if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
       return NextResponse.json(
         { error: "Không có quyền truy cập" },
         { status: 403 }
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(safeUsers);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Lỗi server" }, { status: 500 });
   }
 }
@@ -84,6 +84,7 @@ export async function POST(request: Request) {
         password: hashedPassword,
         fullName,
         role,
+        status: "ACTIVE",
         // [MỚI] Lưu thông tin bổ sung
         employeeCode: employeeCode || null,
         userDepartmentId: userDepartmentId ? Number(userDepartmentId) : null,

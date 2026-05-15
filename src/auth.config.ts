@@ -10,6 +10,11 @@ export const authConfig = {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
 
+      const publicRoutes = ["/register", "/pending"];
+      if (publicRoutes.some((route) => nextUrl.pathname.startsWith(route))) {
+        return true;
+      }
+
       // Danh sách các trang cần bảo vệ
       const protectedRoutes = [
         "/",

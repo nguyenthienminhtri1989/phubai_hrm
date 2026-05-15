@@ -6,6 +6,7 @@ import { UserOutlined, LockOutlined } from "@ant-design/icons";
 import { signIn } from "next-auth/react"; // Hàm đăng nhập của client
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 
 const { Title } = Typography;
 
@@ -24,13 +25,20 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        message.error("Đăng nhập thất bại: Sai tài khoản hoặc mật khẩu");
+        const errorCode = result.code || result.error;
+        if (errorCode === "PENDING") {
+          message.error("Tài khoản đang chờ Admin phê duyệt.");
+        } else if (errorCode === "REJECTED") {
+          message.error("Tài khoản đã bị từ chối. Vui lòng liên hệ quản lý.");
+        } else {
+          message.error("Tên đăng nhập hoặc mật khẩu không đúng.");
+        }
       } else {
         message.success("Đăng nhập thành công!");
         router.push("/dashboard"); // Chuyển hướng vào trong
         router.refresh();
       }
-    } catch (error) {
+    } catch {
       message.error("Lỗi hệ thống");
     } finally {
       setLoading(false);
@@ -100,6 +108,9 @@ export default function LoginPage() {
             </Button>
           </Form.Item>
         </Form>
+        <div style={{ textAlign: "center", marginBottom: 12 }}>
+          Chưa có tài khoản? <Link href="/register">Đăng ký</Link>
+        </div>
         <div style={{ textAlign: "center", fontSize: 12, color: "#999" }}>
           © 2025 Phu Bai Spinning. Designed by Mr.Tri
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Layout,
   Menu,
@@ -12,6 +12,7 @@ import {
   Form,
   Input,
   ConfigProvider,
+  Badge,
 } from "antd";
 import {
   ApartmentOutlined,
@@ -55,6 +56,7 @@ export default function AdminLayout({
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const { data: session } = useSession();
+  const [pendingCount, setPendingCount] = useState(0);
 
   // --- STATE CHO ĐỔI MẬT KHẨU ---
   const [isChangePassOpen, setIsChangePassOpen] = useState(false);
@@ -69,6 +71,28 @@ export default function AdminLayout({
   const handleLogout = () => {
     signOut({ callbackUrl: "/login" });
   };
+
+  useEffect(() => {
+    const role = session?.user?.role as string | undefined;
+    if (!["ADMIN", "HR_MANAGER"].includes(role || "")) {
+      setPendingCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    fetch("/api/admin/users/pending-count")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setPendingCount(data.count || 0);
+      })
+      .catch(() => {
+        if (!cancelled) setPendingCount(0);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.role]);
 
   // 2. Hàm xử lý Đổi mật khẩu
   const handleChangePassword = async (values: any) => {
@@ -89,7 +113,7 @@ export default function AdminLayout({
       } else {
         message.error(data.error || "Có lỗi xảy ra");
       }
-    } catch (error) {
+    } catch {
       message.error("Lỗi kết nối server");
     } finally {
       setPassLoading(false);
@@ -317,13 +341,24 @@ export default function AdminLayout({
                     icon: <SettingOutlined />,
                     label: "Quản trị",
                     children: [
-                      // Người dùng: Chỉ hiển thị cho ADMIN
-                      ...(session?.user?.role === "ADMIN"
+                      // Người dùng: ADMIN/HR_MANAGER dùng để quản lý phê duyệt tài khoản
+                      ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
                         ? [
                           {
                             key: "/admin/users",
                             icon: <UserOutlined />,
-                            label: <Link href="/admin/users">Người dùng</Link>,
+                            label: (
+                              <Link href="/admin/users">
+                                Người dùng{" "}
+                                {pendingCount > 0 && (
+                                  <Badge
+                                    count={pendingCount}
+                                    size="small"
+                                    style={{ marginLeft: 8 }}
+                                  />
+                                )}
+                              </Link>
+                            ),
                           },
                         ]
                         : []),
