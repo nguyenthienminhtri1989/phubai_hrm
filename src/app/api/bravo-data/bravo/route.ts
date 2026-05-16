@@ -25,7 +25,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Thiếu tháng/năm" }, { status: 400 });
     }
 
-    const whereCondition: any = {};
+    const whereCondition: any = {
+      isActive: true, // Bỏ qua nhân viên đã nghỉ việc (isActive = false)
+    };
 
     if (factoryIdStr && factoryIdStr !== "null") {
       whereCondition.department = { factoryId: Number(factoryIdStr) };
