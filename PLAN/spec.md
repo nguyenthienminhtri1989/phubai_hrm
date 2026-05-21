@@ -1,244 +1,370 @@
-# PATCH SPEC: BỔ SUNG CHỌN PHÒNG BAN KHI ĐĂNG KÝ
+# SPEC: TÍNH NĂNG THÔNG BÁO (WEB + MOBILE)
 
-# Áp dụng SAU KHI đã chạy SPEC_USER_REGISTRATION.md
-
-# Chỉ liệt kê những gì cần thêm/sửa — không làm lại những gì đã có
+# Dành cho Claude Code — Đọc toàn bộ trước khi viết bất kỳ dòng code nào
 
 ---
 
-## 1. SCHEMA — thêm 1 trường vào model `User`
+## 1. TỔNG QUAN
 
-Mở `prisma/schema.prisma`, tìm model `User`, thêm trường sau vào **cạnh `userDepartmentId`**:
+**Mục tiêu:** Phòng nhân sự đăng thông báo nội bộ, toàn bộ nhân viên vào xem. Có giao diện web (desktop) và mobile riêng biệt, dùng chung API.
+
+**Phân quyền:**
+
+- `ADMIN`, `HR_MANAGER`: xem + đăng + xóa thông báo
+- Tất cả role còn lại (`TIMEKEEPER`, `LEADER`, `STAFF`): chỉ xem
+
+**Phạm vi:** Tất cả user đã đăng nhập đều thấy tất cả thông báo — không lọc theo nhà máy/phòng ban.
+
+**Files cần tạo/sửa:**
+
+| File                                        | Hành động                        |
+| ------------------------------------------- | -------------------------------- |
+| `prisma/schema.prisma`                      | Thêm model `Announcement`        |
+| `src/app/api/announcements/route.ts`        | GET (danh sách) + POST (tạo mới) |
+| `src/app/api/announcements/[id]/route.ts`   | DELETE (xóa)                     |
+| `src/app/api/announcements/upload/route.ts` | POST upload ảnh                  |
+| `src/app/announcements/page.tsx`            | Giao diện web                    |
+| `src/app/mobile/announcements/page.tsx`     | Giao diện mobile                 |
+| `src/components/AdminLayout.tsx`            | Thêm menu item vào sidebar       |
+
+---
+
+## 2. SCHEMA — thêm model `Announcement`
+
+Thêm vào `prisma/schema.prisma`:
 
 ```prisma
-registeredKipId  Int?   // Kíp user tự khai khi đăng ký (dùng để gán managedDepartments lúc duyệt)
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  title     String                        // Tiêu đề thông báo
+  content   String                        // Nội dung (text thuần)
+  imageUrl  String?                       // Đường dẫn ảnh đính kèm (nullable)
+  authorId  Int                           // ID người đăng
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+```
+
+Thêm relation ngược vào model `User` hiện có:
+
+```prisma
+model User {
+  // ... các trường hiện có ...
+  announcements Announcement[]
+}
 ```
 
 Chạy migration:
 
 ```bash
-npx prisma migrate dev --name add_registered_kip_id
+npx prisma migrate dev --name add_announcement
 npx prisma generate
 ```
 
 ---
 
-## 2. API DEPARTMENTS + KIPS — bỏ check auth
+## 3. THƯ MỤC LƯU ẢNH
 
-Trang `/register` là public nên cần gọi được 2 API này mà không cần đăng nhập.
+Tạo thư mục trên máy chủ (nếu chưa có):
 
-Mở **`src/app/api/departments/route.ts`** và **`src/app/api/kips/route.ts`**, tìm hàm `GET`, **xóa hoặc comment** phần kiểm tra session/role nếu có. Chỉ áp dụng cho method GET, các method POST/PATCH/DELETE giữ nguyên check auth.
+```
+public/uploads/announcements/
+```
+
+Ảnh upload lên sẽ được lưu tại đây, truy cập qua URL:
+
+```
+/uploads/announcements/{filename}
+```
+
+> **Lưu ý backup:** Nhớ backup thư mục `public/uploads/` cùng với backup database định kỳ.
 
 ---
 
-## 3. TRANG ĐĂNG KÝ — thêm 3 ô chọn NM/PB/Kíp
+## 4. API
 
-Mở `src/app/register/page.tsx`, bổ sung vào form hiện có (đặt **sau ô Mã nhân viên**, trước nút submit):
+### 4.1 `GET /api/announcements` — Danh sách thông báo
 
-### 3.1 Thêm state
-
-```ts
-const [factories, setFactories] = useState<{ id: number; name: string }[]>([]);
-const [departments, setDepartments] = useState<
-  { id: number; name: string; isKip: boolean; factory?: { id: number } }[]
->([]);
-const [kips, setKips] = useState<
-  { id: number; name: string; factoryId: number }[]
->([]);
-const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
-const [selectedDeptIsKip, setSelectedDeptIsKip] = useState(false);
-```
-
-### 3.2 Fetch khi mount
+- Không yêu cầu role đặc biệt, chỉ cần đăng nhập
+- Trả về mảng thông báo, sắp xếp mới nhất lên đầu (`orderBy: { createdAt: "desc" }`)
+- Include thông tin author: `{ select: { fullName: true, role: true } }`
+- Hỗ trợ phân trang đơn giản: query param `?page=1&limit=20`
 
 ```ts
-useEffect(() => {
-  Promise.all([fetch("/api/departments"), fetch("/api/kips")])
-    .then(([dRes, kRes]) => Promise.all([dRes.json(), kRes.json()]))
-    .then(([depts, kips]) => {
-      // Lấy danh sách factory từ departments
-      const facs = Array.from(
-        new Map(
-          depts
-            .filter((d: any) => d.factory)
-            .map((d: any) => [d.factory.id, d.factory]),
-        ).values(),
-      );
-      setFactories(facs as any);
-      setDepartments(depts);
-      setKips(kips);
-    });
-}, []);
-```
-
-### 3.3 Thêm vào JSX form (sau Form.Item mã nhân viên)
-
-```tsx
-<Divider orientation="left" style={{ fontSize: 13 }}>Thông tin công tác</Divider>
-
-<Form.Item name="factoryId" label="Nhà máy" rules={[{ required: true, message: "Vui lòng chọn nhà máy" }]}>
-  <Select
-    placeholder="Chọn nhà máy"
-    options={factories.map(f => ({ value: f.id, label: f.name }))}
-    onChange={(val) => {
-      setSelectedFactoryId(val);
-      setSelectedDeptIsKip(false);
-      form.setFieldsValue({ departmentId: undefined, kipId: undefined });
-    }}
-  />
-</Form.Item>
-
-<Form.Item name="departmentId" label="Phòng ban / Tổ" rules={[{ required: true, message: "Vui lòng chọn phòng ban" }]}>
-  <Select
-    placeholder="Chọn phòng ban"
-    disabled={!selectedFactoryId}
-    options={departments
-      .filter(d => d.factory?.id === selectedFactoryId)
-      .map(d => ({ value: d.id, label: d.name }))}
-    onChange={(val) => {
-      const dept = departments.find(d => d.id === val);
-      setSelectedDeptIsKip(dept?.isKip || false);
-      form.setFieldsValue({ kipId: undefined });
-    }}
-  />
-</Form.Item>
-
-{/* Chỉ hiện khi phòng ban có isKip = true */}
-{selectedDeptIsKip && (
-  <Form.Item name="kipId" label="Kíp">
-    <Select
-      placeholder="Chọn kíp (nếu có)"
-      allowClear
-      options={kips
-        .filter(k => k.factoryId === selectedFactoryId)
-        .map(k => ({ value: k.id, label: k.name }))}
-    />
-  </Form.Item>
-)}
-```
-
-### 3.4 Cập nhật body submit — thêm 2 trường mới
-
-```ts
-// Trong hàm onFinish, thêm vào body:
-body: JSON.stringify({
-  // ... các trường cũ giữ nguyên ...
-  departmentId: values.departmentId,
-  kipId: values.kipId || null,
-});
-```
-
----
-
-## 4. API REGISTER — lưu thêm departmentId và kipId
-
-Mở `src/app/api/auth/register/route.ts`, cập nhật:
-
-### 4.1 Parse thêm 2 trường từ body
-
-```ts
-const { fullName, username, password, employeeCode, departmentId, kipId } =
-  await request.json();
-```
-
-### 4.2 Thêm validate departmentId bắt buộc
-
-```ts
-if (!fullName || !username || !password || !departmentId) {
-  return NextResponse.json(
-    { error: "Thiếu thông tin bắt buộc" },
-    { status: 400 },
-  );
-}
-// Kiểm tra departmentId hợp lệ
-const dept = await prisma.department.findUnique({
-  where: { id: Number(departmentId) },
-});
-if (!dept) {
-  return NextResponse.json(
-    { error: "Phòng ban không hợp lệ" },
-    { status: 400 },
-  );
-}
-```
-
-### 4.3 Thêm vào data khi create user
-
-```ts
-await prisma.user.create({
-  data: {
-    // ... các trường cũ giữ nguyên ...
-    userDepartmentId: Number(departmentId),
-    registeredKipId: kipId ? Number(kipId) : null,
+// Response shape
+[
+  {
+    id: 1,
+    title: "Thông báo nghỉ lễ 30/4",
+    content: "Công ty thông báo...",
+    imageUrl: "/uploads/announcements/abc123.jpg",
+    createdAt: "2026-04-25T08:00:00.000Z",
+    author: { fullName: "Nguyễn Thị HR", role: "HR_MANAGER" },
   },
-});
+];
 ```
 
----
+### 4.2 `POST /api/announcements` — Đăng thông báo mới
 
-## 5. API APPROVE — tự động gán managedDepartments khi duyệt
-
-Mở `src/app/api/admin/users/approve/route.ts`, **thay thế** logic `updateMany` hiện tại bằng:
+- Chỉ `ADMIN` hoặc `HR_MANAGER` mới được gọi, trả về 403 nếu không đủ quyền
+- Body: `{ title, content, imageUrl? }`
+- `authorId` lấy từ session, không nhận từ client
 
 ```ts
-// Lấy thông tin từng user để biết họ khai phòng ban nào
-const users = await prisma.user.findMany({
-  where: { id: { in: userIds }, status: "PENDING" },
-});
+// Validate
+if (!title || title.trim().length < 2) → 400
+if (!content || content.trim().length < 5) → 400
 
-// Duyệt từng user riêng lẻ để gán managedDepartments
-await Promise.all(
-  users.map((user) =>
-    prisma.user.update({
-      where: { id: user.id },
-      data: {
-        status: "ACTIVE",
-        // Gán phòng ban user đã khai vào managedDepartments
-        ...(user.userDepartmentId
-          ? {
-              managedDepartments: {
-                connect: [{ id: user.userDepartmentId }],
-              },
-            }
-          : {}),
-      },
-    }),
-  ),
-);
+// Create
+await prisma.announcement.create({
+  data: { title, content, imageUrl: imageUrl || null, authorId: session.user.id }
+});
 ```
 
-> **Lý do dùng `update` từng cái thay vì `updateMany`:** `updateMany` không hỗ trợ cập nhật quan hệ many-to-many (`managedDepartments`), chỉ `update` mới dùng được `connect`.
+### 4.3 `DELETE /api/announcements/[id]` — Xóa thông báo
+
+- Chỉ `ADMIN` hoặc `HR_MANAGER`
+- Nếu thông báo có `imageUrl` → xóa file ảnh trên disk trước khi xóa record:
+
+```ts
+import fs from "fs";
+import path from "path";
+
+if (announcement.imageUrl) {
+  const filePath = path.join(process.cwd(), "public", announcement.imageUrl);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+await prisma.announcement.delete({ where: { id } });
+```
+
+### 4.4 `POST /api/announcements/upload` — Upload ảnh
+
+- Chỉ `ADMIN` hoặc `HR_MANAGER`
+- Nhận `FormData` với field `file`
+- Giới hạn: chỉ chấp nhận `image/jpeg`, `image/png`, `image/webp`, tối đa **5MB**
+- Tạo tên file unique bằng timestamp + random string
+- Lưu vào `public/uploads/announcements/`
+- Trả về `{ url: "/uploads/announcements/{filename}" }`
+
+```ts
+import { writeFile } from "fs/promises";
+import path from "path";
+
+export async function POST(request: Request) {
+  // Check auth
+  const session = await auth();
+  if (!["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "")) {
+    return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
+  }
+
+  const formData = await request.formData();
+  const file = formData.get("file") as File;
+
+  if (!file)
+    return NextResponse.json({ error: "Không có file" }, { status: 400 });
+
+  // Validate type và size
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+  if (!allowedTypes.includes(file.type)) {
+    return NextResponse.json(
+      { error: "Chỉ chấp nhận JPG, PNG, WEBP" },
+      { status: 400 },
+    );
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return NextResponse.json({ error: "Ảnh tối đa 5MB" }, { status: 400 });
+  }
+
+  const ext = file.type.split("/")[1];
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const savePath = path.join(
+    process.cwd(),
+    "public/uploads/announcements",
+    filename,
+  );
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await writeFile(savePath, buffer);
+
+  return NextResponse.json({ url: `/uploads/announcements/${filename}` });
+}
+```
 
 ---
 
-## 6. TAB CHỜ DUYỆT — thêm cột Phòng ban
+## 5. GIAO DIỆN WEB (`/announcements`)
 
-Mở `src/app/admin/users/page.tsx`, tìm phần định nghĩa columns của tab "Chờ duyệt", thêm cột sau vào **trước cột Ngày đăng ký**:
+### 5.1 Layout tổng thể
+
+Dùng `AdminLayout` như các trang desktop khác. Chia 2 khu vực:
+
+```
+┌─────────────────────────────────────────────────┐
+│  THÔNG BÁO NỘI BỘ          [+ Đăng thông báo]  │  ← nút chỉ hiện với ADMIN/HR_MANAGER
+├─────────────────────────────────────────────────┤
+│  ┌───────────────────────────────────────────┐  │
+│  │ 📢 Thông báo nghỉ lễ 30/4                │  │
+│  │ HR Manager · 25/04/2026 08:30            │  │
+│  │                                           │  │
+│  │ Công ty thông báo toàn thể CBCNV...      │  │
+│  │ [ảnh nếu có]                              │  │
+│  │                                    [Xóa] │  │  ← nút Xóa chỉ hiện với ADMIN/HR_MANAGER
+│  └───────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────┐  │
+│  │ 📢 Thông báo tăng ca tháng 5             │  │
+│  │ ...                                       │  │
+│  └───────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+### 5.2 Modal đăng thông báo
+
+Khi nhấn **"+ Đăng thông báo"** → mở `Modal` của Ant Design:
+
+```
+┌──────────────────────────────────┐
+│  Đăng thông báo mới              │
+├──────────────────────────────────┤
+│  Tiêu đề *                       │
+│  [_____________________________] │
+│                                  │
+│  Nội dung *                      │
+│  [_____________________________] │
+│  [_____________________________] │
+│  [_____________________________] │
+│  (textarea, tối thiểu 3 dòng)    │
+│                                  │
+│  Đính kèm ảnh (không bắt buộc)   │
+│  [  Chọn ảnh  ] preview ảnh      │
+│  JPG/PNG/WEBP, tối đa 5MB        │
+│                                  │
+│  [Hủy]          [Đăng thông báo] │
+└──────────────────────────────────┘
+```
+
+**Flow upload ảnh:**
+
+1. User chọn file → hiển thị preview ngay (dùng `URL.createObjectURL`)
+2. Khi nhấn "Đăng thông báo" → upload ảnh trước (`POST /api/announcements/upload`)
+3. Nhận `url` từ response → gửi kèm vào `POST /api/announcements`
+4. Đóng modal, reload danh sách
+
+### 5.3 Xác nhận xóa
+
+Khi nhấn "Xóa" → dùng `Modal.confirm` của Ant Design:
+
+```
+"Bạn có chắc muốn xóa thông báo này không? Hành động này không thể hoàn tác."
+[Hủy]  [Xóa]
+```
+
+---
+
+## 6. GIAO DIỆN MOBILE (`/mobile/announcements`)
+
+### 6.1 Layout
+
+Max-width `480px`, căn giữa, mobile-first. Không dùng `AdminLayout`.
+
+```
+┌─────────────────────────────┐
+│  ← Thông báo nội bộ         │
+├─────────────────────────────┤
+│  ┌─────────────────────────┐│
+│  │ 📢 Thông báo nghỉ lễ   ││
+│  │ 25/04/2026 · 08:30     ││
+│  │ HR Manager             ││
+│  │                        ││
+│  │ Công ty thông báo...   ││
+│  │ [ảnh nếu có, full width]││
+│  └─────────────────────────┘│
+│  ┌─────────────────────────┐│
+│  │ ...                    ││
+│  └─────────────────────────┘│
+└─────────────────────────────┘
+```
+
+- Mỗi thông báo là 1 Card full-width, bo tròn, shadow nhẹ
+- Ảnh đính kèm hiển thị full-width bên dưới nội dung, bo góc
+- **Không có nút đăng/xóa** trên giao diện mobile — chỉ xem
+- Nút `←` quay về `/mobile`
+- Infinite scroll hoặc nút "Xem thêm" nếu có nhiều thông báo
+
+### 6.2 Thêm vào trang chủ mobile
+
+Mở `src/app/mobile/page.tsx`, thêm vào mảng `MOBILE_FEATURES`:
 
 ```ts
 {
-  title: "Phòng ban đăng ký",
-  dataIndex: ["userDepartment", "name"],
-  key: "userDepartment",
-  render: (_: any, record: any) => record.userDepartment?.name || <span style={{ color: "#ccc" }}>Chưa chọn</span>,
-},
+  key: "announcements",
+  label: "Thông báo",
+  description: "Thông báo nội bộ",
+  icon: "📢",
+  href: "/mobile/announcements",
+  color: "#f5222d",  // đỏ
+}
 ```
 
-Đảm bảo API GET users đã `include: { userDepartment: true }` — **đã có sẵn trong `route.ts` hiện tại**, không cần sửa thêm.
+---
+
+## 7. ĐĂNG KÝ SIDEBAR (AdminLayout.tsx)
+
+Thêm item vào menu sidebar, đặt vào group phù hợp (hoặc tạo group mới "TIỆN ÍCH" nếu chưa có):
+
+```ts
+{
+  key: "announcements",
+  icon: <NotificationOutlined />,  // import từ @ant-design/icons
+  label: "Thông báo",
+  path: "/announcements",
+}
+```
 
 ---
 
-## 7. CHECKLIST PATCH NÀY
+## 8. STYLING GUIDELINES
 
-- [ ] Trường `registeredKipId` đã thêm vào schema + migration chạy OK
-- [ ] API GET `/api/departments` và `/api/kips` không còn yêu cầu auth
-- [ ] Form đăng ký hiển thị đủ 3 ô NM → PB → Kíp (cascade đúng)
-- [ ] Kíp chỉ hiện khi phòng ban có `isKip = true`
-- [ ] API register lưu được `userDepartmentId` và `registeredKipId`
-- [ ] API approve gán `managedDepartments` đúng khi duyệt
-- [ ] Tab chờ duyệt hiển thị cột "Phòng ban đăng ký"
-- [ ] User STAFF sau khi duyệt vào `CommonFilter` thấy đúng phòng ban của mình
+- Card thông báo: nền trắng, border-left `4px solid #f5222d` để nhận diện
+- Tiêu đề: font đậm, size 16px
+- Meta (tác giả + thời gian): màu nhạt `#888`, size 12px, dùng `dayjs` format `"HH:mm · DD/MM/YYYY"`
+- Ảnh: `object-fit: cover`, max-height `400px` trên web, full-width trên mobile
+- Empty state: dùng `<Empty description="Chưa có thông báo nào" />` của Ant Design
 
 ---
 
-_End of Patch Spec._
+## 9. CHECKLIST TRƯỚC KHI HOÀN THÀNH
+
+### Database & API
+
+- [ ] Model `Announcement` đã thêm vào schema + migration chạy OK
+- [ ] Thư mục `public/uploads/announcements/` đã tạo
+- [ ] `GET /api/announcements` trả về đúng, sắp xếp mới nhất lên đầu
+- [ ] `POST /api/announcements` chỉ cho ADMIN/HR_MANAGER
+- [ ] `DELETE /api/announcements/[id]` xóa cả file ảnh trên disk
+- [ ] `POST /api/announcements/upload` validate đúng type và size
+
+### Giao diện Web
+
+- [ ] Danh sách thông báo hiển thị đúng
+- [ ] Nút "Đăng thông báo" chỉ hiện với ADMIN/HR_MANAGER
+- [ ] Modal đăng có preview ảnh trước khi submit
+- [ ] Flow upload ảnh → đăng thông báo hoạt động đúng thứ tự
+- [ ] Nút Xóa có confirm dialog, chỉ hiện với ADMIN/HR_MANAGER
+- [ ] Menu sidebar đã có item "Thông báo"
+
+### Giao diện Mobile
+
+- [ ] Trang `/mobile/announcements` hiển thị đúng
+- [ ] Ảnh hiển thị full-width
+- [ ] Card "Thông báo" đã thêm vào trang chủ mobile (`/mobile`)
+- [ ] Không có nút đăng/xóa trên mobile
+
+### Phân quyền
+
+- [ ] STAFF/TIMEKEEPER/LEADER chỉ xem, không thấy nút đăng/xóa
+- [ ] API trả về 403 nếu không đủ quyền khi POST/DELETE
+
+---
+
+_End of Spec._

@@ -67,6 +67,14 @@ const MOBILE_FEATURES = [
     href: "/evaluations/mobile",
     color: "#722ed1",
   },
+  {
+    key: "announcements",
+    label: "Thông báo",
+    description: "Thông báo nội bộ",
+    icon: "📢",
+    href: "/mobile/announcements",
+    color: "#f5222d",
+  },
 ];
 
 export default function MobileHomePage() {

@@ -183,6 +183,20 @@ model User {
   // Quan hệ cũ: User quản lý những phòng nào (Cho Timekeeper/Manager)
   managedDepartments Department[] @relation("ManagedDepartments")
 
+  // Thông báo do user này đăng
+  announcements Announcement[]
+}
+
+// Bảng Thông báo nội bộ
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  title     String   // Tiêu đề thông báo
+  content   String   // Nội dung (text thuần)
+  imageUrl  String?  // Đường dẫn ảnh đính kèm (nullable)
+  authorId  Int
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Bảng quản lý luật khóa sổ chấm công

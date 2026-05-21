@@ -16,6 +16,7 @@ type RegisterFormValues = {
   employeeCode?: string;
   factoryId: number;
   departmentId: number;
+  kipId?: number;
 };
 
 type FactoryOption = {
@@ -30,25 +31,33 @@ type DepartmentOption = {
   factory?: FactoryOption;
 };
 
+type KipOption = {
+  id: number;
+  name: string;
+  factoryId: number;
+};
+
 export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [factories, setFactories] = useState<FactoryOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [kips, setKips] = useState<KipOption[]>([]);
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
+  const [selectedDeptIsKip, setSelectedDeptIsKip] = useState(false);
   const [form] = Form.useForm<RegisterFormValues>();
   const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/departments")
-      .then((deptRes) => {
-        if (!deptRes.ok) {
+    Promise.all([fetch("/api/departments"), fetch("/api/kips")])
+      .then(([deptRes, kipRes]) => {
+        if (!deptRes.ok || !kipRes.ok) {
           throw new Error("Không thể tải danh sách công tác");
         }
-        return deptRes.json();
+        return Promise.all([deptRes.json(), kipRes.json()]);
       })
-      .then((deptData) => {
+      .then(([deptData, kipData]) => {
         if (cancelled) return;
 
         const depts = deptData as DepartmentOption[];
@@ -62,6 +71,7 @@ export default function RegisterPage() {
 
         setFactories(facs);
         setDepartments(depts);
+        setKips(kipData as KipOption[]);
       })
       .catch(() => {
         if (!cancelled) {
@@ -86,6 +96,7 @@ export default function RegisterPage() {
           password: values.password,
           employeeCode: values.employeeCode?.trim() || undefined,
           departmentId: values.departmentId,
+          kipId: values.kipId || null,
         }),
       });
 
@@ -230,7 +241,8 @@ export default function RegisterPage() {
               }))}
               onChange={(value) => {
                 setSelectedFactoryId(value);
-                form.setFieldsValue({ departmentId: undefined });
+                setSelectedDeptIsKip(false);
+                form.setFieldsValue({ departmentId: undefined, kipId: undefined });
               }}
             />
           </Form.Item>
@@ -249,8 +261,26 @@ export default function RegisterPage() {
                   value: department.id,
                   label: department.name,
                 }))}
+              onChange={(val) => {
+                const dept = departments.find((d) => d.id === val);
+                setSelectedDeptIsKip(dept?.isKip || false);
+                form.setFieldsValue({ kipId: undefined });
+              }}
             />
           </Form.Item>
+
+          {/* Chỉ hiện khi phòng ban có isKip = true */}
+          {selectedDeptIsKip && (
+            <Form.Item name="kipId" label="Kíp">
+              <Select
+                placeholder="Chọn kíp (nếu có)"
+                allowClear
+                options={kips
+                  .filter((k) => k.factoryId === selectedFactoryId)
+                  .map((k) => ({ value: k.id, label: k.name }))}
+              />
+            </Form.Item>
+          )}
 
           <Form.Item style={{ marginBottom: 12 }}>
             <Button type="primary" htmlType="submit" block loading={loading}>

@@ -41,6 +41,7 @@ import {
   PieChartOutlined,
   MobileOutlined,
   HomeOutlined,
+  NotificationOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -401,6 +402,11 @@ export default function AdminLayout({
                 icon: <FormOutlined />,
                 label: "Tiện ích",
                 children: [
+                  {
+                    key: "/announcements",
+                    icon: <NotificationOutlined />,
+                    label: <Link href="/announcements">Thông báo</Link>,
+                  },
                   {
                     key: "/help",
                     icon: <QuestionCircleOutlined />,
