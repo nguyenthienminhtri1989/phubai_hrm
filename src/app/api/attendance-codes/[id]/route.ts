@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 
 // --- CẬP NHẬT ---
 export async function PATCH(
@@ -7,6 +8,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const { id } = await params;
     const body = await request.json();
 
@@ -33,6 +36,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const { id } = await params;
 
     // Kiểm tra xem mã này đã được dùng chấm công chưa? Nếu dùng rồi thì không cho xóa

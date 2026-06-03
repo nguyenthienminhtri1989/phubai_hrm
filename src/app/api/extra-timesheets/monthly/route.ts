@@ -1,10 +1,13 @@
 // src/app/api/timesheets/monthly/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 import dayjs from "dayjs";
 
 export async function GET(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const { searchParams } = new URL(request.url);
     const departmentIdStr = searchParams.get("departmentId");
     const kipIdsStr = searchParams.get("kipIds");

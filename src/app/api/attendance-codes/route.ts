@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 
 // --- Lấy danh sách ----
 export async function GET() {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const codes = await prisma.attendanceCode.findMany({
       orderBy: { id: "asc" },
     });
@@ -19,6 +22,8 @@ export async function GET() {
 // --- Thêm mới ---
 export async function POST(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const body = await request.json();
     const { code, name, category, color, factor, description } = body;
 

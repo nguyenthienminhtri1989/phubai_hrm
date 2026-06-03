@@ -1,10 +1,13 @@
 // src/app/api/employees/import-info/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 import ExcelJS from "exceljs";
 
 export async function POST(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const formData = await request.formData();
     const file = formData.get("file") as File;
 

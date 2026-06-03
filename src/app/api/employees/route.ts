@@ -1,10 +1,13 @@
 // src/app/api/employees/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 
 // 1. Hàm GET: Lấy danh sách (Đã nâng cấp để hỗ trợ lọc)
 export async function GET(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     // [MỚI] Lấy tham số từ URL gửi lên (ví dụ: ?departmentId=5)
     const { searchParams } = new URL(request.url);
     const departmentIdStr = searchParams.get("departmentId");
@@ -56,6 +59,8 @@ export async function GET(request: Request) {
 // 2. Hàm POST: Thêm nhân viên mới (GIỮ NGUYÊN CODE CỦA BẠN)
 export async function POST(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const body = await request.json();
     const {
       code,

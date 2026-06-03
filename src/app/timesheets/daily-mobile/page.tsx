@@ -1,757 +1,1132 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback, Suspense } from "react";
+import React, {
+  useEffect,
+  useState,
+  useMemo,
+  useCallback,
+  Suspense,
+} from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import {
-    Select,
-    Button,
-    message,
-    Input,
-    Tag,
-    Space,
-    Spin,
-    Alert,
-    DatePicker,
-    Drawer,
-    Avatar,
-    Badge,
-    Modal,
-    Form,
+  Select,
+  Button,
+  message,
+  Input,
+  Tag,
+  Space,
+  Spin,
+  Alert,
+  DatePicker,
+  Drawer,
+  Avatar,
+  Badge,
+  Modal,
+  Form,
 } from "antd";
 import {
-    SaveOutlined,
-    FilterOutlined,
-    LogoutOutlined,
-    UserOutlined,
-    KeyOutlined,
-    CheckCircleOutlined,
-    CloseCircleOutlined,
-    QrcodeOutlined,
-    HomeOutlined,
+  SaveOutlined,
+  FilterOutlined,
+  LogoutOutlined,
+  UserOutlined,
+  KeyOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  QrcodeOutlined,
+  HomeOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import Link from "next/link";
 
 // --- INTERFACES ---
 interface AttendanceCode {
-    id: number;
-    code: string;
-    name: string;
-    color: string;
+  id: number;
+  code: string;
+  name: string;
+  color: string;
 }
 
 interface TimesheetRow {
-    employeeId: number;
-    employeeCode: string;
-    fullName: string;
-    attendanceCodeId: number | null;
-    note: string;
-    updatedAt?: string;
-    departmentName?: string;
-    kipName?: string;
+  employeeId: number;
+  employeeCode: string;
+  fullName: string;
+  attendanceCodeId: number | null;
+  note: string;
+  updatedAt?: string;
+  departmentName?: string;
+  kipName?: string;
 }
 
-interface Factory { id: number; name: string; }
-interface Department { id: number; code: string; name: string; factory?: Factory; }
-interface Kip { id: number; name: string; factoryId: number; }
+interface Factory {
+  id: number;
+  name: string;
+}
+interface Department {
+  id: number;
+  code: string;
+  name: string;
+  factory?: Factory;
+}
+interface Kip {
+  id: number;
+  name: string;
+  factoryId: number;
+}
 
 const QUICK_ACTIONS = [
-    { code: "+", label: "Đi làm" },
-    { code: "XD", label: "Ca đêm" },
-    { code: "ĐC", label: "Đảo ca" },
-    { code: "CN", label: "Chủ nhật" },
-    { code: "L", label: "Nghỉ lễ" },
-    { code: "F", label: "Nghỉ F" },
+  { code: "+", label: "Đi làm" },
+  { code: "XD", label: "Ca đêm" },
+  { code: "ĐC", label: "Đảo ca" },
+  { code: "CN", label: "Chủ nhật" },
+  { code: "L", label: "Nghỉ lễ" },
+  { code: "F", label: "Nghỉ F" },
 ];
 
 // --- INNER COMPONENT (uses useSearchParams) ---
 function MobileDailyTimesheetInner() {
-    const { data: session } = useSession();
-    const searchParams = useSearchParams();
-    const isViewOnly = ["LEADER", "STAFF"].includes(session?.user?.role as string);
+  const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const isViewOnly = ["LEADER", "STAFF"].includes(
+    session?.user?.role as string,
+  );
 
-    // --- DATA STATE ---
-    const [employees, setEmployees] = useState<TimesheetRow[]>([]);
-    const [attendanceCodes, setAttendanceCodes] = useState<AttendanceCode[]>([]);
-    const [departments, setDepartments] = useState<Department[]>([]);
-    const [kips, setKips] = useState<Kip[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [catalogReady, setCatalogReady] = useState(false);
+  // --- DATA STATE ---
+  const [employees, setEmployees] = useState<TimesheetRow[]>([]);
+  const [attendanceCodes, setAttendanceCodes] = useState<AttendanceCode[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [kips, setKips] = useState<Kip[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [catalogReady, setCatalogReady] = useState(false);
 
-    // --- FILTER STATE ---
-    const [date, setDate] = useState<Dayjs>(dayjs());
-    const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
-    const [mixedDeptValues, setMixedDeptValues] = useState<string[]>([]);
-    const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
+  // --- FILTER STATE ---
+  const [date, setDate] = useState<Dayjs>(dayjs());
+  const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(
+    null,
+  );
+  const [mixedDeptValues, setMixedDeptValues] = useState<string[]>([]);
+  const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
 
-    // --- UI STATE ---
-    const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-    const [userMenuOpen, setUserMenuOpen] = useState(false);
-    const [isChangePassOpen, setIsChangePassOpen] = useState(false);
-    const [passLoading, setPassLoading] = useState(false);
-    const [passForm] = Form.useForm();
-    const [searchText, setSearchText] = useState("");
-    const [paramsApplied, setParamsApplied] = useState(false);
+  // --- UI STATE ---
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [isChangePassOpen, setIsChangePassOpen] = useState(false);
+  const [passLoading, setPassLoading] = useState(false);
+  const [passForm] = Form.useForm();
+  const [searchText, setSearchText] = useState("");
+  const [paramsApplied, setParamsApplied] = useState(false);
 
-    const MATRIX_FACTORY_IDS = [1, 2, 3];
-    const isMatrix = useMemo(() =>
-        selectedFactoryId ? MATRIX_FACTORY_IDS.includes(selectedFactoryId) : false,
-        [selectedFactoryId]
-    );
+  const MATRIX_FACTORY_IDS = [1, 2, 3];
+  const isMatrix = useMemo(
+    () =>
+      selectedFactoryId
+        ? MATRIX_FACTORY_IDS.includes(selectedFactoryId)
+        : false,
+    [selectedFactoryId],
+  );
 
-    // --- LOAD CATALOGS ---
-    useEffect(() => {
-        const init = async () => {
-            try {
-                const [codesRes, deptsRes, kipsRes] = await Promise.all([
-                    fetch("/api/attendance-codes"),
-                    fetch("/api/departments"),
-                    fetch("/api/kips"),
-                ]);
-                const codes: AttendanceCode[] = await codesRes.json();
-                const PRIORITY = ["+", "XD", "ĐC", "X/2", "F", "NB", "Ô", "XL", "L", "TS"];
-                codes.sort((a, b) => {
-                    const iA = PRIORITY.indexOf(a.code), iB = PRIORITY.indexOf(b.code);
-                    if (iA !== -1 && iB !== -1) return iA - iB;
-                    if (iA !== -1) return -1;
-                    if (iB !== -1) return 1;
-                    return a.code.localeCompare(b.code);
-                });
-                setAttendanceCodes(codes);
-                setDepartments(await deptsRes.json());
-                setKips(await kipsRes.json());
-                setCatalogReady(true);
-            } catch {
-                message.error("Lỗi tải danh mục");
-            }
-        };
-        init();
-    }, []);
-
-    // --- APPLY URL PARAMS AFTER CATALOGS LOAD (QR scan support) ---
-    // URL format: ?f=1&d=SECTION:BC,DEPT:5&k=2,3
-    useEffect(() => {
-        if (!catalogReady || paramsApplied) return;
-
-        const fParam = searchParams.get("f");
-        const dParam = searchParams.get("d");
-        const kParam = searchParams.get("k");
-
-        if (fParam) {
-            const factoryId = parseInt(fParam);
-            if (!isNaN(factoryId)) setSelectedFactoryId(factoryId);
-        }
-        if (dParam) {
-            const depts = dParam.split(",").map(s => s.trim()).filter(Boolean);
-            setMixedDeptValues(depts);
-        }
-        if (kParam) {
-            const kipIds = kParam.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-            setSelectedKipIds(kipIds);
-        }
-
-        setParamsApplied(true);
-    }, [catalogReady, paramsApplied, searchParams]);
-
-    // --- PERMISSION FILTER ---
-    const availableDepartments = useMemo(() => {
-        if (departments.length === 0 || !session) return [];
-        const user = session.user;
-        if (["ADMIN", "HR_MANAGER", "LEADER"].includes(user.role)) return departments;
-        if (["TIMEKEEPER", "STAFF"].includes(user.role)) {
-            const allowedIds = user.managedDeptIds || [];
-            return departments.filter((d) => allowedIds.includes(d.id));
-        }
-        return [];
-    }, [departments, session]);
-
-    // --- DROPDOWN OPTIONS ---
-    const mixedDeptOptions = useMemo(() => {
-        if (!selectedFactoryId) return [];
-        const currentDepts = availableDepartments.filter(d => d.factory?.id === selectedFactoryId);
-        const options: { value: string; label: string }[] = [];
-        const processedSections = new Set<string>();
-
-        currentDepts.forEach((d) => {
-            const matrixRegex = new RegExp(`^${selectedFactoryId}([a-zA-Z]+)(\\d+)$`);
-            const match = d.code?.match(matrixRegex);
-            if (isMatrix && match) {
-                const sectionCode = match[1];
-                if (!processedSections.has(sectionCode)) {
-                    const displayName = d.name.replace(/(kíp|ca)\s*\d+.*$/gi, "").replace(/-+.*$/gi, "").trim();
-                    options.push({ value: `SECTION:${sectionCode}`, label: displayName });
-                    processedSections.add(sectionCode);
-                }
-            } else {
-                options.push({ value: `DEPT:${d.id}`, label: d.name });
-            }
+  // --- LOAD CATALOGS ---
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const [codesRes, deptsRes, kipsRes] = await Promise.all([
+          fetch("/api/attendance-codes"),
+          fetch("/api/departments"),
+          fetch("/api/kips"),
+        ]);
+        const codes: AttendanceCode[] = await codesRes.json();
+        const PRIORITY = [
+          "+",
+          "XD",
+          "ĐC",
+          "X/2",
+          "F",
+          "NB",
+          "Ô",
+          "XL",
+          "L",
+          "TS",
+        ];
+        codes.sort((a, b) => {
+          const iA = PRIORITY.indexOf(a.code),
+            iB = PRIORITY.indexOf(b.code);
+          if (iA !== -1 && iB !== -1) return iA - iB;
+          if (iA !== -1) return -1;
+          if (iB !== -1) return 1;
+          return a.code.localeCompare(b.code);
         });
-        return options.sort((a, b) => a.label.localeCompare(b.label));
-    }, [availableDepartments, selectedFactoryId, isMatrix]);
+        setAttendanceCodes(codes);
+        setDepartments(await deptsRes.json());
+        setKips(await kipsRes.json());
+        setCatalogReady(true);
+      } catch {
+        message.error("Lỗi tải danh mục");
+      }
+    };
+    init();
+  }, []);
 
-    const factoryOptions = useMemo(() =>
-        availableDepartments.reduce((acc: { value: number; label: string }[], curr) => {
-            if (curr.factory && !acc.find(f => f.value === curr.factory!.id))
-                acc.push({ value: curr.factory!.id, label: curr.factory!.name });
-            return acc;
-        }, []),
-        [availableDepartments]
+  // --- APPLY URL PARAMS AFTER CATALOGS LOAD (QR scan support) ---
+  // URL format: ?f=1&d=SECTION:BC,DEPT:5&k=2,3
+  useEffect(() => {
+    if (!catalogReady || paramsApplied) return;
+
+    const fParam = searchParams.get("f");
+    const dParam = searchParams.get("d");
+    const kParam = searchParams.get("k");
+
+    if (fParam) {
+      const factoryId = parseInt(fParam);
+      if (!isNaN(factoryId)) setSelectedFactoryId(factoryId);
+    }
+    if (dParam) {
+      const depts = dParam
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      setMixedDeptValues(depts);
+    }
+    if (kParam) {
+      const kipIds = kParam
+        .split(",")
+        .map((s) => parseInt(s.trim()))
+        .filter((n) => !isNaN(n));
+      setSelectedKipIds(kipIds);
+    }
+
+    setParamsApplied(true);
+  }, [catalogReady, paramsApplied, searchParams]);
+
+  // --- PERMISSION FILTER ---
+  const availableDepartments = useMemo(() => {
+    if (departments.length === 0 || !session) return [];
+    const user = session.user;
+    if (["ADMIN", "HR_MANAGER", "LEADER"].includes(user.role))
+      return departments;
+    if (["TIMEKEEPER", "STAFF"].includes(user.role)) {
+      const allowedIds = user.managedDeptIds || [];
+      return departments.filter((d) => allowedIds.includes(d.id));
+    }
+    return [];
+  }, [departments, session]);
+
+  // --- DROPDOWN OPTIONS ---
+  const mixedDeptOptions = useMemo(() => {
+    if (!selectedFactoryId) return [];
+    const currentDepts = availableDepartments.filter(
+      (d) => d.factory?.id === selectedFactoryId,
     );
+    const options: { value: string; label: string }[] = [];
+    const processedSections = new Set<string>();
 
-    // --- RESOLVE REAL DEPT IDS ---
-    const resolveRealDepartmentIds = useCallback(() => {
-        if (!selectedFactoryId || mixedDeptValues.length === 0) return [];
-        let targetKipNumbers: string[] = [];
-        if (selectedKipIds.length > 0) {
-            const names = kips.filter((k) => selectedKipIds.includes(k.id)).map((k) => k.name);
-            targetKipNumbers = names.map((name) => name.match(/\d+/)?.[0] || "").filter(Boolean);
+    currentDepts.forEach((d) => {
+      const matrixRegex = new RegExp(`^${selectedFactoryId}([a-zA-Z]+)(\\d+)$`);
+      const match = d.code?.match(matrixRegex);
+      if (isMatrix && match) {
+        const sectionCode = match[1];
+        if (!processedSections.has(sectionCode)) {
+          const displayName = d.name
+            .replace(/(kíp|ca)\s*\d+.*$/gi, "")
+            .replace(/-+.*$/gi, "")
+            .trim();
+          options.push({ value: `SECTION:${sectionCode}`, label: displayName });
+          processedSections.add(sectionCode);
         }
-        const allRealIds: number[] = [];
-        mixedDeptValues.forEach((val) => {
-            if (val.startsWith("DEPT")) {
-                const id = parseInt(val.split(":")[1]);
-                if (!isNaN(id)) allRealIds.push(id);
-            } else if (val.startsWith("SECTION")) {
-                const sectionCode = val.split(":")[1];
-                availableDepartments.forEach((d) => {
-                    if (d.factory?.id !== selectedFactoryId) return;
-                    const regex = new RegExp(`^${selectedFactoryId}${sectionCode}(\\d+)$`);
-                    const match = d.code?.match(regex);
-                    if (match) {
-                        const deptKipNum = match[1];
-                        if (targetKipNumbers.length === 0 || targetKipNumbers.includes(deptKipNum))
-                            allRealIds.push(d.id);
-                    }
-                });
-            }
+      } else {
+        options.push({ value: `DEPT:${d.id}`, label: d.name });
+      }
+    });
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  }, [availableDepartments, selectedFactoryId, isMatrix]);
+
+  const factoryOptions = useMemo(
+    () =>
+      availableDepartments.reduce(
+        (acc: { value: number; label: string }[], curr) => {
+          if (curr.factory && !acc.find((f) => f.value === curr.factory!.id))
+            acc.push({ value: curr.factory!.id, label: curr.factory!.name });
+          return acc;
+        },
+        [],
+      ),
+    [availableDepartments],
+  );
+
+  // --- RESOLVE REAL DEPT IDS ---
+  const resolveRealDepartmentIds = useCallback(() => {
+    if (!selectedFactoryId || mixedDeptValues.length === 0) return [];
+    let targetKipNumbers: string[] = [];
+    if (selectedKipIds.length > 0) {
+      const names = kips
+        .filter((k) => selectedKipIds.includes(k.id))
+        .map((k) => k.name);
+      targetKipNumbers = names
+        .map((name) => name.match(/\d+/)?.[0] || "")
+        .filter(Boolean);
+    }
+    const allRealIds: number[] = [];
+    mixedDeptValues.forEach((val) => {
+      if (val.startsWith("DEPT")) {
+        const id = parseInt(val.split(":")[1]);
+        if (!isNaN(id)) allRealIds.push(id);
+      } else if (val.startsWith("SECTION")) {
+        const sectionCode = val.split(":")[1];
+        availableDepartments.forEach((d) => {
+          if (d.factory?.id !== selectedFactoryId) return;
+          const regex = new RegExp(
+            `^${selectedFactoryId}${sectionCode}(\\d+)$`,
+          );
+          const match = d.code?.match(regex);
+          if (match) {
+            const deptKipNum = match[1];
+            if (
+              targetKipNumbers.length === 0 ||
+              targetKipNumbers.includes(deptKipNum)
+            )
+              allRealIds.push(d.id);
+          }
         });
-        return Array.from(new Set(allRealIds));
-    }, [selectedFactoryId, mixedDeptValues, selectedKipIds, kips, availableDepartments]);
+      }
+    });
+    return Array.from(new Set(allRealIds));
+  }, [
+    selectedFactoryId,
+    mixedDeptValues,
+    selectedKipIds,
+    kips,
+    availableDepartments,
+  ]);
 
-    // --- FETCH TIMESHEET DATA ---
-    const fetchTimesheetData = useCallback(async () => {
-        const realIds = resolveRealDepartmentIds();
-        if (realIds.length === 0) { setEmployees([]); return; }
+  // --- FETCH TIMESHEET DATA ---
+  const fetchTimesheetData = useCallback(async () => {
+    const realIds = resolveRealDepartmentIds();
+    if (realIds.length === 0) {
+      setEmployees([]);
+      return;
+    }
 
-        setLoading(true);
-        try {
-            const dateStr = date.format("YYYY-MM-DD");
-            const res = await fetch(`/api/timesheets/daily?date=${dateStr}&departmentId=${realIds.join(",")}`);
-            if (!res.ok) throw new Error();
-            setEmployees(await res.json());
-        } catch {
-            message.error("Lỗi tải dữ liệu");
-            setEmployees([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [date, resolveRealDepartmentIds]);
+    setLoading(true);
+    try {
+      const dateStr = date.format("YYYY-MM-DD");
+      const res = await fetch(
+        `/api/timesheets/daily?date=${dateStr}&departmentId=${realIds.join(",")}`,
+      );
+      if (!res.ok) throw new Error();
+      setEmployees(await res.json());
+    } catch {
+      message.error("Lỗi tải dữ liệu");
+      setEmployees([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [date, resolveRealDepartmentIds]);
 
-    // Auto-fetch when filter changes (wait for catalog+params to be ready)
-    useEffect(() => {
-        if (!catalogReady) return;
-        const timer = setTimeout(() => { fetchTimesheetData(); }, 400);
-        return () => clearTimeout(timer);
-    }, [date, selectedFactoryId, mixedDeptValues, selectedKipIds, catalogReady]);
+  // Auto-fetch when filter changes (wait for catalog+params to be ready)
+  useEffect(() => {
+    if (!catalogReady) return;
+    const timer = setTimeout(() => {
+      fetchTimesheetData();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [date, selectedFactoryId, mixedDeptValues, selectedKipIds, catalogReady]);
 
-    // --- SAVE ---
-    const handleSave = async () => {
-        if (employees.length === 0) return;
-        const realIds = resolveRealDepartmentIds();
-        const payloadDeptId = realIds.length === 1 ? realIds[0] : null;
-        const records = employees.map((e) => ({
-            employeeId: e.employeeId,
-            attendanceCodeId: e.attendanceCodeId || null,
-            note: e.note || "",
-        }));
+  // --- SAVE ---
+  const handleSave = async () => {
+    if (employees.length === 0) return;
+    const realIds = resolveRealDepartmentIds();
+    const payloadDeptId = realIds.length === 1 ? realIds[0] : null;
+    const records = employees.map((e) => ({
+      employeeId: e.employeeId,
+      attendanceCodeId: e.attendanceCodeId || null,
+      note: e.note || "",
+    }));
 
-        setSaving(true);
-        try {
-            const res = await fetch("/api/timesheets/daily", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ date: date.format("YYYY-MM-DD"), departmentId: payloadDeptId, records }),
-            });
-            if (res.ok) {
-                const validCount = records.filter(r => r.attendanceCodeId !== null).length;
-                message.success(`Đã lưu! (${validCount}/${employees.length} người được chấm)`);
-                fetchTimesheetData();
-            } else {
-                const err = await res.json();
-                message.error(res.status === 403 ? `KHÓA SỔ: ${err.error}` : err.error || "Lỗi lưu");
-            }
-        } catch {
-            message.error("Lỗi kết nối");
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    // --- ROW HELPERS ---
-    const handleRowChange = (empId: number, field: string, value: unknown) => {
-        setEmployees(prev => prev.map(e => e.employeeId === empId ? { ...e, [field]: value } : e));
-    };
-
-    const setAllStatus = (codeStr: string) => {
-        const target = attendanceCodes.find(c => c.code === codeStr);
-        if (!target) return;
-        setEmployees(prev => prev.map(e => ({ ...e, attendanceCodeId: target.id })));
-    };
-
-    // --- CHANGE PASSWORD ---
-    const handleChangePassword = async (values: { oldPassword: string; newPassword: string; confirmPassword: string }) => {
-        setPassLoading(true);
-        try {
-            const res = await fetch("/api/user/change-password", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(values),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                message.success("Đổi mật khẩu thành công!");
-                setIsChangePassOpen(false);
-                passForm.resetFields();
-                signOut({ callbackUrl: "/login" });
-            } else {
-                message.error(data.error || "Có lỗi xảy ra");
-            }
-        } catch {
-            message.error("Lỗi kết nối server");
-        } finally {
-            setPassLoading(false);
-        }
-    };
-
-    // --- COMPUTED ---
-    const timesheetStatus = useMemo(() => {
-        if (employees.length === 0) return null;
-        const hasData = employees.some(e => e.attendanceCodeId !== null);
-        const lastUpdate = employees.find(e => e.updatedAt)?.updatedAt;
-        return {
-            isSubmitted: hasData,
-            lastUpdate: lastUpdate ? dayjs(lastUpdate).format("HH:mm - DD/MM/YYYY") : null,
-        };
-    }, [employees]);
-
-    const filteredEmployees = useMemo(() => {
-        if (!searchText.trim()) return employees;
-        const q = searchText.toLowerCase();
-        return employees.filter(e =>
-            e.fullName.toLowerCase().includes(q) ||
-            e.employeeCode.toLowerCase().includes(q)
+    setSaving(true);
+    try {
+      const res = await fetch("/api/timesheets/daily", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: date.format("YYYY-MM-DD"),
+          departmentId: payloadDeptId,
+          records,
+        }),
+      });
+      if (res.ok) {
+        const validCount = records.filter(
+          (r) => r.attendanceCodeId !== null,
+        ).length;
+        message.success(
+          `Đã lưu! (${validCount}/${employees.length} người được chấm)`,
         );
-    }, [employees, searchText]);
+        fetchTimesheetData();
+      } else {
+        const err = await res.json();
+        message.error(
+          res.status === 403 ? `KHÓA SỔ: ${err.error}` : err.error || "Lỗi lưu",
+        );
+      }
+    } catch {
+      message.error("Lỗi kết nối");
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    const checkedCount = employees.filter(e => e.attendanceCodeId !== null).length;
-    const filterApplied = mixedDeptValues.length > 0;
-
-    // --- FILTER LABEL (shown in header) ---
-    const filterLabel = useMemo(() => {
-        if (!filterApplied) return null;
-        const deptLabels = mixedDeptValues.map(v => {
-            const opt = mixedDeptOptions.find(o => o.value === v);
-            return opt?.label || v;
-        });
-        const kipLabels = selectedKipIds.map(id => {
-            const k = kips.find(k => k.id === id);
-            return k?.name || "";
-        }).filter(Boolean);
-        const parts = [...deptLabels];
-        if (kipLabels.length > 0) parts.push(kipLabels.join(", "));
-        return parts.join(" · ");
-    }, [filterApplied, mixedDeptValues, mixedDeptOptions, selectedKipIds, kips]);
-
-    // --- RENDER ---
-    return (
-        <div style={{ minHeight: "100vh", background: "#f0f2f5", paddingBottom: 80, maxWidth: 480, margin: "0 auto" }}>
-
-            {/* === TOP HEADER === */}
-            <div style={{
-                position: "sticky", top: 0, zIndex: 100,
-                background: "linear-gradient(135deg, #1677ff 0%, #0958d9 100%)", color: "#fff",
-                padding: "8px 12px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-            }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 15 }}>Chấm Công Hàng Ngày</div>
-                        <div style={{ fontSize: 11, opacity: 0.85 }}>{date.format("dddd, DD/MM/YYYY")}</div>
-                        {filterLabel && (
-                            <div style={{ fontSize: 10, opacity: 0.75, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {filterLabel}
-                            </div>
-                        )}
-                    </div>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                        <Link href="/">
-                            <Button
-                                icon={<HomeOutlined />}
-                                size="small"
-                                style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", width: 32, height: 32 }}
-                            />
-                        </Link>
-                        <Badge dot={filterApplied} color="yellow">
-                            <Button
-                                icon={<FilterOutlined />}
-                                size="small"
-                                onClick={() => setFilterDrawerOpen(true)}
-                                style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", width: 32, height: 32 }}
-                            />
-                        </Badge>
-                        <Avatar
-                            size={30}
-                            icon={<UserOutlined />}
-                            style={{ background: "rgba(255,255,255,0.3)", cursor: "pointer" }}
-                            onClick={() => setUserMenuOpen(true)}
-                        />
-                    </div>
-                </div>
-            </div>
-
-            {/* === FILTER DRAWER === */}
-            <Drawer
-                title="Bộ lọc chấm công"
-                placement="bottom"
-                height="auto"
-                open={filterDrawerOpen}
-                onClose={() => setFilterDrawerOpen(false)}
-                styles={{ body: { paddingBottom: 32 } }}
-                extra={
-                    <Button size="small" danger onClick={() => {
-                        setSelectedFactoryId(null);
-                        setMixedDeptValues([]);
-                        setSelectedKipIds([]);
-                    }}>
-                        Xóa lọc
-                    </Button>
-                }
-            >
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Ngày chấm công</div>
-                        <DatePicker
-                            value={date}
-                            onChange={(d) => d && setDate(d)}
-                            format="DD/MM/YYYY"
-                            allowClear={false}
-                            style={{ width: "100%" }}
-                            size="large"
-                        />
-                    </div>
-                    <div>
-                        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Nhà máy</div>
-                        <Select
-                            style={{ width: "100%" }}
-                            size="large"
-                            placeholder="Chọn nhà máy..."
-                            value={selectedFactoryId}
-                            onChange={(val) => {
-                                setSelectedFactoryId(val);
-                                setMixedDeptValues([]);
-                                setSelectedKipIds([]);
-                            }}
-                            options={factoryOptions}
-                            allowClear
-                        />
-                    </div>
-                    <div>
-                        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
-                            {isMatrix ? "Tổ / Bộ phận" : "Phòng ban"}
-                        </div>
-                        <Select
-                            mode="multiple"
-                            style={{ width: "100%" }}
-                            size="large"
-                            placeholder="Chọn phòng ban..."
-                            value={mixedDeptValues}
-                            onChange={setMixedDeptValues}
-                            options={mixedDeptOptions}
-                            disabled={!selectedFactoryId}
-                            showSearch
-                            optionFilterProp="label"
-                            maxTagCount="responsive"
-                            allowClear
-                        />
-                    </div>
-                    <div>
-                        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
-                            {isMatrix ? "Lọc theo kíp" : "Kíp"}
-                        </div>
-                        <Select
-                            mode="multiple"
-                            style={{ width: "100%" }}
-                            size="large"
-                            placeholder="Tất cả kíp"
-                            value={selectedKipIds}
-                            onChange={setSelectedKipIds}
-                            disabled={!selectedFactoryId}
-                            options={kips.filter(k => k.factoryId === selectedFactoryId).map(k => ({ value: k.id, label: k.name }))}
-                            allowClear
-                        />
-                    </div>
-                    <Button type="primary" size="large" block onClick={() => setFilterDrawerOpen(false)}>
-                        Áp dụng
-                    </Button>
-                </div>
-            </Drawer>
-
-            {/* === USER MENU DRAWER === */}
-            <Drawer
-                title={null}
-                placement="right"
-                width={260}
-                open={userMenuOpen}
-                onClose={() => setUserMenuOpen(false)}
-            >
-                <div style={{ textAlign: "center", paddingTop: 16, paddingBottom: 24 }}>
-                    <Avatar size={64} icon={<UserOutlined />} style={{ background: "#1677ff" }} />
-                    <div style={{ marginTop: 12, fontWeight: 700, fontSize: 16 }}>
-                        {session?.user?.fullName || session?.user?.name || "Người dùng"}
-                    </div>
-                    <Tag color="blue" style={{ marginTop: 4 }}>{session?.user?.role}</Tag>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {["ADMIN", "HR_MANAGER", "TIMEKEEPER"].includes(session?.user?.role as string) && (
-                        <Link href="/timesheets/daily-mobile/qr-generator">
-                            <Button icon={<QrcodeOutlined />} block onClick={() => setUserMenuOpen(false)}>
-                                Tạo QR chấm công
-                            </Button>
-                        </Link>
-                    )}
-                    <Button
-                        icon={<KeyOutlined />}
-                        block
-                        onClick={() => { setUserMenuOpen(false); setIsChangePassOpen(true); }}
-                    >
-                        Đổi mật khẩu
-                    </Button>
-                    <Button
-                        danger icon={<LogoutOutlined />} block
-                        onClick={() => signOut({ callbackUrl: "/login" })}
-                    >
-                        Đăng xuất
-                    </Button>
-                </div>
-            </Drawer>
-
-            {/* === CHANGE PASSWORD MODAL === */}
-            <Modal
-                title="Đổi mật khẩu"
-                open={isChangePassOpen}
-                onCancel={() => { setIsChangePassOpen(false); passForm.resetFields(); }}
-                onOk={() => passForm.submit()}
-                confirmLoading={passLoading}
-                okText="Xác nhận"
-                cancelText="Hủy"
-            >
-                <Form form={passForm} layout="vertical" onFinish={handleChangePassword}>
-                    <Form.Item name="oldPassword" label="Mật khẩu hiện tại"
-                        rules={[{ required: true, message: "Vui lòng nhập mật khẩu cũ" }]}>
-                        <Input.Password />
-                    </Form.Item>
-                    <Form.Item name="newPassword" label="Mật khẩu mới"
-                        rules={[{ required: true }, { min: 6, message: "Tối thiểu 6 ký tự" }]}>
-                        <Input.Password />
-                    </Form.Item>
-                    <Form.Item name="confirmPassword" label="Nhập lại mật khẩu mới"
-                        dependencies={["newPassword"]}
-                        rules={[{ required: true }, ({ getFieldValue }) => ({
-                            validator(_, value) {
-                                if (!value || getFieldValue("newPassword") === value) return Promise.resolve();
-                                return Promise.reject("Mật khẩu không khớp!");
-                            },
-                        })]}>
-                        <Input.Password />
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* === MAIN CONTENT === */}
-            <div style={{ padding: "8px 8px 0" }}>
-                {employees.length > 0 && (
-                    <div style={{ marginBottom: 6 }}>
-                        {timesheetStatus?.isSubmitted ? (
-                            <Alert
-                                message={`Đã chấm: ${checkedCount}/${employees.length} · ${timesheetStatus.lastUpdate}`}
-                                type="success" showIcon style={{ fontSize: 11, padding: "4px 8px" }}
-                            />
-                        ) : (
-                            <Alert message="Chưa có dữ liệu chấm công." type="info" showIcon style={{ fontSize: 11, padding: "4px 8px" }} />
-                        )}
-                    </div>
-                )}
-
-                {/* Quick action row */}
-                {!isViewOnly && employees.length > 0 && (
-                    <div style={{ marginBottom: 6, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                        <div style={{ display: "flex", gap: 4, paddingBottom: 2, whiteSpace: "nowrap" }}>
-                            <span style={{ fontSize: 11, color: "#666", lineHeight: "24px", flexShrink: 0 }}>Tất cả:</span>
-                            {QUICK_ACTIONS.map(({ code, label }) => {
-                                const ac = attendanceCodes.find(c => c.code === code);
-                                return (
-                                    <Button key={code} size="small" onClick={() => setAllStatus(code)}
-                                        style={{ flexShrink: 0, background: ac?.color || "#ddd", borderColor: ac?.color || "#ddd", color: "#fff", fontWeight: 600, fontSize: 11, height: 24, padding: "0 6px" }}>
-                                        {code}
-                                    </Button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-
-                {/* Search box */}
-                {employees.length > 0 && (
-                    <Input.Search
-                        placeholder="Tìm tên, mã NV..."
-                        value={searchText}
-                        onChange={e => setSearchText(e.target.value)}
-                        allowClear
-                        size="middle"
-                        style={{ marginBottom: 6 }}
-                    />
-                )}
-            </div>
-
-            {/* === EMPLOYEE CARDS === */}
-            {loading ? (
-                <div style={{ textAlign: "center", padding: 40 }}>
-                    <Spin size="large" />
-                    <div style={{ marginTop: 8, color: "#999", fontSize: 13 }}>Đang tải...</div>
-                </div>
-            ) : employees.length === 0 ? (
-                <div style={{
-                    margin: "8px", padding: "24px 16px", background: "#fff",
-                    borderRadius: 10, textAlign: "center", color: "#999", border: "1px dashed #ddd",
-                }}>
-                    <FilterOutlined style={{ fontSize: 28, marginBottom: 8, color: "#ccc" }} />
-                    <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Chưa có dữ liệu</div>
-                    <div style={{ fontSize: 12 }}>
-                        Bấm nút <FilterOutlined /> góc trên để chọn ngày và bộ phận
-                    </div>
-                </div>
-            ) : (
-                <div style={{ padding: "0 8px", display: "flex", flexDirection: "column", gap: 6 }}>
-                    {filteredEmployees.map((emp, index) => {
-                        const currentCode = attendanceCodes.find(c => c.id === emp.attendanceCodeId);
-                        return (
-                            <div key={emp.employeeId} style={{
-                                background: "#fff",
-                                borderRadius: 8,
-                                padding: "8px 10px",
-                                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                                borderLeft: `3px solid ${currentCode?.color || "#e0e0e0"}`,
-                            }}>
-                                {/* Row 1: Name */}
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ display: "flex", alignItems: "baseline", gap: 2 }}>
-                                            <span style={{ color: "#aaa", fontSize: 11 }}>{index + 1}.</span>
-                                            <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.1 }}>{emp.fullName}</span>
-                                        </div>
-                                        <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
-                                            {emp.kipName ? (
-                                                <Tag color="blue" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px", margin: 0 }}>{emp.kipName}</Tag>
-                                            ) : (
-                                                <Tag style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px", margin: 0 }}>{emp.departmentName}</Tag>
-                                            )}
-                                            <span style={{ fontSize: 10, color: "#bbb" }}>{emp.employeeCode}</span>
-                                        </div>
-                                    </div>
-                                    {emp.attendanceCodeId ? (
-                                        <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 16 }} />
-                                    ) : (
-                                        <CloseCircleOutlined style={{ color: "#d9d9d9", fontSize: 16 }} />
-                                    )}
-                                </div>
-
-                                {/* Attendance select */}
-                                <Select
-                                    value={emp.attendanceCodeId}
-                                    allowClear
-                                    style={{ width: "100%", marginBottom: isViewOnly ? 0 : 6 }}
-                                    size="middle"
-                                    placeholder="Chọn mã chấm công..."
-                                    disabled={isViewOnly}
-                                    onChange={(val) => handleRowChange(emp.employeeId, "attendanceCodeId", val ?? null)}
-                                    options={attendanceCodes.map(c => ({ value: c.id, label: `${c.code} - ${c.name}`, item: c }))}
-                                    optionRender={(opt) => (
-                                        <Space>
-                                            <Tag color={opt.data.item.color} style={{ fontWeight: "bold", minWidth: 36, textAlign: "center" }}>
-                                                {opt.data.item.code}
-                                            </Tag>
-                                            {opt.data.item.name}
-                                        </Space>
-                                    )}
-                                    labelRender={(props) => {
-                                        const c = attendanceCodes.find(x => x.id === props.value);
-                                        return c ? (
-                                            <Tag color={c.color} style={{ fontWeight: "bold", margin: 0 }}>
-                                                {c.code} · {c.name}
-                                            </Tag>
-                                        ) : (props.label as React.ReactNode);
-                                    }}
-                                />
-
-                                {/* Note input */}
-                                {!isViewOnly ? (
-                                    <Input
-                                        value={emp.note}
-                                        onChange={e => handleRowChange(emp.employeeId, "note", e.target.value)}
-                                        placeholder="Ghi chú..."
-                                        size="small"
-                                    />
-                                ) : emp.note ? (
-                                    <div style={{ fontSize: 12, color: "#666", fontStyle: "italic" }}>📝 {emp.note}</div>
-                                ) : null}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            {/* === FLOATING SAVE BUTTON === */}
-            {!isViewOnly && employees.length > 0 && (
-                <div style={{ position: "fixed", bottom: 16, right: 12, zIndex: 200 }}>
-                    <Button
-                        type="primary" size="large" icon={<SaveOutlined />}
-                        onClick={handleSave} loading={saving}
-                        style={{
-                            height: 44, paddingInline: 18, borderRadius: 22,
-                            boxShadow: "0 4px 16px rgba(22,119,255,0.45)",
-                            fontSize: 13, fontWeight: 700,
-                        }}
-                    >
-                        Lưu ({checkedCount}/{employees.length})
-                    </Button>
-                </div>
-            )}
-
-            {/* View-only notice */}
-            {isViewOnly && (
-                <div style={{
-                    position: "fixed", bottom: 0, left: 0, right: 0,
-                    background: "#fffbe6", borderTop: "1px solid #ffe58f",
-                    padding: "6px 12px", textAlign: "center", fontSize: 11, color: "#ad6800"
-                }}>
-                    Chế độ xem — không có quyền chỉnh sửa
-                </div>
-            )}
-        </div>
+  // --- ROW HELPERS ---
+  const handleRowChange = (empId: number, field: string, value: unknown) => {
+    setEmployees((prev) =>
+      prev.map((e) => (e.employeeId === empId ? { ...e, [field]: value } : e)),
     );
+  };
+
+  const setAllStatus = (codeStr: string) => {
+    const target = attendanceCodes.find((c) => c.code === codeStr);
+    if (!target) return;
+    setEmployees((prev) =>
+      prev.map((e) => ({ ...e, attendanceCodeId: target.id })),
+    );
+  };
+
+  // --- CHANGE PASSWORD ---
+  const handleChangePassword = async (values: {
+    oldPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }) => {
+    setPassLoading(true);
+    try {
+      const res = await fetch("/api/user/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        message.success("Đổi mật khẩu thành công!");
+        setIsChangePassOpen(false);
+        passForm.resetFields();
+        signOut({ callbackUrl: "/login" });
+      } else {
+        message.error(data.error || "Có lỗi xảy ra");
+      }
+    } catch {
+      message.error("Lỗi kết nối server");
+    } finally {
+      setPassLoading(false);
+    }
+  };
+
+  // --- COMPUTED ---
+  const timesheetStatus = useMemo(() => {
+    if (employees.length === 0) return null;
+    const hasData = employees.some((e) => e.attendanceCodeId !== null);
+    const lastUpdate = employees.find((e) => e.updatedAt)?.updatedAt;
+    return {
+      isSubmitted: hasData,
+      lastUpdate: lastUpdate
+        ? dayjs(lastUpdate).format("HH:mm - DD/MM/YYYY")
+        : null,
+    };
+  }, [employees]);
+
+  const filteredEmployees = useMemo(() => {
+    if (!searchText.trim()) return employees;
+    const q = searchText.toLowerCase();
+    return employees.filter(
+      (e) =>
+        e.fullName.toLowerCase().includes(q) ||
+        e.employeeCode.toLowerCase().includes(q),
+    );
+  }, [employees, searchText]);
+
+  const checkedCount = employees.filter(
+    (e) => e.attendanceCodeId !== null,
+  ).length;
+  const filterApplied = mixedDeptValues.length > 0;
+
+  // --- FILTER LABEL (shown in header) ---
+  const filterLabel = useMemo(() => {
+    if (!filterApplied) return null;
+    const deptLabels = mixedDeptValues.map((v) => {
+      const opt = mixedDeptOptions.find((o) => o.value === v);
+      return opt?.label || v;
+    });
+    const kipLabels = selectedKipIds
+      .map((id) => {
+        const k = kips.find((k) => k.id === id);
+        return k?.name || "";
+      })
+      .filter(Boolean);
+    const parts = [...deptLabels];
+    if (kipLabels.length > 0) parts.push(kipLabels.join(", "));
+    return parts.join(" · ");
+  }, [filterApplied, mixedDeptValues, mixedDeptOptions, selectedKipIds, kips]);
+
+  // --- RENDER ---
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f0f2f5",
+        paddingBottom: 80,
+        maxWidth: 480,
+        margin: "0 auto",
+      }}
+    >
+      {/* === TOP HEADER === */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+          background: "linear-gradient(135deg, #1677ff 0%, #0958d9 100%)",
+          color: "#fff",
+          padding: "8px 12px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>
+              Chấm Công Hàng Ngày
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.85 }}>
+              {date.format("dddd, DD/MM/YYYY")}
+            </div>
+            {filterLabel && (
+              <div
+                style={{
+                  fontSize: 10,
+                  opacity: 0.75,
+                  marginTop: 1,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {filterLabel}
+              </div>
+            )}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Link href="/mobile">
+              <Button
+                icon={<HomeOutlined />}
+                size="small"
+                style={{
+                  background: "rgba(255,255,255,0.2)",
+                  border: "none",
+                  color: "#fff",
+                  width: 32,
+                  height: 32,
+                }}
+              />
+            </Link>
+            <Badge dot={filterApplied} color="yellow">
+              <Button
+                icon={<FilterOutlined />}
+                size="small"
+                onClick={() => setFilterDrawerOpen(true)}
+                style={{
+                  background: "rgba(255,255,255,0.2)",
+                  border: "none",
+                  color: "#fff",
+                  width: 32,
+                  height: 32,
+                }}
+              />
+            </Badge>
+            <Avatar
+              size={30}
+              icon={<UserOutlined />}
+              style={{ background: "rgba(255,255,255,0.3)", cursor: "pointer" }}
+              onClick={() => setUserMenuOpen(true)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* === FILTER DRAWER === */}
+      <Drawer
+        title="Bộ lọc chấm công"
+        placement="bottom"
+        height="auto"
+        open={filterDrawerOpen}
+        onClose={() => setFilterDrawerOpen(false)}
+        styles={{ body: { paddingBottom: 32 } }}
+        extra={
+          <Button
+            size="small"
+            danger
+            onClick={() => {
+              setSelectedFactoryId(null);
+              setMixedDeptValues([]);
+              setSelectedKipIds([]);
+            }}
+          >
+            Xóa lọc
+          </Button>
+        }
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
+              Ngày chấm công
+            </div>
+            <DatePicker
+              value={date}
+              onChange={(d) => d && setDate(d)}
+              format="DD/MM/YYYY"
+              allowClear={false}
+              style={{ width: "100%" }}
+              size="large"
+            />
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
+              Nhà máy
+            </div>
+            <Select
+              style={{ width: "100%" }}
+              size="large"
+              placeholder="Chọn nhà máy..."
+              value={selectedFactoryId}
+              onChange={(val) => {
+                setSelectedFactoryId(val);
+                setMixedDeptValues([]);
+                setSelectedKipIds([]);
+              }}
+              options={factoryOptions}
+              allowClear
+            />
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
+              {isMatrix ? "Tổ / Bộ phận" : "Phòng ban"}
+            </div>
+            <Select
+              mode="multiple"
+              style={{ width: "100%" }}
+              size="large"
+              placeholder="Chọn phòng ban..."
+              value={mixedDeptValues}
+              onChange={setMixedDeptValues}
+              options={mixedDeptOptions}
+              disabled={!selectedFactoryId}
+              showSearch
+              optionFilterProp="label"
+              maxTagCount="responsive"
+              allowClear
+            />
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
+              {isMatrix ? "Lọc theo kíp" : "Kíp"}
+            </div>
+            <Select
+              mode="multiple"
+              style={{ width: "100%" }}
+              size="large"
+              placeholder="Tất cả kíp"
+              value={selectedKipIds}
+              onChange={setSelectedKipIds}
+              disabled={!selectedFactoryId}
+              options={kips
+                .filter((k) => k.factoryId === selectedFactoryId)
+                .map((k) => ({ value: k.id, label: k.name }))}
+              allowClear
+            />
+          </div>
+          <Button
+            type="primary"
+            size="large"
+            block
+            onClick={() => setFilterDrawerOpen(false)}
+          >
+            Áp dụng
+          </Button>
+        </div>
+      </Drawer>
+
+      {/* === USER MENU DRAWER === */}
+      <Drawer
+        title={null}
+        placement="right"
+        width={260}
+        open={userMenuOpen}
+        onClose={() => setUserMenuOpen(false)}
+      >
+        <div style={{ textAlign: "center", paddingTop: 16, paddingBottom: 24 }}>
+          <Avatar
+            size={64}
+            icon={<UserOutlined />}
+            style={{ background: "#1677ff" }}
+          />
+          <div style={{ marginTop: 12, fontWeight: 700, fontSize: 16 }}>
+            {session?.user?.fullName || session?.user?.name || "Người dùng"}
+          </div>
+          <Tag color="blue" style={{ marginTop: 4 }}>
+            {session?.user?.role}
+          </Tag>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {["ADMIN", "HR_MANAGER", "TIMEKEEPER"].includes(
+            session?.user?.role as string,
+          ) && (
+            <Link href="/timesheets/daily-mobile/qr-generator">
+              <Button
+                icon={<QrcodeOutlined />}
+                block
+                onClick={() => setUserMenuOpen(false)}
+              >
+                Tạo QR chấm công
+              </Button>
+            </Link>
+          )}
+          <Button
+            icon={<KeyOutlined />}
+            block
+            onClick={() => {
+              setUserMenuOpen(false);
+              setIsChangePassOpen(true);
+            }}
+          >
+            Đổi mật khẩu
+          </Button>
+          <Button
+            danger
+            icon={<LogoutOutlined />}
+            block
+            onClick={() => signOut({ callbackUrl: "/login" })}
+          >
+            Đăng xuất
+          </Button>
+        </div>
+      </Drawer>
+
+      {/* === CHANGE PASSWORD MODAL === */}
+      <Modal
+        title="Đổi mật khẩu"
+        open={isChangePassOpen}
+        onCancel={() => {
+          setIsChangePassOpen(false);
+          passForm.resetFields();
+        }}
+        onOk={() => passForm.submit()}
+        confirmLoading={passLoading}
+        okText="Xác nhận"
+        cancelText="Hủy"
+      >
+        <Form form={passForm} layout="vertical" onFinish={handleChangePassword}>
+          <Form.Item
+            name="oldPassword"
+            label="Mật khẩu hiện tại"
+            rules={[{ required: true, message: "Vui lòng nhập mật khẩu cũ" }]}
+          >
+            <Input.Password />
+          </Form.Item>
+          <Form.Item
+            name="newPassword"
+            label="Mật khẩu mới"
+            rules={[
+              { required: true },
+              { min: 6, message: "Tối thiểu 6 ký tự" },
+            ]}
+          >
+            <Input.Password />
+          </Form.Item>
+          <Form.Item
+            name="confirmPassword"
+            label="Nhập lại mật khẩu mới"
+            dependencies={["newPassword"]}
+            rules={[
+              { required: true },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue("newPassword") === value)
+                    return Promise.resolve();
+                  return Promise.reject("Mật khẩu không khớp!");
+                },
+              }),
+            ]}
+          >
+            <Input.Password />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* === MAIN CONTENT === */}
+      <div style={{ padding: "8px 8px 0" }}>
+        {employees.length > 0 && (
+          <div style={{ marginBottom: 6 }}>
+            {timesheetStatus?.isSubmitted ? (
+              <Alert
+                message={`Đã chấm: ${checkedCount}/${employees.length} · ${timesheetStatus.lastUpdate}`}
+                type="success"
+                showIcon
+                style={{ fontSize: 11, padding: "4px 8px" }}
+              />
+            ) : (
+              <Alert
+                message="Chưa có dữ liệu chấm công."
+                type="info"
+                showIcon
+                style={{ fontSize: 11, padding: "4px 8px" }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Quick action row */}
+        {!isViewOnly && employees.length > 0 && (
+          <div
+            style={{
+              marginBottom: 6,
+              overflowX: "auto",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: 4,
+                paddingBottom: 2,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "#666",
+                  lineHeight: "24px",
+                  flexShrink: 0,
+                }}
+              >
+                Tất cả:
+              </span>
+              {QUICK_ACTIONS.map(({ code, label }) => {
+                const ac = attendanceCodes.find((c) => c.code === code);
+                return (
+                  <Button
+                    key={code}
+                    size="small"
+                    onClick={() => setAllStatus(code)}
+                    style={{
+                      flexShrink: 0,
+                      background: ac?.color || "#ddd",
+                      borderColor: ac?.color || "#ddd",
+                      color: "#fff",
+                      fontWeight: 600,
+                      fontSize: 11,
+                      height: 24,
+                      padding: "0 6px",
+                    }}
+                  >
+                    {code}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Search box */}
+        {employees.length > 0 && (
+          <Input.Search
+            placeholder="Tìm tên, mã NV..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            allowClear
+            size="middle"
+            style={{ marginBottom: 6 }}
+          />
+        )}
+      </div>
+
+      {/* === EMPLOYEE CARDS === */}
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 40 }}>
+          <Spin size="large" />
+          <div style={{ marginTop: 8, color: "#999", fontSize: 13 }}>
+            Đang tải...
+          </div>
+        </div>
+      ) : employees.length === 0 ? (
+        <div
+          style={{
+            margin: "8px",
+            padding: "24px 16px",
+            background: "#fff",
+            borderRadius: 10,
+            textAlign: "center",
+            color: "#999",
+            border: "1px dashed #ddd",
+          }}
+        >
+          <FilterOutlined
+            style={{ fontSize: 28, marginBottom: 8, color: "#ccc" }}
+          />
+          <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
+            Chưa có dữ liệu
+          </div>
+          <div style={{ fontSize: 12 }}>
+            Bấm nút <FilterOutlined /> góc trên để chọn ngày và bộ phận
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: "0 8px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          {filteredEmployees.map((emp, index) => {
+            const currentCode = attendanceCodes.find(
+              (c) => c.id === emp.attendanceCodeId,
+            );
+            return (
+              <div
+                key={emp.employeeId}
+                style={{
+                  background: "#fff",
+                  borderRadius: 8,
+                  padding: "8px 10px",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  borderLeft: `3px solid ${currentCode?.color || "#e0e0e0"}`,
+                }}
+              >
+                {/* Row 1: Name */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 6,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "baseline",
+                        gap: 2,
+                      }}
+                    >
+                      <span style={{ color: "#aaa", fontSize: 11 }}>
+                        {index + 1}.
+                      </span>
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 13,
+                          letterSpacing: 0.1,
+                        }}
+                      >
+                        {emp.fullName}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 2,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      {emp.kipName ? (
+                        <Tag
+                          color="blue"
+                          style={{
+                            fontSize: 10,
+                            lineHeight: "16px",
+                            padding: "0 4px",
+                            margin: 0,
+                          }}
+                        >
+                          {emp.kipName}
+                        </Tag>
+                      ) : (
+                        <Tag
+                          style={{
+                            fontSize: 10,
+                            lineHeight: "16px",
+                            padding: "0 4px",
+                            margin: 0,
+                          }}
+                        >
+                          {emp.departmentName}
+                        </Tag>
+                      )}
+                      <span style={{ fontSize: 10, color: "#bbb" }}>
+                        {emp.employeeCode}
+                      </span>
+                    </div>
+                  </div>
+                  {emp.attendanceCodeId ? (
+                    <CheckCircleOutlined
+                      style={{ color: "#52c41a", fontSize: 16 }}
+                    />
+                  ) : (
+                    <CloseCircleOutlined
+                      style={{ color: "#d9d9d9", fontSize: 16 }}
+                    />
+                  )}
+                </div>
+
+                {/* Attendance select */}
+                <Select
+                  value={emp.attendanceCodeId}
+                  allowClear
+                  style={{ width: "100%", marginBottom: isViewOnly ? 0 : 6 }}
+                  size="middle"
+                  placeholder="Chọn mã chấm công..."
+                  disabled={isViewOnly}
+                  onChange={(val) =>
+                    handleRowChange(
+                      emp.employeeId,
+                      "attendanceCodeId",
+                      val ?? null,
+                    )
+                  }
+                  options={attendanceCodes.map((c) => ({
+                    value: c.id,
+                    label: `${c.code} - ${c.name}`,
+                    item: c,
+                  }))}
+                  optionRender={(opt) => (
+                    <Space>
+                      <Tag
+                        color={opt.data.item.color}
+                        style={{
+                          fontWeight: "bold",
+                          minWidth: 36,
+                          textAlign: "center",
+                        }}
+                      >
+                        {opt.data.item.code}
+                      </Tag>
+                      {opt.data.item.name}
+                    </Space>
+                  )}
+                  labelRender={(props) => {
+                    const c = attendanceCodes.find((x) => x.id === props.value);
+                    return c ? (
+                      <Tag
+                        color={c.color}
+                        style={{ fontWeight: "bold", margin: 0 }}
+                      >
+                        {c.code} · {c.name}
+                      </Tag>
+                    ) : (
+                      (props.label as React.ReactNode)
+                    );
+                  }}
+                />
+
+                {/* Note input */}
+                {!isViewOnly ? (
+                  <Input
+                    value={emp.note}
+                    onChange={(e) =>
+                      handleRowChange(emp.employeeId, "note", e.target.value)
+                    }
+                    placeholder="Ghi chú..."
+                    size="small"
+                  />
+                ) : emp.note ? (
+                  <div
+                    style={{ fontSize: 12, color: "#666", fontStyle: "italic" }}
+                  >
+                    📝 {emp.note}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* === FLOATING SAVE BUTTON === */}
+      {!isViewOnly && employees.length > 0 && (
+        <div style={{ position: "fixed", bottom: 16, right: 12, zIndex: 200 }}>
+          <Button
+            type="primary"
+            size="large"
+            icon={<SaveOutlined />}
+            onClick={handleSave}
+            loading={saving}
+            style={{
+              height: 44,
+              paddingInline: 18,
+              borderRadius: 22,
+              boxShadow: "0 4px 16px rgba(22,119,255,0.45)",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            Lưu ({checkedCount}/{employees.length})
+          </Button>
+        </div>
+      )}
+
+      {/* View-only notice */}
+      {isViewOnly && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: "#fffbe6",
+            borderTop: "1px solid #ffe58f",
+            padding: "6px 12px",
+            textAlign: "center",
+            fontSize: 11,
+            color: "#ad6800",
+          }}
+        >
+          Chế độ xem — không có quyền chỉnh sửa
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Wrap with Suspense for useSearchParams
 export default function MobileDailyTimesheetPage() {
-    return (
-        <Suspense fallback={
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-                <Spin size="large" />
-            </div>
-        }>
-            <MobileDailyTimesheetInner />
-        </Suspense>
-    );
+  return (
+    <Suspense
+      fallback={
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "100vh",
+          }}
+        >
+          <Spin size="large" />
+        </div>
+      }
+    >
+      <MobileDailyTimesheetInner />
+    </Suspense>
+  );
 }

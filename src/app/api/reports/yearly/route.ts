@@ -1,6 +1,7 @@
 // src/app/api/reports/yearly/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -16,6 +17,8 @@ export async function GET(request: Request) {
   const type = searchParams.get("type") || "evaluation"; // evaluation | workday | leave
 
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     // 1. Lọc nhân viên (Logic giữ nguyên)
     const whereEmployee: any = {};
     if (departmentIds) whereEmployee.departmentId = { in: departmentIds };

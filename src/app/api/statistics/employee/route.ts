@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import { requireAuth } from "@/lib/requireAuth";
 import dayjs from "dayjs";
 
 const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
+
     const { searchParams } = new URL(request.url);
     const fromDate = searchParams.get("fromDate");
     const toDate = searchParams.get("toDate");

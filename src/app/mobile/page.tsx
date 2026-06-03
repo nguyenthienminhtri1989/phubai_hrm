@@ -3,7 +3,7 @@
 import React from "react";
 import { useSession, signOut } from "next-auth/react";
 import { Button, Avatar, Spin } from "antd";
-import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
+import { UserOutlined, LogoutOutlined, HomeOutlined } from "@ant-design/icons";
 import Link from "next/link";
 
 // Role map sang tiếng Việt
@@ -124,6 +124,16 @@ export default function MobileHomePage() {
               </div>
             )}
           </div>
+          <Link href="/">
+            <Button
+              icon={<HomeOutlined />}
+              aria-label="Về trang chủ"
+              style={{
+                background: "rgba(255,255,255,0.2)", border: "none", color: "#fff",
+                width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              }}
+            />
+          </Link>
         </div>
       </div>
 

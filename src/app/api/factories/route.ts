@@ -1,11 +1,15 @@
 // src/app/api/factories/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 // import { error } from "node:console";
 
 // 1. Hàm GET: Dùng để lấy danh sách nhà máy
 export async function GET() {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
+
     // Gọi prisma để lấy toàn bộ dữ liệu từ bảng Factory
     const factories = await prisma.factory.findMany({
       orderBy: {
@@ -26,6 +30,9 @@ export async function GET() {
 // 2. Hàm POST: Dùng để thêm mới một nhà máy
 export async function POST(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
+
     // Đọc dữ liệu gửi lên từ giao diện
     // Chuyển chuỗi JSON từ trình duyệt gửi lên thành Object rồi gán cho body
     const body = await request.json();

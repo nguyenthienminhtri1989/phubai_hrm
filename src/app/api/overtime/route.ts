@@ -1,11 +1,14 @@
 // src/app/api/overtime/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 import dayjs from "dayjs";
 
 // 1. GET: Lấy danh sách (Có lọc theo Tháng + Phòng ban)
 export async function GET(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const { searchParams } = new URL(request.url);
     const departmentId = searchParams.get("departmentId");
     const monthStr = searchParams.get("month");
@@ -47,6 +50,8 @@ export async function GET(request: Request) {
 // 2. POST: Thêm mới
 export async function POST(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const body = await request.json();
     // [MỚI] Nhận thêm createdBy từ frontend gửi lên
     const { employeeId, content, startTime, endTime, createdBy } = body;
@@ -78,6 +83,8 @@ export async function POST(request: Request) {
 // 3. PUT: Cập nhật (Sửa)
 export async function PUT(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const body = await request.json();
     const { id, content, startTime, endTime } = body;
 
@@ -107,6 +114,8 @@ export async function PUT(request: Request) {
 // 4. DELETE: Xóa
 export async function DELETE(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 

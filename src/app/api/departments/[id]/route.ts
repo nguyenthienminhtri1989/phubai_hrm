@@ -1,6 +1,7 @@
 // src/app/api/departments/[id]/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 import { message } from "antd";
 
 // Hàm lấy ID từ URL (Ví dụ: /api/departments/1 -> id = 1)
@@ -13,6 +14,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     // BƯỚC QUAN TRỌNG: Phải await params trước
     const { id } = await params;
     const departmentId = parseInt(id);
@@ -41,6 +44,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     // BƯỚC QUAN TRỌNG: Phải await params trước khi dùng
     const { id } = await params;
     const departmentId = parseInt(id);

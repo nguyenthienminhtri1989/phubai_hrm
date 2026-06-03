@@ -1,10 +1,13 @@
 // src/app/api/departments/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 
 // 1. Hàm GET, dùng để lấy danh sách phòng ban
 export async function GET() {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     // Gọi prisma để lấy danh sách phòng ban
     const departments = await prisma.department.findMany({
       orderBy: {
@@ -29,6 +32,8 @@ export async function GET() {
 // 2. Hàm POST, dùng để thêm phòng ban
 export async function POST(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     // Đọc dữ liệu gửi lên từ giao diện
     // Chuyển chuỗi JSON từ trình duyệt gửi lên thành Object rồi gán cho body
     const body = await request.json();

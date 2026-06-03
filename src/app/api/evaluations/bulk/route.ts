@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 
 export async function POST(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const body = await request.json();
-    const { month, year, evaluations } = body; 
+    const { month, year, evaluations } = body;
     // evaluations là mảng: [{ employeeId: 1, grade: "A" }, { employeeId: 2, grade: "B" }]
 
     if (!month || !year || !evaluations) {

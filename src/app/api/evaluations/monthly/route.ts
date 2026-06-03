@@ -1,9 +1,12 @@
 // src/app/api/evaluations/monthly/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/requireAuth";
 
 export async function GET(request: Request) {
   try {
+    const unauth = await requireAuth();
+    if (unauth) return unauth;
     const { searchParams } = new URL(request.url);
     const month = parseInt(searchParams.get("month") || "");
     const year = parseInt(searchParams.get("year") || "");

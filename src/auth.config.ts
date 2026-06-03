@@ -22,6 +22,7 @@ export const authConfig = {
         "/timesheets",
         "/employees",
         "/departments",
+        "/mobile",
       ];
 
       // Kiểm tra xem trang hiện tại có nằm trong danh sách bảo vệ không

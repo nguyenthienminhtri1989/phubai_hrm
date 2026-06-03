@@ -198,37 +198,9 @@ export default function AdminLayout({
             defaultSelectedKeys={[pathname]}
             items={[
               {
-                key: "mobile-group",
+                key: "/mobile",
                 icon: <MobileOutlined />,
-                label: "MOBILE",
-                children: [
-                  {
-                    key: "/mobile",
-                    icon: <HomeOutlined />,
-                    label: <Link href="/mobile">Trang chủ Mobile</Link>,
-                  },
-                  {
-                    key: "/timesheets/daily-mobile",
-                    icon: <FormOutlined />,
-                    label: <Link href="/timesheets/daily-mobile">Chấm công</Link>,
-                  },
-                  {
-                    key: "/evaluations/mobile",
-                    icon: <BarChartOutlined />,
-                    label: <Link href="/evaluations/mobile">Xếp loại</Link>,
-                  },
-                  {
-                    key: "/mobile/timesheet",
-                    icon: <TableOutlined />,
-                    label: <Link href="/mobile/timesheet">Tổng hợp công</Link>,
-                  },
-                  {
-                    key: "/mobile/yearly",
-                    icon: <BarChartOutlined />,
-                    label: <Link href="/mobile/yearly">Tổng hợp năm</Link>,
-                  },
-
-                ],
+                label: <Link href="/mobile">MOBILE</Link>,
               },
 
               {
