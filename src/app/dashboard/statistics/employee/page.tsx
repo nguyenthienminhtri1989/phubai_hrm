@@ -13,6 +13,7 @@ import {
   Button,
   Space,
   Tag,
+  Select,
 } from "antd";
 import {
   PieChart,
@@ -50,18 +51,28 @@ interface EmployeeStats {
   filterApplied?: boolean;
 }
 
+interface Factory {
+  id: number;
+  code: string;
+  name: string;
+}
+
 export default function EmployeeStatisticsPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<EmployeeStats | null>(null);
   const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null]>([null, null]);
   const [appliedRange, setAppliedRange] = useState<[Dayjs | null, Dayjs | null]>([null, null]);
+  const [factories, setFactories] = useState<Factory[]>([]);
+  const [factoryId, setFactoryId] = useState<number | null>(null);
+  const [appliedFactoryId, setAppliedFactoryId] = useState<number | null>(null);
 
-  const fetchStats = async (fromDate?: string, toDate?: string) => {
+  const fetchStats = async (fromDate?: string, toDate?: string, factory?: number | null) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (fromDate) params.set("fromDate", fromDate);
       if (toDate) params.set("toDate", toDate);
+      if (factory) params.set("factoryId", String(factory));
       const url = `/api/statistics/employee${params.toString() ? `?${params.toString()}` : ""}`;
       const res = await fetch(url);
       if (!res.ok) {
@@ -77,29 +88,47 @@ export default function EmployeeStatisticsPage() {
     }
   };
 
+  const fetchFactories = async () => {
+    try {
+      const res = await fetch("/api/factories");
+      if (!res.ok) return;
+      const data = await res.json();
+      setFactories(Array.isArray(data) ? data : []);
+    } catch {
+      // Bỏ qua lỗi tải nhà máy — bộ lọc nhà máy sẽ trống
+    }
+  };
+
   useEffect(() => {
     fetchStats();
+    fetchFactories();
   }, []);
 
   const handleFilter = () => {
     const [from, to] = dateRange;
     setAppliedRange(dateRange);
+    setAppliedFactoryId(factoryId);
     fetchStats(
       from ? from.format("YYYY-MM-DD") : undefined,
-      to ? to.format("YYYY-MM-DD") : undefined
+      to ? to.format("YYYY-MM-DD") : undefined,
+      factoryId
     );
   };
 
   const handleReset = () => {
     setDateRange([null, null]);
     setAppliedRange([null, null]);
+    setFactoryId(null);
+    setAppliedFactoryId(null);
     fetchStats();
   };
 
   const renderPieLabel = ({ name, percent }: { name?: string; percent?: number }) =>
     `${name ?? ""}: ${((percent ?? 0) * 100).toFixed(1)}%`;
 
-  const isFiltered = appliedRange[0] !== null || appliedRange[1] !== null;
+  const isFiltered =
+    appliedRange[0] !== null || appliedRange[1] !== null || appliedFactoryId !== null;
+  const appliedFactoryName = factories.find((f) => f.id === appliedFactoryId)?.name;
 
   return (
     <AdminLayout>
@@ -115,6 +144,17 @@ export default function EmployeeStatisticsPage() {
             <Space wrap size="middle" align="center">
               <span style={{ fontWeight: 500, color: "#555" }}>
                 <FilterOutlined style={{ marginRight: 6 }} />
+                Lọc theo nhà máy:
+              </span>
+              <Select
+                value={factoryId}
+                onChange={(value) => setFactoryId(value ?? null)}
+                placeholder="Tất cả nhà máy"
+                allowClear
+                style={{ width: 220 }}
+                options={factories.map((f) => ({ label: f.name, value: f.id }))}
+              />
+              <span style={{ fontWeight: 500, color: "#555" }}>
                 Lọc theo ngày vào làm:
               </span>
               <RangePicker
@@ -137,11 +177,16 @@ export default function EmployeeStatisticsPage() {
               <Button
                 icon={<ReloadOutlined />}
                 onClick={handleReset}
-                disabled={!isFiltered && !dateRange[0]}
+                disabled={!isFiltered && !dateRange[0] && factoryId === null}
               >
                 Đặt lại
               </Button>
-              {isFiltered && (
+              {appliedFactoryName && (
+                <Tag color="geekblue" style={{ fontSize: 13 }}>
+                  Nhà máy: {appliedFactoryName}
+                </Tag>
+              )}
+              {(appliedRange[0] || appliedRange[1]) && (
                 <Tag color="blue" style={{ fontSize: 13 }}>
                   {appliedRange[0]?.format("DD/MM/YYYY")} – {appliedRange[1]?.format("DD/MM/YYYY")}
                 </Tag>
@@ -161,9 +206,11 @@ export default function EmployeeStatisticsPage() {
               <Card bordered={false} className="shadow-sm">
                 <Statistic
                   title={
-                    isFiltered
-                      ? `Tổng số lao động vào làm từ ${appliedRange[0]?.format("DD/MM/YYYY")} đến ${appliedRange[1]?.format("DD/MM/YYYY")}`
-                      : "Tổng số lao động đang làm việc"
+                    appliedRange[0] || appliedRange[1]
+                      ? `Tổng số lao động vào làm từ ${appliedRange[0]?.format("DD/MM/YYYY")} đến ${appliedRange[1]?.format("DD/MM/YYYY")}${appliedFactoryName ? ` (${appliedFactoryName})` : ""}`
+                      : appliedFactoryName
+                        ? `Tổng số lao động đang làm việc tại ${appliedFactoryName}`
+                        : "Tổng số lao động đang làm việc"
                   }
                   value={stats?.total || 0}
                   prefix={<TeamOutlined />}

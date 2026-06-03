@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const fromDate = searchParams.get("fromDate");
     const toDate = searchParams.get("toDate");
+    const factoryId = searchParams.get("factoryId");
 
     // Build where clause
     const where: {
@@ -16,6 +17,9 @@ export async function GET(request: NextRequest) {
       startDate?: {
         gte?: Date;
         lte?: Date;
+      };
+      department?: {
+        factoryId: number;
       };
     } = {
       isActive: true,
@@ -29,6 +33,11 @@ export async function GET(request: NextRequest) {
       if (toDate) {
         where.startDate.lte = dayjs(toDate).endOf("day").toDate();
       }
+    }
+
+    // Lọc theo nhà máy (qua phòng ban của nhân viên)
+    if (factoryId) {
+      where.department = { factoryId: Number(factoryId) };
     }
 
     const employees = await prisma.employee.findMany({
@@ -97,7 +106,7 @@ export async function GET(request: NextRequest) {
       total,
       genderData,
       ageData,
-      filterApplied: !!(fromDate || toDate),
+      filterApplied: !!(fromDate || toDate || factoryId),
     });
   } catch (error: unknown) {
     const err = error as { message?: string };
