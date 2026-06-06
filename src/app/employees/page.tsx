@@ -5,12 +5,12 @@ import AdminLayout from "@/components/AdminLayout";
 import { useSession } from "next-auth/react";
 import {
   Table, Button, Modal, Form, Input, message, Select, DatePicker, Tag,
-  Card, Space, type TableProps, Divider, Radio
+  Card, type TableProps, Divider, Radio
 } from "antd";
 import {
   PlusOutlined, EditOutlined, FilterOutlined, PhoneOutlined, SearchOutlined
 } from "@ant-design/icons";
-import dayjs from "dayjs";
+import dayjs, { Dayjs } from "dayjs";
 
 // --- 1. DEFINITIONS (INTERFACES) ---
 interface Factory {
@@ -61,6 +61,7 @@ export default function EmployeePage() {
   // State Bộ lọc
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
+  const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
   const [searchText, setSearchText] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<boolean | null>(null); // Lọc theo trạng thái
 
@@ -99,14 +100,15 @@ export default function EmployeePage() {
     return employees.filter((emp) => {
       const matchFactory = selectedFactoryId ? emp.department?.factory?.id === selectedFactoryId : true;
       const matchDept = selectedDeptId ? emp.department?.id === selectedDeptId : true;
+      const matchKip = selectedKipIds.length > 0 ? selectedKipIds.includes(emp.kip?.id || 0) : true;
       const matchStatus = selectedStatus !== null ? emp.isActive === selectedStatus : true;
       const matchName = searchText
         ? emp.fullName.toLowerCase().includes(searchText.toLowerCase()) ||
         emp.code.toLowerCase().includes(searchText.toLowerCase())
         : true;
-      return matchFactory && matchDept && matchName && matchStatus;
+      return matchFactory && matchDept && matchKip && matchName && matchStatus;
     });
-  }, [employees, selectedFactoryId, selectedDeptId, searchText, selectedStatus]);
+  }, [employees, selectedFactoryId, selectedDeptId, selectedKipIds, searchText, selectedStatus]);
 
   // --- ACTIONS ---
   const handleEdit = (record: Employee) => {
@@ -135,7 +137,7 @@ export default function EmployeePage() {
       const values = await form.validateFields();
 
       // Helper format ngày
-      const fmtDate = (d: any) => d ? d.format("YYYY-MM-DD") + "T00:00:00.000Z" : null;
+      const fmtDate = (d?: Dayjs | null) => d ? d.format("YYYY-MM-DD") + "T00:00:00.000Z" : null;
 
       const payload = {
         ...values,
@@ -200,7 +202,7 @@ export default function EmployeePage() {
     {
       title: "Hành động", key: "action", width: 90,
       align: "center" as const, // <-- [SỬA Ở ĐÂY] Thêm as const
-      render: (_: any, record: any) => (
+      render: (_: unknown, record: Employee) => (
         <Button type="text" icon={<EditOutlined />} style={{ color: "blue" }} onClick={() => handleEdit(record)} />
       ),
     },
@@ -220,18 +222,29 @@ export default function EmployeePage() {
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600 }}><FilterOutlined /> Bộ lọc:</span>
           <Input placeholder="Tìm tên hoặc mã NV..." prefix={<SearchOutlined style={{ color: "#bfbfbf" }} />} style={{ width: 200 }} value={searchText} onChange={(e) => setSearchText(e.target.value)} allowClear />
-          <Select style={{ width: 180 }} placeholder="Tất cả Nhà máy" allowClear value={selectedFactoryId} onChange={(val) => { setSelectedFactoryId(val); setSelectedDeptId(null); }}>
+          <Select style={{ width: 180 }} placeholder="Tất cả Nhà máy" allowClear value={selectedFactoryId} onChange={(val) => { setSelectedFactoryId(val); setSelectedDeptId(null); setSelectedKipIds([]); }}>
             {factories.map((f) => <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>)}
           </Select>
           <Select style={{ width: 180 }} placeholder="Tất cả Phòng ban" allowClear value={selectedDeptId} onChange={(val) => setSelectedDeptId(val)} disabled={!selectedFactoryId && departments.length > 50}>
             {availableDepartments.map((d) => <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>)}
           </Select>
+          <Select
+            mode="multiple"
+            style={{ width: 200 }}
+            placeholder="Tất cả Kíp"
+            value={selectedKipIds}
+            onChange={setSelectedKipIds}
+            disabled={!selectedFactoryId}
+            options={kips.filter(k => k.factoryId === selectedFactoryId).map(k => ({ value: k.id, label: k.name }))}
+            allowClear
+            maxTagCount="responsive"
+          />
           <Select style={{ width: 160 }} placeholder="Trạng thái làm việc" allowClear value={selectedStatus} onChange={(val) => setSelectedStatus(val)}>
             <Select.Option value={true}>Đang làm việc</Select.Option>
             <Select.Option value={false}>Đã nghỉ việc</Select.Option>
           </Select>
-          {(selectedFactoryId || selectedDeptId || searchText || selectedStatus !== null) && (
-            <Button type="link" onClick={() => { setSelectedFactoryId(null); setSelectedDeptId(null); setSearchText(""); setSelectedStatus(null); }}>Xóa lọc</Button>
+          {(selectedFactoryId || selectedDeptId || selectedKipIds.length > 0 || searchText || selectedStatus !== null) && (
+            <Button type="link" onClick={() => { setSelectedFactoryId(null); setSelectedDeptId(null); setSelectedKipIds([]); setSearchText(""); setSelectedStatus(null); }}>Xóa lọc</Button>
           )}
         </div>
       </Card>
