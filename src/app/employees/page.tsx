@@ -5,7 +5,7 @@ import AdminLayout from "@/components/AdminLayout";
 import { useSession } from "next-auth/react";
 import {
   Table, Button, Modal, Form, Input, message, Select, DatePicker, Tag,
-  Card, type TableProps, Divider, Radio
+  Card, Space, type TableProps, Divider, Radio
 } from "antd";
 import {
   PlusOutlined, EditOutlined, FilterOutlined, PhoneOutlined, SearchOutlined
@@ -17,10 +17,13 @@ interface Factory {
   id: number; code: string; name: string;
 }
 interface Department {
-  id: number; name: string; factory?: Factory;
+  id: number; code?: string; name: string; isKip?: boolean; factory?: Factory;
 }
 interface Kip {
   id: number; name: string; factoryId: number; factory?: Factory;
+}
+interface DeptOption {
+  value: string; label: string; type: "SECTION" | "DEPT"; isKip: boolean;
 }
 
 interface Employee {
@@ -43,6 +46,8 @@ interface Employee {
   isActive?: boolean; // [MỚI] Trạng thái làm việc
 }
 
+const MATRIX_FACTORY_IDS = [1, 2, 3];
+
 export default function EmployeePage() {
   const { data: session } = useSession();
   const isViewOnly = !["ADMIN", "HR_MANAGER"].includes(session?.user?.role || "");
@@ -60,7 +65,7 @@ export default function EmployeePage() {
 
   // State Bộ lọc
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
-  const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
+  const [mixedDeptValues, setMixedDeptValues] = useState<string[]>([]);
   const [selectedKipIds, setSelectedKipIds] = useState<number[]>([]);
   const [searchText, setSearchText] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<boolean | null>(null); // Lọc theo trạng thái
@@ -96,10 +101,70 @@ export default function EmployeePage() {
     return departments.filter((d) => d.factory?.id === selectedFactoryId);
   }, [departments, selectedFactoryId]);
 
+  const isMatrix = useMemo(() => selectedFactoryId ? MATRIX_FACTORY_IDS.includes(selectedFactoryId) : false, [selectedFactoryId]);
+
+  const mixedDeptOptions = useMemo<DeptOption[]>(() => {
+    if (!selectedFactoryId) return [];
+    const currentDepts = availableDepartments.filter((d) => d.factory?.id === selectedFactoryId);
+    const options: DeptOption[] = [];
+    const processedSections = new Set<string>();
+
+    currentDepts.forEach((d) => {
+      const matrixRegex = new RegExp(`^${selectedFactoryId}([a-zA-Z]+)(\\d+)$`);
+      const match = d.code?.match(matrixRegex);
+
+      if (isMatrix && d.isKip && match) {
+        const sectionCode = match[1];
+        if (!processedSections.has(sectionCode)) {
+          const displayName = d.name.replace(/(kíp|ca)\s*\d+.*$/gi, "").replace(/-+.*$/gi, "").trim();
+          options.push({ value: `SECTION:${sectionCode}`, label: displayName, type: "SECTION", isKip: true });
+          processedSections.add(sectionCode);
+        }
+      } else {
+        options.push({ value: `DEPT:${d.id}`, label: d.name, type: "DEPT", isKip: Boolean(d.isKip) });
+      }
+    });
+
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  }, [availableDepartments, selectedFactoryId, isMatrix]);
+
+  const selectedDepartmentIds = useMemo(() => {
+    if (!selectedFactoryId || mixedDeptValues.length === 0) return [];
+
+    let targetKipNumbers: string[] = [];
+    if (selectedKipIds.length > 0) {
+      const names = kips.filter((k) => selectedKipIds.includes(k.id)).map((k) => k.name);
+      targetKipNumbers = names.map((name) => name.match(/\d+/)?.[0] || "").filter(Boolean);
+    }
+
+    const ids: number[] = [];
+    mixedDeptValues.forEach((val) => {
+      if (val.startsWith("DEPT")) {
+        const id = parseInt(val.split(":")[1]);
+        if (!isNaN(id)) ids.push(id);
+      } else if (val.startsWith("SECTION")) {
+        const sectionCode = val.split(":")[1];
+        availableDepartments.forEach((d) => {
+          if (!d.isKip || d.factory?.id !== selectedFactoryId) return;
+          const regex = new RegExp(`^${selectedFactoryId}${sectionCode}(\\d+)$`);
+          const match = d.code?.match(regex);
+          if (match) {
+            const deptKipNum = match[1];
+            if (targetKipNumbers.length === 0 || targetKipNumbers.includes(deptKipNum)) {
+              ids.push(d.id);
+            }
+          }
+        });
+      }
+    });
+
+    return Array.from(new Set(ids));
+  }, [availableDepartments, selectedFactoryId, mixedDeptValues, selectedKipIds, kips]);
+
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
       const matchFactory = selectedFactoryId ? emp.department?.factory?.id === selectedFactoryId : true;
-      const matchDept = selectedDeptId ? emp.department?.id === selectedDeptId : true;
+      const matchDept = selectedDepartmentIds.length > 0 ? selectedDepartmentIds.includes(emp.department?.id || 0) : true;
       const matchKip = selectedKipIds.length > 0 ? selectedKipIds.includes(emp.kip?.id || 0) : true;
       const matchStatus = selectedStatus !== null ? emp.isActive === selectedStatus : true;
       const matchName = searchText
@@ -108,7 +173,7 @@ export default function EmployeePage() {
         : true;
       return matchFactory && matchDept && matchKip && matchName && matchStatus;
     });
-  }, [employees, selectedFactoryId, selectedDeptId, selectedKipIds, searchText, selectedStatus]);
+  }, [employees, selectedFactoryId, selectedDepartmentIds, selectedKipIds, searchText, selectedStatus]);
 
   // --- ACTIONS ---
   const handleEdit = (record: Employee) => {
@@ -222,12 +287,35 @@ export default function EmployeePage() {
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600 }}><FilterOutlined /> Bộ lọc:</span>
           <Input placeholder="Tìm tên hoặc mã NV..." prefix={<SearchOutlined style={{ color: "#bfbfbf" }} />} style={{ width: 200 }} value={searchText} onChange={(e) => setSearchText(e.target.value)} allowClear />
-          <Select style={{ width: 180 }} placeholder="Tất cả Nhà máy" allowClear value={selectedFactoryId} onChange={(val) => { setSelectedFactoryId(val); setSelectedDeptId(null); setSelectedKipIds([]); }}>
+          <Select style={{ width: 180 }} placeholder="Tất cả Nhà máy" allowClear value={selectedFactoryId} onChange={(val) => { setSelectedFactoryId(val); setMixedDeptValues([]); setSelectedKipIds([]); }}>
             {factories.map((f) => <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>)}
           </Select>
-          <Select style={{ width: 180 }} placeholder="Tất cả Phòng ban" allowClear value={selectedDeptId} onChange={(val) => setSelectedDeptId(val)} disabled={!selectedFactoryId && departments.length > 50}>
-            {availableDepartments.map((d) => <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>)}
-          </Select>
+          <Select
+            mode="multiple"
+            style={{ width: 300 }}
+            placeholder={isMatrix ? "Tất cả Tổ / Bộ phận" : "Tất cả Phòng ban"}
+            value={mixedDeptValues}
+            onChange={setMixedDeptValues}
+            disabled={!selectedFactoryId}
+            options={mixedDeptOptions}
+            showSearch
+            optionFilterProp="label"
+            maxTagCount="responsive"
+            allowClear
+            optionRender={(opt) => {
+              const option = mixedDeptOptions.find((item) => item.value === opt.value);
+              return (
+                <Space>
+                  <span>{opt.label as string}</span>
+                  {option?.isKip && (
+                    <Tag color="blue" style={{ fontSize: 10, lineHeight: "16px", padding: "0 5px" }}>
+                      Ca Kíp
+                    </Tag>
+                  )}
+                </Space>
+              );
+            }}
+          />
           <Select
             mode="multiple"
             style={{ width: 200 }}
@@ -243,8 +331,8 @@ export default function EmployeePage() {
             <Select.Option value={true}>Đang làm việc</Select.Option>
             <Select.Option value={false}>Đã nghỉ việc</Select.Option>
           </Select>
-          {(selectedFactoryId || selectedDeptId || selectedKipIds.length > 0 || searchText || selectedStatus !== null) && (
-            <Button type="link" onClick={() => { setSelectedFactoryId(null); setSelectedDeptId(null); setSelectedKipIds([]); setSearchText(""); setSelectedStatus(null); }}>Xóa lọc</Button>
+          {(selectedFactoryId || mixedDeptValues.length > 0 || selectedKipIds.length > 0 || searchText || selectedStatus !== null) && (
+            <Button type="link" onClick={() => { setSelectedFactoryId(null); setMixedDeptValues([]); setSelectedKipIds([]); setSearchText(""); setSelectedStatus(null); }}>Xóa lọc</Button>
           )}
         </div>
       </Card>
