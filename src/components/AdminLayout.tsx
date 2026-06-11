@@ -40,8 +40,8 @@ import {
   QrcodeOutlined,
   PieChartOutlined,
   MobileOutlined,
-  HomeOutlined,
   NotificationOutlined,
+  SwapOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -96,7 +96,7 @@ export default function AdminLayout({
   }, [session?.user?.role]);
 
   // 2. Hàm xử lý Đổi mật khẩu
-  const handleChangePassword = async (values: any) => {
+  const handleChangePassword = async (values: Record<string, string>) => {
     setPassLoading(true);
     try {
       const res = await fetch("/api/user/change-password", {
@@ -297,6 +297,15 @@ export default function AdminLayout({
                     icon: <TeamOutlined />,
                     label: <Link href="/employees">Nhân viên</Link>,
                   },
+                  ...(["ADMIN", "HR_MANAGER", "TIMEKEEPER", "STAFF"].includes(session?.user?.role as string)
+                    ? [
+                      {
+                        key: "/employees/transfers",
+                        icon: <SwapOutlined />,
+                        label: <Link href="/employees/transfers">Điều chuyển</Link>,
+                      },
+                    ]
+                    : []),
                   {
                     key: "/attendance-codes",
                     icon: <UnorderedListOutlined />,
