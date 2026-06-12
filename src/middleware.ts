@@ -2,21 +2,42 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "./auth.config";
 
-// Tạo một bản auth nhẹ dành riêng cho Middleware
 const { auth } = NextAuth(authConfig);
 
+const publicRoutes = ["/login", "/register", "/pending"];
+
+function isRouteMatch(pathname: string, routes: string[]) {
+  return routes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+}
+
 export default auth((req) => {
-  // --- MOBILE REDIRECT ---
-  // Sau khi NextAuth đã xác thực session, thêm logic redirect mobile
+  const { pathname } = req.nextUrl;
+  const isLoggedIn = Boolean(req.auth?.user);
+  const isPublicRoute = isRouteMatch(pathname, publicRoutes);
+
+  if (!isPublicRoute && !isLoggedIn) {
+    const url = new URL("/login", req.nextUrl);
+    url.searchParams.set("callbackUrl", req.nextUrl.href);
+    return NextResponse.redirect(url);
+  }
+
+  if (isLoggedIn && pathname.startsWith("/login")) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/dashboard";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  if (isPublicRoute) {
+    return NextResponse.next();
+  }
+
   const userAgent = req.headers.get("user-agent") || "";
   const isMobile =
     /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-  const { pathname } = req.nextUrl;
 
-  // Chỉ redirect nếu:
-  // 1. Là thiết bị mobile (theo User-Agent)
-  // 2. Đang ở trang "/" hoặc "/dashboard"
-  // 3. Chưa ở nhóm /mobile (tránh vòng lặp)
   if (
     isMobile &&
     !pathname.startsWith("/mobile") &&
@@ -28,9 +49,10 @@ export default auth((req) => {
     url.pathname = "/mobile";
     return NextResponse.redirect(url);
   }
+
+  return NextResponse.next();
 });
 
 export const config = {
-  // Chạy trên tất cả các route trừ file tĩnh
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

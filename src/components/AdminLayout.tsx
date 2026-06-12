@@ -225,6 +225,15 @@ export default function AdminLayout({
                   <Link href="/evaluations/yearly">Tổng hợp Năm</Link>
                 ),
               },
+              ...(["ADMIN", "HR_MANAGER", "TIMEKEEPER", "STAFF"].includes(session?.user?.role as string)
+                    ? [
+                      {
+                        key: "/employees/transfers",
+                        icon: <SwapOutlined />,
+                        label: <Link href="/employees/transfers">Điều chuyển</Link>,
+                      },
+                    ]
+                    : []),
               {
                 key: "/bravo-data",
                 icon: <DownloadOutlined />,
@@ -297,15 +306,7 @@ export default function AdminLayout({
                     icon: <TeamOutlined />,
                     label: <Link href="/employees">Nhân viên</Link>,
                   },
-                  ...(["ADMIN", "HR_MANAGER", "TIMEKEEPER", "STAFF"].includes(session?.user?.role as string)
-                    ? [
-                      {
-                        key: "/employees/transfers",
-                        icon: <SwapOutlined />,
-                        label: <Link href="/employees/transfers">Điều chuyển</Link>,
-                      },
-                    ]
-                    : []),
+                  
                   {
                     key: "/attendance-codes",
                     icon: <UnorderedListOutlined />,
