@@ -58,6 +58,10 @@ export default function AdminLayout({
   const pathname = usePathname();
   const { data: session } = useSession();
   const [pendingCount, setPendingCount] = useState(0);
+  const mobileMenuOpen =
+    pathname.startsWith("/mobile") ||
+    pathname.startsWith("/timesheets/daily-mobile") ||
+    pathname.startsWith("/evaluations/mobile");
 
   // --- STATE CHO ĐỔI MẬT KHẨU ---
   const [isChangePassOpen, setIsChangePassOpen] = useState(false);
@@ -196,11 +200,53 @@ export default function AdminLayout({
             theme="dark"
             mode="inline"
             defaultSelectedKeys={[pathname]}
+            defaultOpenKeys={mobileMenuOpen ? ["mobile"] : []}
             items={[
               {
-                key: "/mobile",
+                key: "mobile",
                 icon: <MobileOutlined />,
-                label: <Link href="/mobile">MOBILE</Link>,
+                label: "MOBILE",
+                children: [
+                  {
+                    key: "/mobile",
+                    icon: <MobileOutlined />,
+                    label: <Link href="/mobile">Tổng quan mobile</Link>,
+                  },
+                  {
+                    key: "/timesheets/daily-mobile",
+                    icon: <FormOutlined />,
+                    label: <Link href="/timesheets/daily-mobile">Chấm công mobile</Link>,
+                  },
+                  {
+                    key: "/mobile/timesheet",
+                    icon: <TableOutlined />,
+                    label: <Link href="/mobile/timesheet">Tổng hợp tháng mobile</Link>,
+                  },
+                  {
+                    key: "/mobile/yearly",
+                    icon: <BarChartOutlined />,
+                    label: <Link href="/mobile/yearly">Tổng hợp năm mobile</Link>,
+                  },
+                  {
+                    key: "/evaluations/mobile",
+                    icon: <FormOutlined />,
+                    label: <Link href="/evaluations/mobile">Xếp loại mobile</Link>,
+                  },
+                  ...(["ADMIN", "HR_MANAGER", "TIMEKEEPER", "STAFF"].includes(session?.user?.role as string)
+                    ? [
+                      {
+                        key: "/mobile/transfers",
+                        icon: <SwapOutlined />,
+                        label: <Link href="/mobile/transfers">Điều chuyển mobile</Link>,
+                      },
+                    ]
+                    : []),
+                  {
+                    key: "/mobile/announcements",
+                    icon: <NotificationOutlined />,
+                    label: <Link href="/mobile/announcements">Thông báo mobile</Link>,
+                  },
+                ],
               },
 
               {

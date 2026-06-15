@@ -68,6 +68,14 @@ const MOBILE_FEATURES = [
     color: "#722ed1",
   },
   {
+    key: "transfers",
+    label: "Điều chuyển",
+    description: "Chuyển bộ phận, kíp",
+    icon: "⇄",
+    href: "/mobile/transfers",
+    color: "#13c2c2",
+  },
+  {
     key: "announcements",
     label: "Thông báo",
     description: "Thông báo nội bộ",
