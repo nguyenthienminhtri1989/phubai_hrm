@@ -43,6 +43,7 @@ interface Employee {
   idCardPlace?: string;
   bankAccount?: string;
   taxCode?: string;
+  resignationDate?: string;
   isActive?: boolean; // [MỚI] Trạng thái làm việc
 }
 
@@ -62,6 +63,7 @@ export default function EmployeePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [editingId, setEditingId] = useState<number | null>(null);
+  const currentIsActive = Form.useWatch("isActive", form);
 
   // State Bộ lọc
   const [selectedFactoryId, setSelectedFactoryId] = useState<number | null>(null);
@@ -185,6 +187,7 @@ export default function EmployeePage() {
       kipId: record.kip?.id,
       startDate: record.startDate ? dayjs(record.startDate) : null,
       idCardDate: record.idCardDate ? dayjs(record.idCardDate) : null,
+      resignationDate: record.resignationDate ? dayjs(record.resignationDate) : null,
       isActive: record.isActive !== undefined ? record.isActive : true, // Set trạng thái vào form
     });
     setIsModalOpen(true);
@@ -193,7 +196,7 @@ export default function EmployeePage() {
   const openAddModal = () => {
     setEditingId(null);
     form.resetFields();
-    form.setFieldsValue({ isActive: true }); // Mặc định là Đang làm việc khi thêm mới
+    form.setFieldsValue({ isActive: true, resignationDate: null }); // Mặc định là Đang làm việc khi thêm mới
     setIsModalOpen(true);
   };
 
@@ -209,6 +212,7 @@ export default function EmployeePage() {
         birthday: fmtDate(values.birthday),
         startDate: fmtDate(values.startDate),
         idCardDate: fmtDate(values.idCardDate),
+        resignationDate: values.isActive ? null : fmtDate(values.resignationDate),
       };
 
       const url = editingId ? `/api/employees/${editingId}` : "/api/employees";
@@ -263,6 +267,11 @@ export default function EmployeePage() {
           {isActive ? "Đang làm việc" : "Đã nghỉ việc"}
         </Tag>
       ),
+    },
+    {
+      title: "Ngày nghỉ việc", dataIndex: "resignationDate", key: "resignationDate", width: 140,
+      align: "center" as const,
+      render: (value?: string) => value ? dayjs(value).format("DD/MM/YYYY") : "-",
     },
     {
       title: "Hành động", key: "action", width: 90,
@@ -337,7 +346,7 @@ export default function EmployeePage() {
         </div>
       </Card>
 
-      <Table columns={columns} dataSource={filteredEmployees} rowKey="id" loading={loading} bordered scroll={{ x: 1000 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
+      <Table columns={columns} dataSource={filteredEmployees} rowKey="id" loading={loading} bordered scroll={{ x: 1140 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
 
       {/* --- MODAL FORM --- */}
       <Modal
@@ -354,10 +363,39 @@ export default function EmployeePage() {
           {/* Dòng trạng thái nổi bật lên trên cùng */}
           <div style={{ display: "flex", gap: 16 }}>
             <Form.Item name="isActive" label="Trạng thái làm việc" rules={[{ required: true }]}>
-              <Radio.Group buttonStyle="solid">
+              <Radio.Group
+                buttonStyle="solid"
+                onChange={(event) => {
+                  if (event.target.value === true) {
+                    form.setFieldValue("resignationDate", null);
+                  }
+                }}
+              >
                 <Radio.Button value={true}>Đang làm việc</Radio.Button>
                 <Radio.Button value={false}>Đã nghỉ việc</Radio.Button>
               </Radio.Group>
+            </Form.Item>
+            <Form.Item
+              name="resignationDate"
+              label="Ngày nghỉ việc"
+              style={{ flex: 1 }}
+              rules={[
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (getFieldValue("isActive") === false && !value) {
+                      return Promise.reject(new Error("Bắt buộc khi nhân viên đã nghỉ việc"));
+                    }
+                    return Promise.resolve();
+                  },
+                }),
+              ]}
+            >
+              <DatePicker
+                style={{ width: "100%" }}
+                format="DD/MM/YYYY"
+                placeholder="Chọn ngày nghỉ"
+                disabled={currentIsActive !== false}
+              />
             </Form.Item>
           </div>
 

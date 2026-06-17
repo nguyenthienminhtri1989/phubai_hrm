@@ -17,41 +17,41 @@ model Factory {
   departments Department[] // Quan hệ ngược: 1 nhà máy có nhiều phòng
 
   // --- BỔ SUNG DÒNG NÀY VÀO ---
-  kips        Kip[]        // Quan hệ ngược: 1 nhà máy có nhiều Kíp
-  lockRules   LockRule[] // Liên kết với bảng khóa sổ để chọn nhà máy cần khóa
+  kips      Kip[] // Quan hệ ngược: 1 nhà máy có nhiều Kíp
+  lockRules LockRule[] // Liên kết với bảng khóa sổ để chọn nhà máy cần khóa
 }
 
 // 2. Kíp (BẢNG MỚI - Định nghĩa Kíp 1 -> Kíp 10)
 model Kip {
   id   Int    @id @default(autoincrement())
   name String // "Kíp 1", "Kíp 2", ..., "Kíp 10"
-  
+
   // Liên kết với Nhà máy (Vì Kíp 1 nhà máy 2 khác Kíp 1 nhà máy 3)
   factoryId Int
   factory   Factory @relation(fields: [factoryId], references: [id])
-  
+
   employees Employee[] // 1 Kíp có nhiều nhân viên
 }
 
 // 2. Bảng Phòng Ban - Công đoạn
 model Department {
-  id        Int        @id @default(autoincrement())
-  code      String     @unique
-  name      String     // Tên hiển thị: "Sợi con", "Bông chải"
+  id   Int    @id @default(autoincrement())
+  code String @unique
+  name String // Tên hiển thị: "Sợi con", "Bông chải"
 
   // --- THÊM CỘT NÀY ---
   // true: Là bộ phận sản xuất theo Kíp (Kíp 1, Kíp 2...)
   // false: Là bộ phận hành chính/phụ trợ (Bảo trì, Kho...)
-  isKip     Boolean  @default(false) 
+  isKip Boolean @default(false)
   // --------------------
-  
+
   // Khóa ngoại liên kết nhà máy
-  factoryId Int      
-  factory   Factory   @relation(fields: [factoryId], references: [id])
+  factoryId Int
+  factory   Factory    @relation(fields: [factoryId], references: [id])
   employees Employee[] // Quan hệ ngược: 1 phòng có nhiều nhân viên
   // Quan hệ 1: Những user QUẢN LÝ phòng này (Many-to-Many)
   // [SỬA LỖI] Bổ sung @relation("ManagedDepartments") vào đây để khớp với bên User
-  managers User[] @relation("ManagedDepartments")
+  managers  User[]     @relation("ManagedDepartments")
 
   // --- [BỔ SUNG] Quan hệ 2: Những user THUỘC VỀ phòng này (One-to-Many) ---
   staffUsers User[] @relation("UserBelongsTo")
@@ -62,61 +62,62 @@ model Department {
 
 //============ 3. Bảng Nhân Viên ================
 model Employee {
-  id         Int        @id @default(autoincrement())
-  code       String     @unique // Mã NV nhập tay/import
-  fullName   String
-  birthday   DateTime?
-  gender     String?
-  address    String?
-  phone      String?
-  position   String?    // Nhập tay thoải mái
+  id       Int       @id @default(autoincrement())
+  code     String    @unique // Mã NV nhập tay/import
+  fullName String
+  birthday DateTime?
+  gender   String?
+  address  String?
+  phone    String?
+  position String? // Nhập tay thoải mái
 
   // --- [MỚI] CÁC TRƯỜNG BỔ SUNG ---
-  startDate     DateTime? // Ngày vào làm
-  idCardNumber  String?   // Số CCCD
-  idCardDate    DateTime? // Ngày cấp
-  idCardPlace   String?   // Nơi cấp
-  bankAccount   String?   // Số tài khoản
-  taxCode       String?   // Mã số thuế
+  startDate       DateTime? // Ngày vào làm
+  idCardNumber    String? // Số CCCD
+  idCardDate      DateTime? // Ngày cấp
+  idCardPlace     String? // Nơi cấp
+  bankAccount     String? // Số tài khoản
+  taxCode         String? // Mã số thuế
   // true = Đang làm việc, false = Đã nghỉ việc
-  isActive     Boolean   @default(true)
+  isActive        Boolean   @default(true)
+  resignationDate DateTime? // Ngay nghi viec
   // -------------------------------
-  
+
   // Khóa ngoại liên kết phòng ban
   departmentId Int
   department   Department @relation(fields: [departmentId], references: [id])
 
   // --- MỚI: THÊM CÁI NÀY ĐỂ LỌC ---
-  kipId        Int?     // Cho phép NULL (để ông Bảo trì/Văn phòng không cần điền)
-  kip          Kip?     @relation(fields: [kipId], references: [id])
+  kipId      Int? // Cho phép NULL (để ông Bảo trì/Văn phòng không cần điền)
+  kip        Kip?        @relation(fields: [kipId], references: [id])
   // --------------------------------
   timesheets Timesheet[]
 
   evaluations MonthlyEvaluation[] // Truy vấn xếp loại
 
   extraTimesheets ExtraTimesheet[] // <-- Kết nối với bảng công tăng cường
-  
+
   // --- Liên kết đến bảng làm thêm ---
   overtimeRecords OvertimeRecord[]
 }
 
 // 1. Bảng định nghĩa các loại công (X, F, Ô...)
 model AttendanceCode {
-  id          Int      @id @default(autoincrement())
-  code        String   @unique // Ví dụ: X, F, XD
-  name        String   // Ví dụ: Đi làm, Nghỉ phép
-  
+  id   Int    @id @default(autoincrement())
+  code String @unique // Ví dụ: X, F, XD
+  name String // Ví dụ: Đi làm, Nghỉ phép
+
   // Nhóm chế độ (Lương thời gian, Ốm, Thai sản...)
-  category    String   
-  
+  category String
+
   // Hệ số: Thêm dấu ? để không bắt buộc nhập lúc này
-  factor      Float?   
-  
-  color       String?  // Màu sắc (để ? luôn cho thoải mái, nhập sau cũng được)
-  description String?  
-  
+  factor Float?
+
+  color       String? // Màu sắc (để ? luôn cho thoải mái, nhập sau cũng được)
+  description String?
+
   // Mối quan hệ ngược: Một loại công link tới NHIỀU dòng chấm công
-  timesheets  Timesheet[]
+  timesheets Timesheet[]
 
   // Liên kết với bảng chấm công tăng cường
   extraTimesheets ExtraTimesheet[]
@@ -124,21 +125,21 @@ model AttendanceCode {
 
 // 2. Bảng chấm công hàng ngày
 model Timesheet {
-  id               Int      @id @default(autoincrement())
-  date             DateTime // Ngày chấm công
-  
+  id   Int      @id @default(autoincrement())
+  date DateTime // Ngày chấm công
+
   // Liên kết với Nhân viên
-  employeeId       Int
-  employee         Employee @relation(fields: [employeeId], references: [id])
-  
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
   // Liên kết với Loại công
   attendanceCodeId Int
   attendanceCode   AttendanceCode @relation(fields: [attendanceCodeId], references: [id])
-  
-  note             String? // Ghi chú (VD: Đi muộn 30p)
-  
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+
+  note String? // Ghi chú (VD: Đi muộn 30p)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Đảm bảo 1 nhân viên trong 1 ngày chỉ có 1 dòng chấm công
   @@unique([employeeId, date], name: "employeeId_date")
@@ -146,37 +147,37 @@ model Timesheet {
 
 // 1. Thêm Enum cho các Vai trò (Role)
 enum Role {
-  ADMIN       // Quản trị hệ thống cao nhất
-  HR_MANAGER  // Quản lý nhân sự (Sửa danh mục, xem tất cả)
-  LEADER      // Lãnh đạo (Chỉ xem)
-  TIMEKEEPER  // Người chấm công (Chỉ được chấm các phòng được giao)
-  STAFF       // Nhân viên bình thường, chỉ xem và sửa bảng làm thêm
+  ADMIN // Quản trị hệ thống cao nhất
+  HR_MANAGER // Quản lý nhân sự (Sửa danh mục, xem tất cả)
+  LEADER // Lãnh đạo (Chỉ xem)
+  TIMEKEEPER // Người chấm công (Chỉ được chấm các phòng được giao)
+  STAFF // Nhân viên bình thường, chỉ xem và sửa bảng làm thêm
 }
 
 enum UserStatus {
-  PENDING   // Chờ Admin phê duyệt
-  ACTIVE    // Đã được duyệt, có thể đăng nhập
-  REJECTED  // Bị từ chối
+  PENDING // Chờ Admin phê duyệt
+  ACTIVE // Đã được duyệt, có thể đăng nhập
+  REJECTED // Bị từ chối
 }
 
 // 2. Thêm bảng User
 model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique // Dùng tên đăng nhập (vd: to1, admin) thay vì email
-  password  String   // Mật khẩu đã mã hóa
-  fullName  String?
-  role      Role       @default(STAFF)
-  status    UserStatus @default(PENDING)
+  id       Int        @id @default(autoincrement())
+  username String     @unique // Dùng tên đăng nhập (vd: to1, admin) thay vì email
+  password String // Mật khẩu đã mã hóa
+  fullName String?
+  role     Role       @default(STAFF)
+  status   UserStatus @default(PENDING)
 
   // --- [BỔ SUNG CÁC TRƯỜNG MỚI] ---
-  employeeCode String?  // Mã nhân viên (Để liên kết với bảng lương/nhân sự sau này)
+  employeeCode String? // Mã nhân viên (Để liên kết với bảng lương/nhân sự sau này)
 
   // Phòng ban trực thuộc (User này thuộc phòng nào?)
-  userDepartmentId Int? 
+  userDepartmentId Int?
   registeredKipId  Int? // Kíp user tự khai khi đăng ký (dùng để gán managedDepartments lúc duyệt)
   userDepartment   Department? @relation("UserBelongsTo", fields: [userDepartmentId], references: [id])
   // -------------------------------
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -190,9 +191,9 @@ model User {
 // Bảng Thông báo nội bộ
 model Announcement {
   id        Int      @id @default(autoincrement())
-  title     String   // Tiêu đề thông báo
-  content   String   // Nội dung (text thuần)
-  imageUrl  String?  // Đường dẫn ảnh đính kèm (nullable)
+  title     String // Tiêu đề thông báo
+  content   String // Nội dung (text thuần)
+  imageUrl  String? // Đường dẫn ảnh đính kèm (nullable)
   authorId  Int
   author    User     @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
@@ -201,16 +202,16 @@ model Announcement {
 
 // Bảng quản lý luật khóa sổ chấm công
 model LockRule {
-  id          Int                  @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   // factoryId: null = Khóa TOÀN BỘ hệ thống hoặc khóa theo phòng ban. Có ID = Khóa riêng Nhà máy đó.
-  factoryId   Int?
-  fromDate    DateTime             // Ngày bắt đầu khóa
-  toDate      DateTime             // Ngày kết thúc khóa
-  reason      String?              // Lý do (VD: Chốt lương tháng 1)
-  createdAt   DateTime             @default(now())
+  factoryId Int?
+  fromDate  DateTime // Ngày bắt đầu khóa
+  toDate    DateTime // Ngày kết thúc khóa
+  reason    String? // Lý do (VD: Chốt lương tháng 1)
+  createdAt DateTime @default(now())
 
   // Thiết lập quan hệ với Nhà máy
-  factory     Factory?             @relation(fields: [factoryId], references: [id])
+  factory Factory? @relation(fields: [factoryId], references: [id])
 
   // --- [MỚI] Quan hệ nhiều-nhiều với Phòng ban (nếu rỗng = khóa theo nhà máy/toàn hệ thống) ---
   departments LockRuleDepartment[]
@@ -229,20 +230,20 @@ model LockRuleDepartment {
 
 // Bảng lưu kết quả xếp loại tháng
 model MonthlyEvaluation {
-  id          Int      @id @default(autoincrement())
-  
+  id Int @id @default(autoincrement())
+
   // Liên kết nhân viên
-  employeeId  Int
-  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  month       Int      // Ví dụ: 1
-  year        Int      // Ví dụ: 2026
-  
-  grade       String   // Giá trị: "A", "B", "C", "A+"...
-  note        String?  // Ghi chú lý do (nếu cần)
+  month Int // Ví dụ: 1
+  year  Int // Ví dụ: 2026
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  grade String // Giá trị: "A", "B", "C", "A+"...
+  note  String? // Ghi chú lý do (nếu cần)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Ràng buộc: Mỗi nhân viên chỉ có 1 kết quả xếp loại trong 1 tháng
   @@unique([employeeId, month, year])
@@ -251,36 +252,36 @@ model MonthlyEvaluation {
 // Thêm vào cuối file schema.prisma
 
 model OvertimeRecord {
-  id           Int      @id @default(autoincrement())
-  
-  employeeId   Int
-  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id Int @id @default(autoincrement())
 
-  content      String   // Nội dung công việc
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  content      String // Nội dung công việc
   startTime    DateTime // Giờ vào (VD: 2026-01-22 17:00:00)
   endTime      DateTime // Giờ ra  (VD: 2026-01-22 19:30:00)
-  totalMinutes Int      // Tổng thời gian (tính bằng phút để dễ cộng trừ)
+  totalMinutes Int // Tổng thời gian (tính bằng phút để dễ cộng trừ)
   createdAt    DateTime @default(now())
 
   // [MỚI] Lưu username người tạo (Ví dụ: "admin", "to1", "bao_tri")
-  createdBy    String?
+  createdBy String?
 }
 
 // Bảng Chấm công Tăng cường (Quản lý nội bộ, không xuất BRAVO)
 model ExtraTimesheet {
-  id               Int            @id @default(autoincrement())
-  date             DateTime       // Ngày chấm công
-  
-  employeeId       Int
-  employee         Employee       @relation(fields: [employeeId], references: [id])
-  
+  id   Int      @id @default(autoincrement())
+  date DateTime // Ngày chấm công
+
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
   attendanceCodeId Int
   attendanceCode   AttendanceCode @relation(fields: [attendanceCodeId], references: [id])
-  
-  note             String?        // Ghi chú (VD: Tăng cường xưởng 2)
-  
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+
+  note String? // Ghi chú (VD: Tăng cường xưởng 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Đảm bảo 1 ngày 1 người chỉ có 1 dòng công TĂNG CƯỜNG
   @@unique([employeeId, date], name: "employeeId_date")

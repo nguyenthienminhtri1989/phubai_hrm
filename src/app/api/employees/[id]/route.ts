@@ -1,4 +1,3 @@
-import { error } from "node:console";
 // src/app/api/employees/[id]/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -23,7 +22,7 @@ export async function DELETE(
     // [SỬA ĐỔI TẠI ĐÂY] Dùng update để chuyển trạng thái thành Nghỉ việc (isActive = false)
     await prisma.employee.update({
       where: { id: employeeId },
-      data: { isActive: false },
+      data: { isActive: false, resignationDate: new Date() },
     });
 
     // Xóa xong thì tạo chuỗi JSON báo về client
@@ -68,8 +67,19 @@ export async function PATCH(
       idCardPlace,
       bankAccount,
       taxCode,
+      resignationDate,
       isActive, // <-- [QUAN TRỌNG TẠI ĐÂY]
     } = body;
+
+    const isActiveValue = isActive !== undefined ? Boolean(isActive) : true;
+    const resignationDateDate = resignationDate ? new Date(resignationDate) : null;
+
+    if (!isActiveValue && !resignationDateDate) {
+      return NextResponse.json(
+        { error: "Vui long nhap ngay nghi viec khi chon trang thai da nghi viec!" },
+        { status: 400 },
+      );
+    }
 
     // 2. Cập nhật vào Database
     const updatedEmployee = await prisma.employee.update({
@@ -96,7 +106,8 @@ export async function PATCH(
         startDate: startDate ? new Date(startDate) : null,
         idCardDate: idCardDate ? new Date(idCardDate) : null,
 
-        isActive: isActive !== undefined ? isActive : true,
+        isActive: isActiveValue,
+        resignationDate: isActiveValue ? null : resignationDateDate,
       },
     });
 

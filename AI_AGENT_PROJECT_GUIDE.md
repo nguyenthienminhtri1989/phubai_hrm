@@ -126,7 +126,7 @@ Luu y:
 - Ho so nhan su trung tam.
 - Bat buoc thuoc mot `Department`.
 - Co the thuoc `Kip`.
-- Co `isActive` de biet con lam viec hay khong.
+- Co `isActive` de biet con lam viec hay khong, va `resignationDate` de ghi nhan ngay nghi viec khi nhan vien chuyen sang trang thai da nghi.
 
 `User`
 

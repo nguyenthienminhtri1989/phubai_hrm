@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/requireAuth";
+import type { Prisma } from "@prisma/client";
 
 // 1. Hàm GET: Lấy danh sách (Đã nâng cấp để hỗ trợ lọc)
 export async function GET(request: Request) {
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
     const factoryIdStr = searchParams.get("factoryId");
 
     // [MỚI] Tạo điều kiện lọc (Where Condition)
-    const whereCondition: any = {};
+    const whereCondition: Prisma.EmployeeWhereInput = {};
 
     // Nếu có departmentId -> Lọc theo phòng
     if (departmentIdStr && departmentIdStr !== "null") {
@@ -77,7 +78,9 @@ export async function POST(request: Request) {
       idCardDate,
       idCardPlace,
       bankAccount,
-      taxCode
+      taxCode,
+      isActive,
+      resignationDate
     } = body;
 
     if (!code || !fullName || !departmentId) {
@@ -90,6 +93,15 @@ export async function POST(request: Request) {
     const birthdayDate = birthday ? new Date(birthday) : null;
     const startDateDate = startDate ? new Date(startDate) : null;
     const idCardDateDate = idCardDate ? new Date(idCardDate) : null;
+    const isActiveValue = isActive !== undefined ? Boolean(isActive) : true;
+    const resignationDateDate = resignationDate ? new Date(resignationDate) : null;
+
+    if (!isActiveValue && !resignationDateDate) {
+      return NextResponse.json(
+        { error: "Vui long nhap ngay nghi viec khi chon trang thai da nghi viec!" },
+        { status: 400 }
+      );
+    }
 
     const newEmployee = await prisma.employee.create({
       data: {
@@ -107,7 +119,9 @@ export async function POST(request: Request) {
         idCardDate: idCardDateDate,
         idCardPlace,
         bankAccount,
-        taxCode
+        taxCode,
+        isActive: isActiveValue,
+        resignationDate: isActiveValue ? null : resignationDateDate,
       },
     });
 
