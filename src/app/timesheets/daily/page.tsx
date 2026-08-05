@@ -14,7 +14,7 @@ import {
     Typography,
     Alert,
 } from "antd";
-import { SaveOutlined } from "@ant-design/icons";
+import { ArrowDownOutlined, ArrowUpOutlined, SaveOutlined, SortAscendingOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 
 // [QUAN TRỌNG] Import Component lọc dùng chung
@@ -32,6 +32,7 @@ interface AttendanceCode {
 
 interface TimesheetRow {
     employeeId: number;
+    departmentId: number;
     employeeCode: string;
     fullName: string;
     attendanceCodeId: number | null;
@@ -39,6 +40,7 @@ interface TimesheetRow {
     updatedAt?: string;
     departmentName?: string;
     kipName?: string;
+    sortOrder: number;
 }
 
 export default function DailyTimesheetPage() {
@@ -53,6 +55,8 @@ export default function DailyTimesheetPage() {
     const [attendanceCodes, setAttendanceCodes] = useState<AttendanceCode[]>([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [sorting, setSorting] = useState(false);
+    const [savingOrder, setSavingOrder] = useState(false);
 
     // Lưu trữ kết quả lọc hiện tại để dùng cho hàm Save và Reload
     const [currentFilter, setCurrentFilter] = useState<FilterResult | null>(null);
@@ -85,6 +89,7 @@ export default function DailyTimesheetPage() {
     const fetchTimesheetData = async (filter: FilterResult) => {
         // Nếu chưa chọn phòng ban nào -> Xóa bảng
         if (!filter.realDepartmentIds || filter.realDepartmentIds.length === 0) {
+            setSorting(false);
             setEmployees([]);
             return;
         }
@@ -111,6 +116,7 @@ export default function DailyTimesheetPage() {
 
     // --- CALLBACK TỪ COMPONENT LỌC ---
     const handleFilterChange = (result: FilterResult) => {
+        setSorting(false);
         setCurrentFilter(result); // Lưu state để dùng khi Save
         fetchTimesheetData(result); // Gọi API
     };
@@ -180,6 +186,49 @@ export default function DailyTimesheetPage() {
         setEmployees(employees.map((e) => ({ ...e, attendanceCodeId: targetCode.id })));
     };
 
+    const moveEmployee = (employeeId: number, direction: -1 | 1) => {
+        const currentIndex = employees.findIndex((employee) => employee.employeeId === employeeId);
+        if (currentIndex < 0) return;
+
+        const departmentId = employees[currentIndex].departmentId;
+        const departmentIndexes = employees
+            .map((employee, index) => employee.departmentId === departmentId ? index : -1)
+            .filter((index) => index >= 0);
+        const position = departmentIndexes.indexOf(currentIndex);
+        const targetPosition = position + direction;
+        if (targetPosition < 0 || targetPosition >= departmentIndexes.length) return;
+
+        const targetIndex = departmentIndexes[targetPosition];
+        const newData = [...employees];
+        [newData[currentIndex], newData[targetIndex]] = [newData[targetIndex], newData[currentIndex]];
+        setEmployees(newData);
+    };
+
+    const saveOrder = async () => {
+        if (!currentFilter || employees.length === 0) return;
+        setSavingOrder(true);
+        try {
+            const orders = employees.map((employee, index) => ({
+                employeeId: employee.employeeId,
+                sortOrder: index,
+            }));
+            const res = await fetch("/api/timesheets/daily", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ orders }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Lỗi lưu thứ tự");
+            message.success("Đã lưu thứ tự nhân viên");
+            setSorting(false);
+            fetchTimesheetData(currentFilter);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "Lỗi lưu thứ tự");
+        } finally {
+            setSavingOrder(false);
+        }
+    };
+
     const timesheetStatus = useMemo(() => {
         if (employees.length === 0) return null;
         const hasData = employees.some((e) => e.attendanceCodeId !== null);
@@ -191,7 +240,37 @@ export default function DailyTimesheetPage() {
     }, [employees]);
 
     // --- COLUMNS ---
+    const sortColumn = {
+        title: "Sắp xếp",
+        key: "sort",
+        width: 110,
+        align: "center" as const,
+        render: (_value: unknown, record: TimesheetRow) => {
+            const sameDepartment = employees.filter((employee) => employee.departmentId === record.departmentId);
+            const departmentPosition = sameDepartment.findIndex((employee) => employee.employeeId === record.employeeId);
+            return (
+                <Space size={4}>
+                    <Button
+                        size="small"
+                        aria-label={`Đưa ${record.fullName} lên`}
+                        icon={<ArrowUpOutlined />}
+                        disabled={departmentPosition <= 0}
+                        onClick={() => moveEmployee(record.employeeId, -1)}
+                    />
+                    <Button
+                        size="small"
+                        aria-label={`Đưa ${record.fullName} xuống`}
+                        icon={<ArrowDownOutlined />}
+                        disabled={departmentPosition === sameDepartment.length - 1}
+                        onClick={() => moveEmployee(record.employeeId, 1)}
+                    />
+                </Space>
+            );
+        },
+    };
+
     const columns = [
+        ...(sorting ? [sortColumn] : []),
         {
             title: "STT",
             key: "index",
@@ -305,9 +384,20 @@ export default function DailyTimesheetPage() {
                                 <Button size="small" onClick={() => setAllStatus("F")}>Nghỉ F (F)</Button>
                             </Space>
 
-                            <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving}>
-                                LƯU DỮ LIỆU
-                            </Button>
+                            <Space>
+                                {sorting ? (
+                                    <Button type="primary" icon={<SaveOutlined />} onClick={saveOrder} loading={savingOrder}>
+                                        Lưu thứ tự
+                                    </Button>
+                                ) : (
+                                    <Button icon={<SortAscendingOutlined />} onClick={() => setSorting(true)}>
+                                        Sắp xếp nhân viên
+                                    </Button>
+                                )}
+                                <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving} disabled={sorting}>
+                                    LƯU DỮ LIỆU
+                                </Button>
+                            </Space>
                         </div>
                     ) : (
                         <div style={{ marginBottom: 16, fontStyle: "italic", color: "#888" }}>

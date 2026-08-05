@@ -97,7 +97,7 @@ User ── (n:n) Department  (managedDepartments)        AttendanceCode danh m�
 | `Factory`        | `code`                        | `name`, `code` (NM1/NM2/NM3)                                                                                         |
 | `Kip`            | `[factoryId, number]`         | `number` (1–10), `name`                                                                                              |
 | `Department`     | `code`                        | `code`, `isKip` (Bool), `factoryId`                                                                                  |
-| `Employee`       | `employeeCode`                | `fullName`, `dob`, `gender`, `idCard`, `taxCode`, `bankAccount`, `isActive`, `resignationDate`, `departmentId` (req), `kipId` (null nếu hành chính) |
+| `Employee`       | `employeeCode`                | `fullName`, `dob`, `gender`, `idCard`, `taxCode`, `bankAccount`, `isActive`, `resignationDate`, `sortOrder`, `departmentId` (req), `kipId` (null nếu hành chính) |
 | `AttendanceCode` | `code`                        | `category`, `factor`, `color`, `order` (sort UI)                                                                     |
 | `Timesheet`      | `[employeeId, date]`          | `attendanceCodeId`, `note`                                                                                           |
 | `TimesheetLock`  | `[departmentId, month, year]` | `isLocked`                                                                                                           |
@@ -164,6 +164,8 @@ User ── (n:n) Department  (managedDepartments)        AttendanceCode danh m�
 - Có nút **"Toàn bộ đi làm (X)"** ở `/timesheets/daily` để fill nhanh cột.
 
 ### 5.3. Lưu chấm công (Daily Timesheet)
+
+- Danh sach uu tien theo `Employee.sortOrder`, luu rieng theo phong ban; nhan vien chua co thu tu se fallback theo kip va ho ten.
 
 Pattern bắt buộc trong `POST /api/timesheets`:
 

@@ -81,6 +81,7 @@ model Employee {
   // true = Đang làm việc, false = Đã nghỉ việc
   isActive        Boolean   @default(true)
   resignationDate DateTime? // Ngay nghi viec
+  sortOrder       Int       @default(0) // Thu tu hien thi trong phong ban
   // -------------------------------
 
   // Khóa ngoại liên kết phòng ban

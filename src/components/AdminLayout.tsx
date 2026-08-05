@@ -132,7 +132,9 @@ export default function AdminLayout({
       label: (
         <div style={{ padding: "4px 8px", cursor: "default" }}>
           <div style={{ fontWeight: "bold" }}>
-            {session?.user?.fullName || session?.user?.name || session?.user?.username}
+            {session?.user?.fullName ||
+              session?.user?.name ||
+              session?.user?.username}
           </div>
           <div style={{ fontSize: 12, color: "#666" }}>
             {session?.user?.role}
@@ -178,8 +180,12 @@ export default function AdminLayout({
               borderRadius: "6px", // Bo góc nhẹ cho logo nhìn mượt hơn
               transition: "background 0.3s", // Hiệu ứng chuyển màu mượt mà
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.3)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)")}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.background = "rgba(255, 255, 255, 0.3)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)")
+            }
           >
             {collapsed ? "PB" : "PHU BAI HRM"}
           </div>
@@ -215,36 +221,56 @@ export default function AdminLayout({
                   {
                     key: "/timesheets/daily-mobile",
                     icon: <FormOutlined />,
-                    label: <Link href="/timesheets/daily-mobile">Chấm công mobile</Link>,
+                    label: (
+                      <Link href="/timesheets/daily-mobile">
+                        Chấm công mobile
+                      </Link>
+                    ),
                   },
                   {
                     key: "/mobile/timesheet",
                     icon: <TableOutlined />,
-                    label: <Link href="/mobile/timesheet">Tổng hợp tháng mobile</Link>,
+                    label: (
+                      <Link href="/mobile/timesheet">
+                        Tổng hợp tháng mobile
+                      </Link>
+                    ),
                   },
                   {
                     key: "/mobile/yearly",
                     icon: <BarChartOutlined />,
-                    label: <Link href="/mobile/yearly">Tổng hợp năm mobile</Link>,
+                    label: (
+                      <Link href="/mobile/yearly">Tổng hợp năm mobile</Link>
+                    ),
                   },
                   {
                     key: "/evaluations/mobile",
                     icon: <FormOutlined />,
-                    label: <Link href="/evaluations/mobile">Xếp loại mobile</Link>,
+                    label: (
+                      <Link href="/evaluations/mobile">Xếp loại mobile</Link>
+                    ),
                   },
-                  ...(["ADMIN", "HR_MANAGER", "TIMEKEEPER", "STAFF"].includes(session?.user?.role as string)
+                  ...(["ADMIN", "HR_MANAGER", "TIMEKEEPER", "STAFF"].includes(
+                    session?.user?.role as string,
+                  )
                     ? [
-                      {
-                        key: "/mobile/transfers",
-                        icon: <SwapOutlined />,
-                        label: <Link href="/mobile/transfers">Điều chuyển mobile</Link>,
-                      },
-                    ]
+                        {
+                          key: "/mobile/transfers",
+                          icon: <SwapOutlined />,
+                          label: (
+                            <Link href="/mobile/transfers">
+                              Điều chuyển mobile
+                            </Link>
+                          ),
+                        },
+                      ]
                     : []),
                   {
                     key: "/mobile/announcements",
                     icon: <NotificationOutlined />,
-                    label: <Link href="/mobile/announcements">Thông báo mobile</Link>,
+                    label: (
+                      <Link href="/mobile/announcements">Thông báo mobile</Link>
+                    ),
                   },
                 ],
               },
@@ -267,19 +293,21 @@ export default function AdminLayout({
               {
                 key: "/evaluations/yearly",
                 icon: <BarChartOutlined />,
-                label: (
-                  <Link href="/evaluations/yearly">Tổng hợp Năm</Link>
-                ),
+                label: <Link href="/evaluations/yearly">Tổng hợp Năm</Link>,
               },
-              ...(["ADMIN", "HR_MANAGER", "TIMEKEEPER", "STAFF"].includes(session?.user?.role as string)
-                    ? [
-                      {
-                        key: "/employees/transfers",
-                        icon: <SwapOutlined />,
-                        label: <Link href="/employees/transfers">Điều chuyển</Link>,
-                      },
-                    ]
-                    : []),
+              ...(["ADMIN", "HR_MANAGER", "TIMEKEEPER", "STAFF"].includes(
+                session?.user?.role as string,
+              )
+                ? [
+                    {
+                      key: "/employees/transfers",
+                      icon: <SwapOutlined />,
+                      label: (
+                        <Link href="/employees/transfers">Điều chuyển</Link>
+                      ),
+                    },
+                  ]
+                : []),
               {
                 key: "/bravo-data",
                 icon: <DownloadOutlined />,
@@ -293,12 +321,20 @@ export default function AdminLayout({
                   {
                     key: "/extra-timesheets/daily",
                     icon: <TeamOutlined />,
-                    label: <Link href="/extra-timesheets/daily">Chấm công tăng cường</Link>,
+                    label: (
+                      <Link href="/extra-timesheets/daily">
+                        Chấm công tăng cường
+                      </Link>
+                    ),
                   },
                   {
                     key: "/extra-timesheets/monthly",
                     icon: <UnorderedListOutlined />,
-                    label: <Link href="/extra-timesheets/monthly">Tổng hợp công tăng cường</Link>,
+                    label: (
+                      <Link href="/extra-timesheets/monthly">
+                        Tổng hợp công tăng cường
+                      </Link>
+                    ),
                   },
                 ],
               },
@@ -327,7 +363,11 @@ export default function AdminLayout({
                   {
                     key: "/dashboard/statistics/employee",
                     icon: <TeamOutlined />,
-                    label: <Link href="/dashboard/statistics/employee">Lao động</Link>,
+                    label: (
+                      <Link href="/dashboard/statistics/employee">
+                        Lao động
+                      </Link>
+                    ),
                   },
                 ],
               },
@@ -352,7 +392,7 @@ export default function AdminLayout({
                     icon: <TeamOutlined />,
                     label: <Link href="/employees">Nhân viên</Link>,
                   },
-                  
+
                   {
                     key: "/attendance-codes",
                     icon: <UnorderedListOutlined />,
@@ -363,66 +403,78 @@ export default function AdminLayout({
 
               // --- [SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY] ---
               // Hiện Menu Quản trị nếu là ADMIN HOẶC HR_MANAGER
-              ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
+              ...(["ADMIN", "HR_MANAGER"].includes(
+                session?.user?.role as string,
+              )
                 ? [
-                  {
-                    key: "admin-management",
-                    icon: <SettingOutlined />,
-                    label: "Quản trị",
-                    children: [
-                      // Người dùng: ADMIN/HR_MANAGER dùng để quản lý phê duyệt tài khoản
-                      ...(["ADMIN", "HR_MANAGER"].includes(session?.user?.role as string)
-                        ? [
-                          {
-                            key: "/admin/users",
-                            icon: <UserOutlined />,
-                            label: (
-                              <Link href="/admin/users">
-                                Người dùng{" "}
-                                {pendingCount > 0 && (
-                                  <Badge
-                                    count={pendingCount}
-                                    size="small"
-                                    style={{ marginLeft: 8 }}
-                                  />
-                                )}
-                              </Link>
-                            ),
-                          },
-                        ]
-                        : []),
+                    {
+                      key: "admin-management",
+                      icon: <SettingOutlined />,
+                      label: "Quản trị",
+                      children: [
+                        // Người dùng: ADMIN/HR_MANAGER dùng để quản lý phê duyệt tài khoản
+                        ...(["ADMIN", "HR_MANAGER"].includes(
+                          session?.user?.role as string,
+                        )
+                          ? [
+                              {
+                                key: "/admin/users",
+                                icon: <UserOutlined />,
+                                label: (
+                                  <Link href="/admin/users">
+                                    Người dùng{" "}
+                                    {pendingCount > 0 && (
+                                      <Badge
+                                        count={pendingCount}
+                                        size="small"
+                                        style={{ marginLeft: 8 }}
+                                      />
+                                    )}
+                                  </Link>
+                                ),
+                              },
+                            ]
+                          : []),
 
-                      // Khóa sổ: Cả ADMIN và HR_MANAGER đều thấy
-                      {
-                        key: "/admin/lock-rules",
-                        icon: <LockOutlined />,
-                        label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
-                      },
+                        // Khóa sổ: Cả ADMIN và HR_MANAGER đều thấy
+                        {
+                          key: "/admin/lock-rules",
+                          icon: <LockOutlined />,
+                          label: <Link href="/admin/lock-rules">Khóa sổ</Link>,
+                        },
 
-                      // Import: Chỉ hiển thị cho ADMIN
-                      ...(session?.user?.role === "ADMIN"
-                        ? [
-                          {
-                            key: "/admin/employees/import",
-                            icon: <ImportOutlined />,
-                            label: <Link href="/admin/employees/import">Import</Link>,
-                          },
-                        ]
-                        : []),
+                        // Import: Chỉ hiển thị cho ADMIN
+                        ...(session?.user?.role === "ADMIN"
+                          ? [
+                              {
+                                key: "/admin/employees/import",
+                                icon: <ImportOutlined />,
+                                label: (
+                                  <Link href="/admin/employees/import">
+                                    Import
+                                  </Link>
+                                ),
+                              },
+                            ]
+                          : []),
 
-                      // Backup & Restore: Chỉ hiển thị cho ADMIN
-                      ...(session?.user?.role === "ADMIN"
-                        ? [
-                          {
-                            key: "/admin/system",
-                            icon: <HddOutlined />,
-                            label: <Link href="/admin/system">Sao lưu & Khôi phục</Link>,
-                          },
-                        ]
-                        : []),
-                    ],
-                  },
-                ]
+                        // Backup & Restore: Chỉ hiển thị cho ADMIN
+                        ...(session?.user?.role === "ADMIN"
+                          ? [
+                              {
+                                key: "/admin/system",
+                                icon: <HddOutlined />,
+                                label: (
+                                  <Link href="/admin/system">
+                                    Sao lưu & Khôi phục
+                                  </Link>
+                                ),
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                  ]
                 : []),
               // ------------------------------------
               {
@@ -443,11 +495,14 @@ export default function AdminLayout({
                   {
                     key: "/timesheets/daily-mobile/qr-generator",
                     icon: <QrcodeOutlined />,
-                    label: <Link href="/timesheets/daily-mobile/qr-generator">Tạo QR Chấm công</Link>,
+                    label: (
+                      <Link href="/timesheets/daily-mobile/qr-generator">
+                        Tạo QR Chấm công
+                      </Link>
+                    ),
                   },
                 ],
               },
-
             ]}
           />
         </ConfigProvider>
@@ -479,10 +534,7 @@ export default function AdminLayout({
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </div>
 
-
-
           <div style={{ display: "flex", alignItems: "center" }}>
-
             {/* Dropdown User */}
             <Dropdown menu={{ items: userMenuItems }} trigger={["click"]}>
               <div
@@ -498,7 +550,9 @@ export default function AdminLayout({
                   icon={<UserOutlined />}
                 />
                 <span style={{ fontWeight: 500 }}>
-                  {session?.user?.fullName || session?.user?.name || "Người dùng"}{" "}
+                  {session?.user?.fullName ||
+                    session?.user?.name ||
+                    "Người dùng"}{" "}
                   <DownOutlined style={{ fontSize: 10 }} />
                 </span>
               </div>
@@ -518,7 +572,7 @@ export default function AdminLayout({
           {children}
         </Content>
         <Footer style={{ textAlign: "center" }}>
-          Quản lý nhân sự ©2026 Thiết kế bởi Nguyễn Thiện Minh Trí
+          Human Resources Management ©2026 Designed by Mr.Tri
         </Footer>
 
         {/* --- MODAL ĐỔI MẬT KHẨU --- */}
@@ -534,7 +588,11 @@ export default function AdminLayout({
           okText="Xác nhận"
           cancelText="Hủy"
         >
-          <Form form={passForm} layout="vertical" onFinish={handleChangePassword}>
+          <Form
+            form={passForm}
+            layout="vertical"
+            onFinish={handleChangePassword}
+          >
             <Form.Item
               name="oldPassword"
               label="Mật khẩu hiện tại"
@@ -565,7 +623,9 @@ export default function AdminLayout({
                     if (!value || getFieldValue("newPassword") === value) {
                       return Promise.resolve();
                     }
-                    return Promise.reject(new Error("Mật khẩu nhập lại không khớp!"));
+                    return Promise.reject(
+                      new Error("Mật khẩu nhập lại không khớp!"),
+                    );
                   },
                 }),
               ]}
@@ -575,6 +635,6 @@ export default function AdminLayout({
           </Form>
         </Modal>
       </Layout>
-    </Layout >
+    </Layout>
   );
 }

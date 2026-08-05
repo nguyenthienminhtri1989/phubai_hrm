@@ -61,8 +61,9 @@ export async function GET(request: Request) {
     const employees = await prisma.employee.findMany({
       where: whereCondition,
       orderBy: [
-        { kip: { name: "asc" } },
         { department: { name: "asc" } },
+        { sortOrder: "asc" },
+        { kip: { name: "asc" } },
         { fullName: "asc" },
       ],
       include: {
@@ -79,8 +80,10 @@ export async function GET(request: Request) {
       const timesheet = emp.timesheets[0];
       return {
         employeeId: emp.id,
+        departmentId: emp.departmentId,
         employeeCode: emp.code,
         fullName: emp.fullName,
+        sortOrder: emp.sortOrder,
         departmentName: emp.department?.name,
         departmentCode: emp.department?.code,
         kipName: emp.kip?.name,
@@ -97,7 +100,89 @@ export async function GET(request: Request) {
   }
 }
 
-// 2. LƯU DỮ LIỆU (ĐÃ BỔ SUNG LOGIC KHÓA SỔ MỚI)
+// 2. LUU THU TU HIEN THI THEO PHONG BAN
+export async function PATCH(request: Request) {
+  try {
+    const session = await auth();
+    const role = session?.user?.role || "";
+    const editableRoles = ["ADMIN", "HR_MANAGER", "TIMEKEEPER"];
+
+    if (!session?.user) {
+      return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+    }
+    if (!editableRoles.includes(role)) {
+      return NextResponse.json({ error: "Không có quyền sắp xếp" }, { status: 403 });
+    }
+
+    const body = await request.json().catch(() => null);
+    const orders = body?.orders;
+    if (
+      !Array.isArray(orders) ||
+      orders.length === 0 ||
+      orders.some((item: unknown) => {
+        const value = item as { employeeId?: unknown; sortOrder?: unknown };
+        return (
+          !value ||
+          !Number.isInteger(value.employeeId) ||
+          !Number.isInteger(value.sortOrder) ||
+          (value.employeeId as number) <= 0 ||
+          (value.sortOrder as number) < 0
+        );
+      })
+    ) {
+      return NextResponse.json(
+        { error: "Danh sách thứ tự không hợp lệ" },
+        { status: 400 },
+      );
+    }
+
+    const employeeIds = orders.map((item: { employeeId: number }) => item.employeeId);
+    if (new Set(employeeIds).size !== employeeIds.length) {
+      return NextResponse.json(
+        { error: "Danh sách nhân viên bị trùng" },
+        { status: 400 },
+      );
+    }
+
+    const employees = await prisma.employee.findMany({
+      where: { id: { in: employeeIds }, isActive: true },
+      select: { id: true, departmentId: true },
+    });
+    if (employees.length !== employeeIds.length) {
+      return NextResponse.json(
+        { error: "Có nhân viên không tồn tại hoặc đã nghỉ việc" },
+        { status: 404 },
+      );
+    }
+
+    const managedDeptIds = session.user.managedDeptIds || [];
+    const hasFullAccess = ["ADMIN", "HR_MANAGER"].includes(role);
+    if (
+      !hasFullAccess &&
+      employees.some((employee) => !managedDeptIds.includes(employee.departmentId))
+    ) {
+      return NextResponse.json(
+        { error: "Không được sắp xếp nhân viên ngoài phạm vi phụ trách" },
+        { status: 403 },
+      );
+    }
+
+    await prisma.$transaction(
+      orders.map((item: { employeeId: number; sortOrder: number }) =>
+        prisma.employee.update({
+          where: { id: item.employeeId },
+          data: { sortOrder: item.sortOrder },
+        }),
+      ),
+    );
+
+    return NextResponse.json({ message: "Đã lưu thứ tự hiển thị", count: orders.length });
+  } catch (error) {
+    console.error("Lỗi lưu thứ tự chấm công:", error);
+    return NextResponse.json({ error: "Lỗi khi lưu thứ tự" }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const session = await auth();

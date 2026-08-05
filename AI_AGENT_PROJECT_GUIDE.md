@@ -127,6 +127,7 @@ Luu y:
 - Bat buoc thuoc mot `Department`.
 - Co the thuoc `Kip`.
 - Co `isActive` de biet con lam viec hay khong, va `resignationDate` de ghi nhan ngay nghi viec khi nhan vien chuyen sang trang thai da nghi.
+- Co `sortOrder` de luu thu tu hien thi rieng trong phong ban.
 
 `User`
 
@@ -201,6 +202,7 @@ API chinh:
 Business rule chinh:
 
 - Chi lay nhan vien `isActive = true`.
+- Danh sach uu tien theo `Employee.sortOrder`; moi phong ban co the co thu tu rieng, neu chua sap thi fallback theo kip/ho ten.
 - Moi nhan vien moi ngay chi co mot dong cham cong.
 - Neu xoa ma cong thi backend xoa dong timesheet tuong ung.
 - Truoc khi luu phai kiem tra khoa so.
