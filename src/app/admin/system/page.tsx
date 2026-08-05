@@ -4,42 +4,29 @@ import React, { useState } from "react";
 import {
   Card,
   Button,
-  Upload,
   Typography,
   Space,
   Alert,
-  Divider,
   Tag,
-  Modal,
   Progress,
   List,
 } from "antd";
 import {
   CloudDownloadOutlined,
-  CloudUploadOutlined,
   DatabaseOutlined,
   WarningOutlined,
   CheckCircleOutlined,
-  InboxOutlined,
 } from "@ant-design/icons";
-import type { UploadFile, UploadProps } from "antd";
 import saveAs from "file-saver";
 import { message } from "antd";
 
-const { Title, Text, Paragraph } = Typography;
-const { Dragger } = Upload;
+const { Title, Text } = Typography;
 
 export default function SystemPage() {
   // --- STATE BACKUP ---
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupProgress, setBackupProgress] = useState(0);
   const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
-
-  // --- STATE RESTORE ---
-  const [restoreLoading, setRestoreLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
-  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
 
   // ============================================================
   // BACKUP
@@ -89,71 +76,6 @@ export default function SystemPage() {
     }
   };
 
-  // ============================================================
-  // RESTORE
-  // ============================================================
-  const uploadProps: UploadProps = {
-    name: "file",
-    multiple: false,
-    accept: ".sql",
-    fileList,
-    beforeUpload: (file) => {
-      if (!file.name.endsWith(".sql")) {
-        message.error("Chỉ chấp nhận file .sql!");
-        return Upload.LIST_IGNORE;
-      }
-      setSelectedFile(file);
-      setFileList([
-        {
-          uid: "-1",
-          name: file.name,
-          status: "done",
-          size: file.size,
-        },
-      ]);
-      return false; // Không upload tự động
-    },
-    onRemove: () => {
-      setSelectedFile(null);
-      setFileList([]);
-    },
-  };
-
-  const handleRestoreConfirm = () => {
-    if (!selectedFile) {
-      message.warning("Vui lòng chọn file SQL trước!");
-      return;
-    }
-    setRestoreConfirmOpen(true);
-  };
-
-  const handleRestoreExecute = async () => {
-    if (!selectedFile) return;
-    setRestoreConfirmOpen(false);
-    setRestoreLoading(true);
-    const hide = message.loading("Đang khôi phục cơ sở dữ liệu...", 0);
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      const res = await fetch("/api/system/restore", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Lỗi server khi restore");
-
-      message.success("✅ Khôi phục dữ liệu thành công! Trang sẽ tải lại sau 2 giây.");
-      setSelectedFile(null);
-      setFileList([]);
-      setTimeout(() => window.location.reload(), 2000);
-    } catch (error: any) {
-      message.error("❌ Lỗi khôi phục: " + error.message);
-    } finally {
-      hide();
-      setRestoreLoading(false);
-    }
-  };
-
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -163,13 +85,13 @@ export default function SystemPage() {
             <DatabaseOutlined /> Quản lý hệ thống
           </Title>
           <Text type="secondary">
-            Sao lưu và khôi phục cơ sở dữ liệu PostgreSQL — Chỉ dành cho Quản trị viên
+            Sao lưu cơ sở dữ liệu PostgreSQL — Chỉ dành cho Quản trị viên
           </Text>
         </div>
 
         <Alert
           message="Lưu ý quan trọng"
-          description="Hãy thực hiện Backup định kỳ trước khi import dữ liệu hoặc thay đổi cấu hình hệ thống. Chức năng Restore sẽ GHI ĐÈ toàn bộ dữ liệu hiện tại."
+          description="Hãy thực hiện Backup định kỳ trước khi import dữ liệu hoặc thay đổi cấu hình hệ thống. Việc khôi phục (restore) cơ sở dữ liệu phải được thực hiện thủ công trực tiếp trên server bởi quản trị viên — không thực hiện qua giao diện phần mềm để tránh rủi ro mất/hỏng dữ liệu và bảo mật."
           type="warning"
           showIcon
           icon={<WarningOutlined />}
@@ -230,87 +152,7 @@ export default function SystemPage() {
           </Space>
         </Card>
 
-        <Divider />
-
-        {/* ===================== RESTORE SECTION ===================== */}
-        <Card
-          title={
-            <Space>
-              <CloudUploadOutlined style={{ color: "#fa8c16", fontSize: 18 }} />
-              <span>Khôi phục cơ sở dữ liệu (Restore)</span>
-              <Tag color="orange">psql</Tag>
-            </Space>
-          }
-          bordered
-        >
-          <Space direction="vertical" style={{ width: "100%" }} size="middle">
-            <Alert
-              message="⚠️ CẢNH BÁO: Restore sẽ ghi đè toàn bộ dữ liệu hiện tại!"
-              description="Đảm bảo bạn đã có bản backup mới nhất trước khi thực hiện thao tác này. Quá trình không thể hoàn tác."
-              type="error"
-              showIcon
-            />
-
-            <Dragger {...uploadProps} style={{ padding: "12px 0" }}>
-              <p className="ant-upload-drag-icon">
-                <InboxOutlined />
-              </p>
-              <p className="ant-upload-text">
-                Kéo thả file .sql vào đây hoặc click để chọn
-              </p>
-              <p className="ant-upload-hint">
-                Chỉ chấp nhận file .sql từ pg_dump
-              </p>
-            </Dragger>
-
-            {selectedFile && (
-              <Alert
-                message={`Đã chọn file: ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)`}
-                type="info"
-                showIcon
-              />
-            )}
-
-            <Button
-              danger
-              size="large"
-              icon={<CloudUploadOutlined />}
-              loading={restoreLoading}
-              onClick={handleRestoreConfirm}
-              disabled={!selectedFile}
-              style={{ width: "100%", height: 48 }}
-            >
-              {restoreLoading ? "Đang khôi phục..." : "Khôi phục từ file đã chọn"}
-            </Button>
-          </Space>
-        </Card>
       </Space>
-
-      {/* MODAL XÁC NHẬN RESTORE */}
-      <Modal
-        title={
-          <Space>
-            <WarningOutlined style={{ color: "#ff4d4f" }} />
-            <span>Xác nhận khôi phục dữ liệu</span>
-          </Space>
-        }
-        open={restoreConfirmOpen}
-        onOk={handleRestoreExecute}
-        onCancel={() => setRestoreConfirmOpen(false)}
-        okText="Đồng ý, tiến hành Restore"
-        cancelText="Hủy bỏ"
-        okButtonProps={{ danger: true }}
-      >
-        <Paragraph>
-          Bạn sắp khôi phục cơ sở dữ liệu từ file:
-        </Paragraph>
-        <Paragraph strong style={{ color: "#1677ff" }}>
-          📄 {selectedFile?.name}
-        </Paragraph>
-        <Paragraph type="danger">
-          ⚠️ Thao tác này sẽ <strong>GHI ĐÈ TOÀN BỘ</strong> dữ liệu hiện tại và không thể hoàn tác. Bạn có chắc chắn muốn tiếp tục?
-        </Paragraph>
-      </Modal>
     </div>
   );
 }
