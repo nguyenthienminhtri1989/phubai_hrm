@@ -100,6 +100,7 @@ model Employee {
 
   // --- Liên kết đến bảng làm thêm ---
   overtimeRecords OvertimeRecord[]
+  overtimeTimesheets OvertimeTimesheet[] // Ket noi voi bang cong them gio
 }
 
 // 1. Bảng định nghĩa các loại công (X, F, Ô...)
@@ -122,6 +123,7 @@ model AttendanceCode {
 
   // Liên kết với bảng chấm công tăng cường
   extraTimesheets ExtraTimesheet[]
+  overtimeTimesheets OvertimeTimesheet[]
 }
 
 // 2. Bảng chấm công hàng ngày
@@ -285,5 +287,24 @@ model ExtraTimesheet {
   updatedAt DateTime @updatedAt
 
   // Đảm bảo 1 ngày 1 người chỉ có 1 dòng công TĂNG CƯỜNG
+  @@unique([employeeId, date], name: "employeeId_date")
+}
+
+// Bang Cham cong Them gio (quan ly noi bo, khong tinh luong)
+model OvertimeTimesheet {
+  id   Int      @id @default(autoincrement())
+  date DateTime
+
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  attendanceCodeId Int
+  attendanceCode   AttendanceCode @relation(fields: [attendanceCodeId], references: [id])
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([employeeId, date], name: "employeeId_date")
 }

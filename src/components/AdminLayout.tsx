@@ -339,6 +339,31 @@ export default function AdminLayout({
                 ],
               },
               {
+                key: "cong-them-gio",
+                icon: <FieldTimeOutlined />,
+                label: "Công thêm giờ",
+                children: [
+                  {
+                    key: "/overtime-timesheets/daily",
+                    icon: <TeamOutlined />,
+                    label: (
+                      <Link href="/overtime-timesheets/daily">
+                        Chấm công thêm giờ
+                      </Link>
+                    ),
+                  },
+                  {
+                    key: "/overtime-timesheets/monthly",
+                    icon: <UnorderedListOutlined />,
+                    label: (
+                      <Link href="/overtime-timesheets/monthly">
+                        Tổng hợp công thêm giờ
+                      </Link>
+                    ),
+                  },
+                ],
+              },
+              {
                 key: "/overtime",
                 icon: <FieldTimeOutlined />,
                 label: <Link href="/overtime">Làm thêm giờ</Link>,

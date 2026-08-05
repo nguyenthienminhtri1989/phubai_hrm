@@ -161,6 +161,10 @@ Luu y:
 
 - Cong tang cuong noi bo.
 
+`OvertimeTimesheet`
+
+- Cong them gio theo ma cong/ngay, dung de HR theo doi va xuat Excel, chua tinh luong.
+
 `OvertimeRecord`
 
 - Lam them gio theo moc thoi gian thuc te.
@@ -268,7 +272,19 @@ Trang:
 - `src/app/extra-timesheets/daily/*`
 - `src/app/extra-timesheets/monthly/*`
 
-### 5.9. Lam them gio
+### 5.9. Cong them gio theo ngay/thang
+
+Trang:
+
+- `src/app/overtime-timesheets/daily/*`
+- `src/app/overtime-timesheets/monthly/*`
+
+Muc tieu:
+
+- Cham cong them gio theo ma cong/ngay y chang cong tang cuong.
+- Tong hop thang va xuat Excel rieng cho cong them gio.
+
+### 5.10. Lam them gio theo moc gio thuc te
 
 Trang:
 
@@ -278,13 +294,13 @@ Muc tieu:
 
 - Ghi nhan OT theo gio thuc te
 
-### 5.10. Xuat BRAVO
+### 5.11. Xuat BRAVO
 
 Trang:
 
 - `src/app/bravo-data/page.tsx`
 
-### 5.11. Quan tri he thong
+### 5.12. Quan tri he thong
 
 Bao gom:
 
@@ -536,6 +552,8 @@ Cong mo rong:
 
 - `/extra-timesheets/daily`
 - `/extra-timesheets/monthly`
+- `/overtime-timesheets/daily`
+- `/overtime-timesheets/monthly`
 - `/overtime`
 
 Khac:

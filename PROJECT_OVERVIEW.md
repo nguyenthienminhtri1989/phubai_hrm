@@ -71,6 +71,7 @@
 | **Timesheet**          | Bảng chấm công ngày   | 1 record = 1 NV × 1 ngày × 1 mã công. Unique key `[employeeId, date]`                             |
 | **TimesheetLock**      | Khóa sổ               | Cờ khóa theo `[departmentId, month, year]`. Khi locked thì TIMEKEEPER không sửa được              |
 | **Extra Timesheet**    | Bảng làm thêm         | OT, công ngoài giờ — module riêng `/extra-timesheets`                                             |
+| **Overtime Timesheet** | Công thêm giờ         | Chấm công thêm giờ theo mã công/ngày — module riêng `/overtime-timesheets`                        |
 | **Bravo**              | Phần mềm lương ngoài  | File Excel xuất ra phải đúng format Bravo đọc được                                                |
 | **managedDepartments** | Phân quyền theo phòng | TIMEKEEPER chỉ thấy phòng ban có trong mảng này                                                   |
 
@@ -106,6 +107,7 @@ User ── (n:n) Department  (managedDepartments)        AttendanceCode danh m�
 **Module phụ (xem `prisma/schema.prisma` để chi tiết):**
 
 - `ExtraTimesheet` — bảng làm thêm/OT
+- `OvertimeTimesheet` — bảng công thêm giờ theo ngày/tháng, phục vụ theo dõi và xuất Excel
 - `Evaluation` — đánh giá nhân viên
 - `Salary*` — module tính lương (xem skills 01–05)
 - `BravoData` — bảng import/đối soát với phần mềm Bravo
@@ -258,6 +260,7 @@ phubai-hrm/
 | `/api/timesheets`               | Chấm công ngày | GET (filter), POST (upsert) |
 | `/api/timesheets/lock`          | Khóa sổ        | POST lock/unlock            |
 | `/api/extra-timesheets`         | Làm thêm/OT    | CRUD                        |
+| `/api/overtime-timesheets`      | Công thêm giờ  | GET/POST daily, GET monthly |
 | `/api/overtime`                 | Tổng hợp OT    | GET report                  |
 | `/api/evaluations`              | Đánh giá NV    | CRUD                        |
 | `/api/reports/*`                | Báo cáo        | Export Excel                |
@@ -280,6 +283,7 @@ phubai-hrm/
 | `/timesheets/daily`                               | ⭐ Chấm công ngày (core)         | TIMEKEEPER, HR_MANAGER, ADMIN    |
 | `/timesheets/monthly`                             | ⭐ Tổng hợp tháng + Export       | HR_MANAGER, ADMIN, LEADER (view) |
 | `/extra-timesheets`                               | OT / làm thêm                    | TIMEKEEPER, STAFF                |
+| `/overtime-timesheets/daily`, `/overtime-timesheets/monthly` | Công thêm giờ theo mã công | TIMEKEEPER, HR_MANAGER, ADMIN, LEADER/STAFF view |
 | `/overtime`                                       | Báo cáo OT                       | HR_MANAGER                       |
 | `/employees`                                      | Danh sách NV                     | HR_MANAGER, ADMIN                |
 | `/departments`, `/factories`, `/attendance-codes` | Danh mục                         | HR_MANAGER, ADMIN                |
