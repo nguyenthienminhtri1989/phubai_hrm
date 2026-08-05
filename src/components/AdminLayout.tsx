@@ -509,7 +509,7 @@ export default function AdminLayout({
                                 icon: <HddOutlined />,
                                 label: (
                                   <Link href="/admin/system">
-                                    Sao lưu & Khôi phục
+                                    Sao lưu dữ liệu
                                   </Link>
                                 ),
                               },

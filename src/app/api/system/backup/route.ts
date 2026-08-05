@@ -33,9 +33,11 @@ export async function GET() {
     }
     // ----------------------------------------------
 
-    // 3. CẤU HÌNH ĐƯỜNG DẪN (CẬP NHẬT THEO LOG CỦA BẠN: BẢN 17)
-    // Log của bạn cho thấy bạn đang cài bản 17, hãy sửa số 16 thành 17
-    const pgDumpPath = '"C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe"';
+    // 3. CẤU HÌNH ĐƯỜNG DẪN pg_dump
+    // Trên Linux (VPS): dùng "pg_dump" trong PATH (cài qua gói postgresql-client).
+    // Có thể override bằng biến môi trường PG_DUMP_PATH nếu cần chỉ định đường dẫn cụ thể
+    // (ví dụ trên Windows: C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe).
+    const pgDumpPath = process.env.PG_DUMP_PATH || "pg_dump";
 
     console.log("Đang bắt đầu backup với URL đã làm sạch...");
 
