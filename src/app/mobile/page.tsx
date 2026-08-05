@@ -44,6 +44,22 @@ const MOBILE_FEATURES = [
     color: "#1677ff",
   },
   {
+    key: "extra-timesheets-mobile",
+    label: "Công tăng cường",
+    description: "Chấm công tăng cường",
+    icon: "📌",
+    href: "/mobile/extra-timesheets/daily",
+    color: "#52c41a",
+  },
+  {
+    key: "overtime-timesheets-mobile",
+    label: "Công thêm giờ",
+    description: "Chấm công thêm giờ",
+    icon: "⏱",
+    href: "/mobile/overtime-timesheets/daily",
+    color: "#fa8c16",
+  },
+  {
     key: "monthly",
     label: "Tổng hợp tháng",
     description: "Xem công theo tháng",

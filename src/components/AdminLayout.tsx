@@ -228,6 +228,24 @@ export default function AdminLayout({
                     ),
                   },
                   {
+                    key: "/mobile/extra-timesheets/daily",
+                    icon: <AppstoreOutlined />,
+                    label: (
+                      <Link href="/mobile/extra-timesheets/daily">
+                        Công tăng cường mobile
+                      </Link>
+                    ),
+                  },
+                  {
+                    key: "/mobile/overtime-timesheets/daily",
+                    icon: <FieldTimeOutlined />,
+                    label: (
+                      <Link href="/mobile/overtime-timesheets/daily">
+                        Công thêm giờ mobile
+                      </Link>
+                    ),
+                  },
+                  {
                     key: "/mobile/timesheet",
                     icon: <TableOutlined />,
                     label: (
